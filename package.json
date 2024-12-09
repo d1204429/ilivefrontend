@@ -2,17 +2,18 @@
   "name": "ilivefrontend",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
-    "format": "prettier --write src/"
+    "format": "prettier --write src/",
+    "clean": "rm -rf node_modules/.vite"
   },
   "dependencies": {
     "axios": "^1.6.2",
     "bootstrap": "^5.3.2",
-    "bootstrap-vue": "^2.23.1",
     "core-js": "^3.33.3",
     "pinia": "^2.1.7",
     "vue": "^3.3.4",

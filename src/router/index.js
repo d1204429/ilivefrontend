@@ -51,7 +51,8 @@ const router = createRouter({
             name: 'Login',
             component: () => import('@/views/user/LoginView.vue'),
             meta: {
-                title: '登入'
+                title: '登入',
+                hideForAuth: true
             }
         },
         {
@@ -59,7 +60,8 @@ const router = createRouter({
             name: 'Register',
             component: () => import('@/views/user/RegisterView.vue'),
             meta: {
-                title: '註冊'
+                title: '註冊',
+                hideForAuth: true
             }
         },
         {
@@ -80,7 +82,6 @@ const router = createRouter({
                 title: '商品分類'
             }
         },
-        // 404路由配置
         {
             path: '/404',
             name: 'NotFound',
@@ -89,7 +90,6 @@ const router = createRouter({
                 title: '404 Not Found'
             }
         },
-        // 捕獲所有未匹配的路由
         {
             path: '/:pathMatch(.*)*',
             redirect: '/404'
@@ -97,16 +97,14 @@ const router = createRouter({
     ]
 })
 
-// 全局前置守衛
 router.beforeEach(async (to, from, next) => {
-    // 設置頁面標題
     document.title = to.meta.title ? `${to.meta.title} - iLive商城` : 'iLive商城'
 
-    const token = localStorage.getItem('token')
-    const isAuthenticated = !!token
-
     try {
-        // 需要驗證的路由
+        const token = localStorage.getItem('token')
+        const isAuthenticated = !!token
+
+        // 需要登入的頁面
         if (to.matched.some(record => record.meta.requiresAuth)) {
             if (!isAuthenticated) {
                 next({
@@ -117,9 +115,9 @@ router.beforeEach(async (to, from, next) => {
             }
         }
 
-        // 已登入用戶訪問登入/註冊頁面
-        if (isAuthenticated && (to.name === 'Login' || to.name === 'Register')) {
-            next({ name: 'Home' })
+        // 已登入時不能訪問的頁面
+        if (isAuthenticated && to.meta.hideForAuth) {
+            next({ path: '/' })
             return
         }
 
@@ -130,7 +128,6 @@ router.beforeEach(async (to, from, next) => {
     }
 })
 
-// 全局錯誤處理
 router.onError((error) => {
     console.error('路由錯誤:', error)
     router.push('/404')

@@ -8,7 +8,8 @@ import order from './modules/order'
 export default createStore({
     state: {
         loading: false,
-        error: null
+        error: null,
+        notification: null
     },
 
     mutations: {
@@ -20,6 +21,12 @@ export default createStore({
         },
         CLEAR_ERROR(state) {
             state.error = null
+        },
+        SET_NOTIFICATION(state, notification) {
+            state.notification = notification
+        },
+        CLEAR_NOTIFICATION(state) {
+            state.notification = null
         }
     },
 
@@ -29,9 +36,18 @@ export default createStore({
         },
         setError({ commit }, error) {
             commit('SET_ERROR', error)
+            setTimeout(() => {
+                commit('CLEAR_ERROR')
+            }, 3000)
         },
         clearError({ commit }) {
             commit('CLEAR_ERROR')
+        },
+        showNotification({ commit }, { message, type = 'info' }) {
+            commit('SET_NOTIFICATION', { message, type })
+            setTimeout(() => {
+                commit('CLEAR_NOTIFICATION')
+            }, 3000)
         }
     },
 
@@ -45,6 +61,7 @@ export default createStore({
 
     getters: {
         isLoading: state => state.loading,
-        error: state => state.error
+        error: state => state.error,
+        notification: state => state.notification
     }
 })
