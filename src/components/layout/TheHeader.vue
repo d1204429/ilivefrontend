@@ -1,240 +1,147 @@
 <template>
-  <CHeader class="header">
-    <CContainer fluid>
-      <!-- Logo區域 -->
-      <CHeaderBrand href="/" class="header-brand">
-        <img src="@/assets/logo.svg" alt="iLive Logo" class="header-logo">
-        <span class="brand-text">iLive 商城</span>
-      </CHeaderBrand>
+  <header class="header">
+    <div class="header-container">
+      <!-- 漢堡選單按鈕 -->
+      <button
+          class="menu-toggle"
+          @click="toggleMenu"
+          v-show="isMobile"
+      >
+        <i class="fas fa-bars"></i>
+      </button>
 
-      <!-- 導航切換按鈕 -->
-      <CHeaderToggler
-          class="header-toggler"
-          @click="toggleNavbar"
-      />
+      <!-- 搜尋欄 -->
+      <div class="search-box">
+        <input
+            type="search"
+            v-model="searchKeyword"
+            placeholder="Search"
+            @keyup.enter="handleSearch"
+        >
+        <button @click="handleSearch">
+          <i class="fas fa-search"></i>
+        </button>
+      </div>
 
-      <!-- 導航區域 -->
-      <CCollapse class="header-collapse" :visible="isNavVisible">
-        <!-- 主導航 -->
-        <CHeaderNav class="header-nav">
-          <CNavItem>
-            <CNavLink href="/" :active="currentPath === '/'">
-              首頁
-            </CNavLink>
-          </CNavItem>
-
-          <CNavItem>
-            <CNavLink href="/products" :active="currentPath === '/products'">
-              商品列表
-            </CNavLink>
-          </CNavItem>
-
-          <!-- 商品分類下拉選單 -->
-          <CDropdown variant="nav-item" :popper="false">
-            <CDropdownToggle>商品分類</CDropdownToggle>
-            <CDropdownMenu>
-              <CDropdownItem
-                  v-for="category in categories"
-                  :key="category.id"
-                  :href="`/category/${category.id}`"
-              >
-                {{ category.name }}
-              </CDropdownItem>
-            </CDropdownMenu>
-          </CDropdown>
-        </CHeaderNav>
-
-        <!-- 搜尋欄位 -->
-        <div class="search-box">
-          <CFormInput
-              type="search"
-              placeholder="搜尋商品..."
-              v-model="searchKeyword"
-              @keyup.enter="handleSearch"
-          />
-          <CButton color="primary" @click="handleSearch">
-            <i class="fas fa-search"></i>
-          </CButton>
-        </div>
-
-        <!-- 用戶操作區 -->
-        <div class="user-actions">
-          <!-- 購物車 -->
-          <CNavLink href="/cart" class="cart-link">
-            <i class="fas fa-shopping-cart"></i>
-            <CBadge color="danger" v-if="cartItemCount > 0">
-              {{ cartItemCount }}
-            </CBadge>
-          </CNavLink>
-
-          <!-- 用戶選單 -->
-          <CDropdown v-if="isLoggedIn" variant="nav-item">
-            <CDropdownToggle>
-              <i class="fas fa-user"></i>
-              {{ userName }}
-            </CDropdownToggle>
-            <CDropdownMenu>
-              <CDropdownItem href="/profile">個人資料</CDropdownItem>
-              <CDropdownItem href="/orders">訂單記錄</CDropdownItem>
-              <CDropdownDivider />
-              <CDropdownItem @click="handleLogout">登出</CDropdownItem>
-            </CDropdownMenu>
-          </CDropdown>
-
-          <!-- 未登入狀態 -->
-          <template v-else>
-            <CNavLink href="/login" class="auth-link">登入</CNavLink>
-            <CNavLink href="/register" class="auth-link">註冊</CNavLink>
-          </template>
-        </div>
-      </CCollapse>
-    </CContainer>
-  </CHeader>
+      <!-- 用戶操作區 -->
+      <nav class="user-nav">
+        <template v-if="isLoggedIn">
+          <router-link to="/profile" class="nav-link">
+            <i class="fas fa-user"></i>
+          </router-link>
+        </template>
+        <template v-else>
+          <router-link to="/login" class="nav-link">登入</router-link>
+          <router-link to="/register" class="nav-link">註冊</router-link>
+        </template>
+        <router-link to="/orders" class="nav-link">訂單</router-link>
+        <router-link to="/cart" class="cart-link">
+          <i class="fas fa-shopping-cart"></i>
+          <span v-if="cartItemCount > 0" class="cart-count">
+            {{ cartItemCount }}
+          </span>
+        </router-link>
+      </nav>
+    </div>
+  </header>
 </template>
-
-<script>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useStore } from 'vuex'
-
-export default {
-  name: 'TheHeader',
-
-  setup() {
-    const store = useStore()
-    const router = useRouter()
-    const route = useRoute()
-
-    // 響應式狀態
-    const isNavVisible = ref(false)
-    const searchKeyword = ref('')
-    const categories = ref([])
-
-    // 計算屬性
-    const currentPath = computed(() => route.path)
-    const isLoggedIn = computed(() => store.state.auth.isLoggedIn)
-    const userName = computed(() => store.state.auth.user?.username)
-    const cartItemCount = computed(() => store.state.cart.items.length)
-
-    // 方法
-    const toggleNavbar = () => {
-      isNavVisible.value = !isNavVisible.value
-    }
-
-    const handleSearch = () => {
-      if (searchKeyword.value.trim()) {
-        router.push({
-          path: '/products',
-          query: { keyword: searchKeyword.value }
-        })
-      }
-    }
-
-    const handleLogout = async () => {
-      try {
-        await store.dispatch('auth/logout')
-        router.push('/login')
-      } catch (error) {
-        console.error('登出失敗:', error)
-      }
-    }
-
-    // 生命週期鉤子
-    onMounted(async () => {
-      try {
-        const response = await store.dispatch('fetchCategories')
-        categories.value = response.data
-      } catch (error) {
-        console.error('獲取分類失敗:', error)
-      }
-    })
-
-    return {
-      isNavVisible,
-      searchKeyword,
-      categories,
-      currentPath,
-      isLoggedIn,
-      userName,
-      cartItemCount,
-      toggleNavbar,
-      handleSearch,
-      handleLogout
-    }
-  }
-}
-</script>
 
 <style scoped>
 .header {
-  background-color: #ffffff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: #fff;
+  border-bottom: 1px solid #eee;
+  padding: 0.5rem 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
 }
 
-.header-brand {
+.header-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-}
-
-.header-logo {
+  justify-content: space-between;
   height: 40px;
-  width: auto;
-}
-
-.brand-text {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--primary-color);
-}
-
-.header-nav {
-  margin-left: 2rem;
 }
 
 .search-box {
-  display: flex;
-  gap: 0.5rem;
-  max-width: 400px;
-  margin: 0 1rem;
+  flex: 1;
+  max-width: 600px;
+  margin: 0 2rem;
+  position: relative;
 }
 
-.user-actions {
+.search-box input {
+  width: 100%;
+  padding: 0.5rem 2.5rem 0.5rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.search-box button {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+}
+
+.user-nav {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 1.5rem;
+}
+
+.nav-link {
+  color: #333;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.nav-link:hover {
+  color: var(--primary-color);
 }
 
 .cart-link {
   position: relative;
+  color: #333;
+  text-decoration: none;
 }
 
-.auth-link {
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  transition: background-color 0.3s;
+.cart-count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: var(--primary-color);
+  color: white;
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 10px;
 }
 
-.auth-link:hover {
-  background-color: var(--light-gray);
-}
-
-/* RWD 響應式設計 */
 @media (max-width: 768px) {
-  .header-collapse {
-    flex-direction: column;
+  .header-container {
+    flex-wrap: wrap;
+    height: auto;
+    gap: 1rem;
   }
 
   .search-box {
+    order: 2;
+    margin: 0;
     width: 100%;
-    margin: 1rem 0;
   }
 
-  .user-actions {
-    width: 100%;
-    justify-content: center;
-    padding: 1rem 0;
-    border-top: 1px solid var(--border-color);
+  .user-nav {
+    order: 1;
   }
 }
 </style>
