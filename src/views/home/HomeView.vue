@@ -68,7 +68,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
-import ProductCard from '@/components/ProductCard.vue'
+import ProductCard from '@/components/product/ProductCard.vue'
 
 export default {
   name: 'HomeView',
@@ -183,10 +183,15 @@ export default {
 <style scoped>
 .home {
   padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .carousel-section {
   margin-bottom: 3rem;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .section-title {
@@ -194,6 +199,19 @@ export default {
   color: var(--primary-color);
   margin-bottom: 1.5rem;
   text-align: center;
+  position: relative;
+  padding-bottom: 0.5rem;
+}
+
+.section-title::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 3px;
+  background-color: var(--primary-color);
 }
 
 .products-grid {
@@ -215,17 +233,24 @@ export default {
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
-  transition: transform 0.3s ease;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .category-card:hover {
   transform: translateY(-5px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 .category-card img {
   width: 100%;
   height: 150px;
   object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.category-card:hover img {
+  transform: scale(1.05);
 }
 
 .category-card h3 {
@@ -233,6 +258,7 @@ export default {
   margin: 0;
   text-align: center;
   font-size: 1.1rem;
+  color: var(--text-color);
 }
 
 @media (max-width: 768px) {
@@ -248,6 +274,10 @@ export default {
   .categories-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 1rem;
+  }
+
+  .section-title {
+    font-size: 1.5rem;
   }
 }
 </style>

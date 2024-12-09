@@ -13,23 +13,25 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    host: true, // 新增host設定以允許網路訪問
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        rewrite: (path) => path.replace(/^\/api/, ''),
+        secure: false // 允許不安全的https
       }
     }
   },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: true,
+    sourcemap: process.env.NODE_ENV === 'development',
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: true,
-        drop_debugger: true
+        drop_console: process.env.NODE_ENV === 'production',
+        drop_debugger: process.env.NODE_ENV === 'production'
       }
     },
     rollupOptions: {
@@ -38,21 +40,48 @@ export default defineConfig({
           'vendor': [
             'vue',
             'vue-router',
-            'vuex',
+            'pinia',
             'axios'
+          ],
+          'styles': [
+            'bootstrap',
+            '@fortawesome/fontawesome-free'
           ]
-        }
+        },
+        chunkFileNames: 'assets/js/[name]-[hash].js',
+        entryFileNames: 'assets/js/[name]-[hash].js',
+        assetFileNames: 'assets/[ext]/[name]-[hash].[ext]'
       }
     }
   },
   css: {
     preprocessorOptions: {
       scss: {
-        additionalData: `@import "@/assets/styles/variables.scss";`
+        additionalData: `
+          @import "@/assets/styles/variables.scss";
+          @import "@/assets/styles/mixins.scss";
+        `
       }
-    }
+    },
+    devSourcemap: true
   },
   optimizeDeps: {
-    include: ['vue', 'vue-router', 'vuex', 'axios']
+    include: [
+      'vue',
+      'vue-router',
+      'pinia',
+      'axios',
+      'bootstrap',
+      '@fortawesome/fontawesome-free'
+    ]
+  },
+  // 新增環境變量前綴
+  envPrefix: 'VITE_',
+  // 新增base URL配置
+  base: '/',
+  // 新增預覽配置
+  preview: {
+    port: 8080,
+    host: true
   }
 })
