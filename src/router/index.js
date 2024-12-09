@@ -80,50 +80,57 @@ const router = createRouter({
                 title: '商品分類'
             }
         },
+        // 404路由配置
         {
-            path: '/:pathMatch(.*)*',
+            path: '/404',
             name: 'NotFound',
             component: () => import('@/views/NotFoundView.vue'),
             meta: {
                 title: '404 Not Found'
             }
+        },
+        // 捕獲所有未匹配的路由
+        {
+            path: '/:pathMatch(.*)*',
+            redirect: '/404'
         }
     ]
 })
 
-// 導航守衛
+// 全局前置守衛
 router.beforeEach(async (to, from, next) => {
     // 設置頁面標題
     document.title = to.meta.title ? `${to.meta.title} - iLive商城` : 'iLive商城'
 
-    const isAuthenticated = localStorage.getItem('token')
+    const token = localStorage.getItem('token')
+    const isAuthenticated = !!token
 
     try {
-        // 檢查是否需要驗證
+        // 需要驗證的路由
         if (to.matched.some(record => record.meta.requiresAuth)) {
             if (!isAuthenticated) {
                 next({
                     path: '/login',
                     query: { redirect: to.fullPath }
                 })
-            } else {
-                next()
-            }
-        } else {
-            // 已登入用戶訪問登入/註冊頁面時重定向到首頁
-            if (isAuthenticated && (to.name === 'Login' || to.name === 'Register')) {
-                next({ name: 'Home' })
-            } else {
-                next()
+                return
             }
         }
+
+        // 已登入用戶訪問登入/註冊頁面
+        if (isAuthenticated && (to.name === 'Login' || to.name === 'Register')) {
+            next({ name: 'Home' })
+            return
+        }
+
+        next()
     } catch (error) {
         console.error('路由守衛錯誤:', error)
         next('/404')
     }
 })
 
-// 錯誤處理
+// 全局錯誤處理
 router.onError((error) => {
     console.error('路由錯誤:', error)
     router.push('/404')
