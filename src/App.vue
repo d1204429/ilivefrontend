@@ -1,47 +1,91 @@
-<script setup>
-import HelloWorld from './components/HelloWorld.vue'
-import TheWelcome from './components/TheWelcome.vue'
-</script>
-
 <template>
-  <header>
-    <img alt="Vue logo" class="logo" src="./assets/logo.svg" width="125" height="125" />
+  <div id="app">
+    <!-- 導航欄 -->
+    <TheHeader />
 
-    <div class="wrapper">
-      <HelloWorld msg="You did it!" />
-    </div>
-  </header>
+    <!-- 主要內容區 -->
+    <main class="main-content">
+      <router-view></router-view>
+    </main>
 
-  <main>
-    <TheWelcome />
-  </main>
+    <!-- 頁尾 -->
+    <TheFooter />
+  </div>
 </template>
 
-<style scoped>
-header {
+<script>
+import TheHeader from '@/components/layout/TheHeader.vue'
+import TheFooter from '@/components/layout/TheFooter.vue'
+
+export default {
+  name: 'App',
+
+  components: {
+    TheHeader,
+    TheFooter
+  },
+
+  setup() {
+    // 監聽路由變化，處理頁面捲動
+    const handleRouteChange = () => {
+      window.scrollTo(0, 0)
+    }
+
+    return {
+      handleRouteChange
+    }
+  }
+}
+</script>
+
+<style>
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  padding-top: var(--header-height);
+  background-color: #f5f5f5;
+}
+
+/* 全局基礎樣式 */
+:root {
+  --primary-color: #00539f;
+  --secondary-color: #ff9500;
+  --text-color: #333333;
+  --border-color: #dee2e6;
+  --header-height: 80px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   line-height: 1.5;
+  color: var(--text-color);
 }
 
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
+a {
+  text-decoration: none;
+  color: inherit;
 }
 
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
-  }
+img {
+  max-width: 100%;
+  height: auto;
+}
 
-  .logo {
-    margin: 0 2rem 0 0;
-  }
-
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
+/* 響應式設計 */
+@media (max-width: 768px) {
+  .main-content {
+    padding-top: 60px;
   }
 }
 </style>
