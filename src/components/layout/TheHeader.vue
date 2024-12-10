@@ -31,6 +31,7 @@
             </div>
           </div>
           <router-link to="/about" class="menu-item" @click="toggleMenu">關於我們</router-link>
+          <router-link to="/contact" class="menu-item" @click="toggleMenu">聯絡我們</router-link>
         </nav>
       </div>
 
@@ -53,12 +54,12 @@
           <router-link to="/profile" class="nav-link">
             <i class="fas fa-user"></i>
           </router-link>
+          <router-link to="/orders" class="nav-link">訂單</router-link>
         </template>
         <template v-else>
           <router-link to="/login" class="nav-link">登入</router-link>
           <router-link to="/register" class="nav-link">註冊</router-link>
         </template>
-        <router-link to="/orders" class="nav-link">訂單</router-link>
         <router-link to="/cart" class="cart-link">
           <i class="fas fa-shopping-cart"></i>
           <span v-if="cartItemCount > 0" class="cart-count">
@@ -78,8 +79,12 @@ export default {
       isMenuOpen: false,
       isCategoryOpen: false,
       searchKeyword: '',
-      isLoggedIn: false,
       cartItemCount: 0
+    }
+  },
+  computed: {
+    isLoggedIn() {
+      return !!localStorage.getItem('token')
     }
   },
   methods: {
@@ -94,7 +99,13 @@ export default {
       this.isCategoryOpen = !this.isCategoryOpen;
     },
     handleSearch() {
-      console.log('Searching for:', this.searchKeyword);
+      if (this.searchKeyword.trim()) {
+        this.$router.push({
+          path: '/products',
+          query: { search: this.searchKeyword.trim() }
+        });
+        this.searchKeyword = '';
+      }
     }
   }
 }
