@@ -83,6 +83,22 @@ const router = createRouter({
             }
         },
         {
+            path: '/about',
+            name: 'About',
+            component: () => import('@/views/about/AboutView.vue'),
+            meta: {
+                title: '關於我們'
+            }
+        },
+        {
+            path: '/contact',
+            name: 'Contact',
+            component: () => import('@/views/contact/ContactView.vue'),
+            meta: {
+                title: '聯絡我們'
+            }
+        },
+        {
             path: '/404',
             name: 'NotFound',
             component: () => import('@/views/NotFoundView.vue'),
@@ -98,13 +114,14 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
+    // 設置頁面標題
     document.title = to.meta.title ? `${to.meta.title} - iLive商城` : 'iLive商城'
 
     try {
         const token = localStorage.getItem('token')
         const isAuthenticated = !!token
 
-        // 需要登入的頁面
+        // 檢查需要登入的頁面
         if (to.matched.some(record => record.meta.requiresAuth)) {
             if (!isAuthenticated) {
                 next({
@@ -115,10 +132,15 @@ router.beforeEach(async (to, from, next) => {
             }
         }
 
-        // 已登入時不能訪問的頁面
+        // 檢查已登入用戶不能訪問的頁面
         if (isAuthenticated && to.meta.hideForAuth) {
             next({ path: '/' })
             return
+        }
+
+        // 儲存上一頁路徑（用於返回功能）
+        if (!to.meta.hideForAuth) {
+            localStorage.setItem('previousPath', from.fullPath)
         }
 
         next()
@@ -128,6 +150,7 @@ router.beforeEach(async (to, from, next) => {
     }
 })
 
+// 全局路由錯誤處理
 router.onError((error) => {
     console.error('路由錯誤:', error)
     router.push('/404')
