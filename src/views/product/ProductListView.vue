@@ -6,7 +6,7 @@
       <div class="filter-controls">
         <BaseInput
             v-model="searchKeyword"
-            placeholder="搜尋商品..."
+            placeholder="        搜尋商品..."
             prefix-icon="fas fa-search"
             @input="handleSearch"
         />

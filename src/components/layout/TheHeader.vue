@@ -40,7 +40,7 @@
         <input
             type="search"
             v-model="searchKeyword"
-            placeholder="Search"
+            placeholder="収尋"
             @keyup.enter="handleSearch"
         >
         <button @click="handleSearch">
