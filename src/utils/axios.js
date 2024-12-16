@@ -2,75 +2,90 @@ import axios from 'axios'
 
 // 建立 axios 實例
 const api = axios.create({
-    baseURL: '/api/v1',
-    timeout: 10000,
+    baseURL: 'http://localhost:1988/api/v1', // 更新為實際的後端 API URL
+    timeout: 15000,
     headers: {
-        'Content-Type': 'application/json'
-    }
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    },
+    withCredentials: true // 允許跨域請求攜帶憑證
 })
 
 // 請求攔截器
 api.interceptors.request.use(
     config => {
-        // 從 localStorage 獲取 token
-        const token = localStorage.getItem('token')
-        if (token) {
-            config.headers['Authorization'] = `Bearer ${token}`
+        const accessToken = localStorage.getItem('accessToken')
+        if (accessToken) {
+            config.headers['Authorization'] = `Bearer ${accessToken}`
         }
         return config
     },
     error => {
+        console.error('Request Error:', error)
         return Promise.reject(error)
     }
 )
-
 // 響應攔截器
 api.interceptors.response.use(
     response => response.data,
     async error => {
-        const originalRequest = error.config;
-        if (error.response.status === 401 && !originalRequest._retry) {
-            originalRequest._retry = true;
+        const originalRequest = error.config
+        if (error.response?.status === 401 && !originalRequest._retry) {
+            originalRequest._retry = true
             try {
-                // 嘗試刷新 token
-                await store.dispatch('auth/refreshToken');
-                return api(originalRequest);
+                const refreshToken = localStorage.getItem('refreshToken')
+                if (!refreshToken) {
+                    throw new Error('No refresh token available')
+                }
+                const response = await api.post('/users/refresh-token', { refreshToken })
+                const { accessToken } = response.data
+                localStorage.setItem('accessToken', accessToken)
+                api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
+                return api(originalRequest)
             } catch (refreshError) {
-                // 如果刷新失敗，登出用戶
-                await store.dispatch('auth/logout');
-                window.location.href = '/login';
-                return Promise.reject(refreshError);
+                console.error('Token refresh failed:', refreshError)
+                store.dispatch('user/logout')
+                router.push('/login')
+                return Promise.reject(refreshError)
             }
         }
-        handleError(error);
-        return Promise.reject(error);
+        handleApiError(error)
+        return Promise.reject(error)
     }
 )
 // 全局錯誤處理函數
-function handleError(error) {
+function handleApiError(error) {
     if (error.response) {
-        switch (error.response.status) {
+        const status = error.response.status
+        const errorMessage = error.response.data?.message || '發生錯誤，請稍後再試'
+
+        switch (status) {
+            case 400:
+                console.error('Bad Request:', errorMessage)
+                break
             case 403:
-                // 無權限
-                window.location.href = '/403';
-                break;
+                router.push('/403')
+                break
             case 404:
-                // 找不到資源
-                window.location.href = '/404';
-                break;
+                router.push('/404')
+                break
             case 500:
-                // 伺服器錯誤
-                window.location.href = '/500';
-                break;
+                router.push('/500')
+                break
             default:
-                console.error('API錯誤:', error.response.data);
+                console.error(`HTTP Error ${status}:`, errorMessage)
         }
+
+        store.commit('app/SET_ERROR', { show: true, message: errorMessage })
     } else if (error.request) {
-        console.error('無法連接到伺服器');
+        console.error('Network Error:', error.request)
+        store.commit('app/SET_ERROR', { show: true, message: '無法連接到伺服器，請檢查網路連線' })
     } else {
-        console.error('請求配置錯誤', error.message);
+        console.error('Error:', error.message)
+        store.commit('app/SET_ERROR', { show: true, message: '發生未知錯誤' })
     }
 }
+
 // 用戶相關 API
 export const userApi = {
     // 登入

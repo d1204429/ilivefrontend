@@ -9,15 +9,15 @@
       </div>
 
       <form class="register-form" @submit.prevent="handleRegister">
-        <!-- 姓名欄位 -->
+        <!-- 用戶名欄位 -->
         <div class="form-group">
-          <label>姓名</label>
+          <label>用戶名</label>
           <BaseInput
-              v-model="formData.name"
+              v-model="formData.username"
               type="text"
-              placeholder="請輸入姓名"
-              :error="validationErrors.name"
-              @blur="validateField('name')"
+              placeholder="請輸入用戶名"
+              :error="validationErrors.username"
+              @blur="validateField('username')"
           />
         </div>
 
@@ -33,15 +33,39 @@
           />
         </div>
 
+        <!-- 全名欄位 -->
+        <div class="form-group">
+          <label>全名</label>
+          <BaseInput
+              v-model="formData.fullName"
+              type="text"
+              placeholder="請輸入全名"
+              :error="validationErrors.fullName"
+              @blur="validateField('fullName')"
+          />
+        </div>
+
         <!-- 手機號碼欄位 -->
         <div class="form-group">
           <label>手機號碼</label>
           <BaseInput
-              v-model="formData.phone"
+              v-model="formData.phoneNumber"
               type="tel"
               placeholder="請輸入手機號碼"
-              :error="validationErrors.phone"
-              @blur="validateField('phone')"
+              :error="validationErrors.phoneNumber"
+              @blur="validateField('phoneNumber')"
+          />
+        </div>
+
+        <!-- 地址欄位 -->
+        <div class="form-group">
+          <label>地址</label>
+          <BaseInput
+              v-model="formData.address"
+              type="text"
+              placeholder="請輸入地址"
+              :error="validationErrors.address"
+              @blur="validateField('address')"
           />
         </div>
 
@@ -121,27 +145,38 @@ export default {
 
     // 表單資料
     const formData = reactive({
-      name: '',
+      username: '',
       email: '',
-      phone: '',
+      fullName: '',
+      phoneNumber: '',
+      address: '',
       password: '',
       confirmPassword: ''
     })
 
     // 驗證規則
     const validationRules = {
-      name: [
-        v => !!v || '請輸入姓名',
-        v => v.length >= 2 || '姓名至少需要2個字元',
-        v => v.length <= 20 || '姓名不能超過20個字元'
+      username: [
+        v => !!v || '請輸入用戶名',
+        v => v.length >= 3 || '用戶名至少需要3個字元',
+        v => v.length <= 20 || '用戶名不能超過20個字元'
       ],
       email: [
         v => !!v || '請輸入電子郵件',
         v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || '請輸入有效的電子郵件'
       ],
-      phone: [
+      fullName: [
+        v => !!v || '請輸入全名',
+        v => v.length >= 2 || '全名至少需要2個字元',
+        v => v.length <= 50 || '全名不能超過50個字元'
+      ],
+      phoneNumber: [
         v => !!v || '請輸入手機號碼',
         v => /^09\d{8}$/.test(v) || '請輸入有效的手機號碼'
+      ],
+      address: [
+        v => !!v || '請輸入地址',
+        v => v.length >= 5 || '地址至少需要5個字元'
       ],
       password: [
         v => !!v || '請輸入密碼',
@@ -203,16 +238,18 @@ export default {
         isLoading.value = true
         globalError.value = ''
 
-        await store.dispatch('auth/register', {
-          name: formData.name,
+        await store.dispatch('user/register', {
+          username: formData.username,
           email: formData.email,
-          phone: formData.phone,
+          fullName: formData.fullName,
+          phoneNumber: formData.phoneNumber,
+          address: formData.address,
           password: formData.password
         })
 
         // 註冊成功後自動登入
-        await store.dispatch('auth/login', {
-          email: formData.email,
+        await store.dispatch('user/login', {
+          username: formData.username,
           password: formData.password
         })
 
@@ -304,6 +341,12 @@ export default {
 
 .login-link a:hover {
   text-decoration: underline;
+}
+
+.error-message {
+  color: #ff0000;
+  margin-bottom: 1rem;
+  text-align: center;
 }
 
 @media (max-width: 480px) {

@@ -2,17 +2,18 @@ import axios from 'axios'
 
 // API基礎配置
 const api = axios.create({
-    baseURL: '/api/v1',
+    baseURL: 'http://localhost:1988/api/v1', // 更新為後端API的實際URL
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
-    }
+    },
+    withCredentials: true // 啟用跨域請求時發送cookies
 })
 
 // 請求攔截器
 api.interceptors.request.use(
     config => {
-        const token = localStorage.getItem('token')
+        const token = localStorage.getItem('accessToken')
         if (token) {
             config.headers['Authorization'] = `Bearer ${token}`
         }
@@ -28,20 +29,30 @@ api.interceptors.response.use(
     response => {
         return response.data
     },
-    error => {
+    async error => {
+        const originalRequest = error.config
+        if (error.response.status === 401 && !originalRequest._retry) {
+            originalRequest._retry = true
+            try {
+                const refreshToken = localStorage.getItem('refreshToken')
+                const response = await api.post('/users/refresh-token', { refreshToken })
+                const { accessToken } = response.data
+                localStorage.setItem('accessToken', accessToken)
+                api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
+                return api(originalRequest)
+            } catch (refreshError) {
+                localStorage.removeItem('accessToken')
+                localStorage.removeItem('refreshToken')
+                window.location.href = '/login'
+                return Promise.reject(refreshError)
+            }
+        }
         if (error.response) {
             switch (error.response.status) {
-                case 401:
-                    // 未授權，清除token並跳轉到登入頁
-                    localStorage.removeItem('token')
-                    window.location.href = '/login'
-                    break
                 case 403:
-                    // 無權限
                     window.location.href = '/403'
                     break
                 case 404:
-                    // 找不到資源
                     window.location.href = '/404'
                     break
                 default:
@@ -84,7 +95,8 @@ export const orderApi = {
     createOrder: (data) => api.post('/orders', data),
     getOrders: () => api.get('/orders'),
     getOrderById: (id) => api.get(`/orders/${id}`),
-    cancelOrder: (id) => api.put(`/orders/${id}/cancel`)
+    cancelOrder: (id) => api.put(`/orders/${id}/cancel`),
+    processPayment: (orderId, data) => api.post(`/orders/${orderId}/payment`, data)
 }
 
 export default api
