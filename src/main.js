@@ -3,27 +3,28 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import axios from './utils/axios'
+import { BootstrapVue3 } from 'bootstrap-vue-3'
 
 // 引入樣式
 import './assets/base.css'
 import './assets/main.css'
 import 'bootstrap/dist/css/bootstrap.min.css'
+import 'bootstrap-vue-3/dist/bootstrap-vue-3.css'
 import '@fortawesome/fontawesome-free/css/all.css'
 
 // 創建Vue應用實例
 const app = createApp(App)
 
-// 使用Pinia狀態管理
-const pinia = createPinia()
-app.use(pinia)
-
-// 使用Vue Router
+// 使用插件
+app.use(createPinia())
 app.use(router)
+app.use(BootstrapVue3)
 
 // 配置Axios
 app.config.globalProperties.$axios = axios
 axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1'
 axios.defaults.timeout = parseInt(import.meta.env.VITE_API_TIMEOUT || '15000')
+axios.defaults.withCredentials = false // 避免 CORS 預檢請求問題
 
 // 全局錯誤處理
 app.config.errorHandler = (err, vm, info) => {
@@ -31,16 +32,13 @@ app.config.errorHandler = (err, vm, info) => {
     console.error('錯誤組件:', vm)
     console.error('錯誤信息:', info)
 
-    // 可以添加錯誤上報邏輯
     if (import.meta.env.PROD) {
-        // 生產環境錯誤處理
-        // 這裡可以添加錯誤日誌上報服務
+        // TODO: 添加生產環境錯誤日誌上報服務
     }
 }
 
 // 全局導航守衛
 router.beforeEach(async (to, from, next) => {
-    // 設置頁面標題
     document.title = to.meta.title ? `${to.meta.title} - iLive商城` : 'iLive商城'
 
     const accessToken = localStorage.getItem('accessToken')
@@ -56,11 +54,21 @@ router.beforeEach(async (to, from, next) => {
                 return
             }
 
-            // 可以在這裡添加token驗證邏輯
-            // 例如：檢查token是否過期，如果過期則嘗試刷新
+            // TODO: 添加 token 驗證邏輯
+            const user = JSON.parse(localStorage.getItem('user'))
+            if (user && user.accessToken) {
+                // 驗證 token
+                try {
+                    await axios.get('/users/verify-token')
+                } catch (error) {
+                    if (error.response?.status === 401) {
+                        next('/login')
+                        return
+                    }
+                }
+            }
         }
 
-        // 已登入用戶訪問登入/註冊頁面
         if (isAuthenticated && (to.name === 'Login' || to.name === 'Register')) {
             next({ name: 'Home' })
             return
@@ -86,22 +94,43 @@ if (import.meta.env.DEV) {
 
 // 全局組件註冊
 import BaseButton from './components/common/BaseButton.vue'
+import BaseInput from './components/common/BaseInput.vue'
 app.component('BaseButton', BaseButton)
+app.component('BaseInput', BaseInput)
 
 // 全局指令註冊
 app.directive('focus', {
     mounted: (el) => el.focus()
 })
 
-// 全局過濾器（Vue 3 使用全局方法替代）
+// 全局方法
 app.config.globalProperties.$filters = {
     currency(value) {
         return `$${value.toFixed(2)}`
+    },
+    date(value) {
+        return new Date(value).toLocaleDateString()
     }
 }
 
-// 掛載應用
-app.mount('#app')
+// 初始化函數
+const initializeApp = async () => {
+    try {
+        // 檢查並恢復用戶會話
+        const accessToken = localStorage.getItem('accessToken')
+        if (accessToken) {
+            axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
+        }
 
-// 導出app實例（用於測試）
-export { app, router, pinia }
+        // 掛載應用
+        app.mount('#app')
+    } catch (error) {
+        console.error('應用初始化失敗:', error)
+    }
+}
+
+// 啟動應用
+initializeApp()
+
+// 導出實例（用於測試）
+export { app, router }

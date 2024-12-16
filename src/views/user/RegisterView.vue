@@ -280,76 +280,166 @@ export default {
 </script>
 
 <style scoped>
+/* 將 .register-view 和 .register-container 使用登入頁面的樣式 */
 .register-view {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background-color: #f5f5f5;
-  padding: 2rem;
+  background-color: #f8f9fa;
+  padding: 1rem;
 }
 
 .register-container {
   width: 100%;
   max-width: 400px;
-  background: white;
   padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
+/* 標題樣式 */
 .register-title {
   text-align: center;
-  color: var(--primary-color);
+  color: #2c3e50;
   margin-bottom: 2rem;
+  font-weight: 600;
 }
 
-.register-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
+/* 表單群組樣式 */
 .form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  margin-bottom: 1.5rem;
 }
 
-.form-group label {
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #2c3e50;
   font-weight: 500;
-  color: #333;
 }
 
-.register-button {
-  margin-top: 1rem;
+/* 輸入框樣式 */
+input {
   width: 100%;
+  padding: 0.75rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: all 0.3s ease;
 }
 
+input:focus {
+  outline: none;
+  border-color: #4299e1;
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
+}
+
+input.error {
+  border-color: #e53e3e;
+}
+
+/* 密碼輸入框樣式 */
+.password-input {
+  position: relative;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #718096;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+.password-toggle:hover {
+  color: #4a5568;
+}
+
+/* 錯誤訊息樣式 */
+.error-message {
+  background-color: #fff5f5;
+  border: 1px solid #feb2b2;
+  color: #c53030;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+}
+
+/* 註冊按鈕樣式 */
+.register-button {
+  width: 100%;
+  padding: 0.75rem;
+  background-color: #4299e1;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.register-button:hover:not(:disabled) {
+  background-color: #3182ce;
+  transform: translateY(-1px);
+}
+
+.register-button:disabled {
+  background-color: #a0aec0;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 登入連結樣式 */
 .login-link {
   text-align: center;
-  margin-top: 1rem;
+  margin-top: 1.5rem;
   color: #666;
 }
 
 .login-link a {
-  color: var(--primary-color);
+  color: #4299e1;
   text-decoration: none;
+  font-size: 0.875rem;
+  transition: color 0.3s ease;
 }
 
 .login-link a:hover {
+  color: #3182ce;
   text-decoration: underline;
 }
 
-.error-message {
-  color: #ff0000;
-  margin-bottom: 1rem;
-  text-align: center;
+/* 動畫效果 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
 }
 
-@media (max-width: 480px) {
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 響應式設計 */
+@media (max-width: 640px) {
   .register-container {
+    margin: 1rem;
     padding: 1.5rem;
+  }
+
+  .register-title {
+    font-size: 1.5rem;
   }
 }
 </style>
