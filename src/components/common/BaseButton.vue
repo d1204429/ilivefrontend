@@ -1,30 +1,25 @@
 <template>
   <button
-      :class="[
-      'base-button',
-      `base-button--${type}`,
-      `base-button--${size}`,
-      { 'base-button--block': block },
-      { 'base-button--disabled': disabled }
-    ]"
-      :disabled="disabled"
+      :class="buttonClasses"
+      :type="htmlType"
+      :disabled="disabled || loading"
       @click="handleClick"
   >
-    <!-- 左側圖標 -->
-    <i v-if="leftIcon" :class="['button-icon', leftIcon]"></i>
-
-    <!-- 按鈕內容 -->
-    <span class="button-content">
-      <slot></slot>
-    </span>
-
-    <!-- 右側圖標 -->
-    <i v-if="rightIcon" :class="['button-icon', rightIcon]"></i>
-
     <!-- 載入動畫 -->
     <span v-if="loading" class="button-loading">
       <i class="fas fa-spinner fa-spin"></i>
     </span>
+
+    <!-- 左側圖標 -->
+    <i v-if="leftIcon && !loading" :class="['button-icon', leftIcon]"></i>
+
+    <!-- 按鈕內容 -->
+    <span class="button-content" :class="{ 'hidden': loading }">
+      <slot></slot>
+    </span>
+
+    <!-- 右側圖標 -->
+    <i v-if="rightIcon && !loading" :class="['button-icon', rightIcon]"></i>
   </button>
 </template>
 
@@ -33,8 +28,15 @@ export default {
   name: 'BaseButton',
 
   props: {
-    // 按鈕類型
-    type: {
+    // HTML 按鈕類型
+    htmlType: {
+      type: String,
+      default: 'button',
+      validator: value => ['button', 'submit', 'reset'].includes(value)
+    },
+
+    // 按鈕樣式類型
+    variant: {
       type: String,
       default: 'primary',
       validator: value => [
@@ -85,6 +87,35 @@ export default {
     block: {
       type: Boolean,
       default: false
+    },
+
+    // 是否為輪廓按鈕
+    outline: {
+      type: Boolean,
+      default: false
+    },
+
+    // 是否為圓角按鈕
+    rounded: {
+      type: Boolean,
+      default: false
+    }
+  },
+
+  computed: {
+    buttonClasses() {
+      return [
+        'base-button',
+        `base-button--${this.variant}`,
+        `base-button--${this.size}`,
+        {
+          'base-button--block': this.block,
+          'base-button--disabled': this.disabled || this.loading,
+          'base-button--outline': this.outline,
+          'base-button--rounded': this.rounded,
+          'base-button--loading': this.loading
+        }
+      ]
     }
   },
 
@@ -105,18 +136,24 @@ export default {
   justify-content: center;
   padding: 0.5rem 1rem;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   font-weight: 500;
+  font-size: 1rem;
+  line-height: 1.5;
+  text-align: center;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease-in-out;
   position: relative;
   outline: none;
+  white-space: nowrap;
+  user-select: none;
 }
 
 /* 尺寸變體 */
 .base-button--small {
   padding: 0.25rem 0.5rem;
   font-size: 0.875rem;
+  border-radius: 0.2rem;
 }
 
 .base-button--medium {
@@ -127,61 +164,104 @@ export default {
 .base-button--large {
   padding: 0.75rem 1.5rem;
   font-size: 1.125rem;
+  border-radius: 0.3rem;
 }
 
-/* 類型變體 */
+/* 主題變體 */
 .base-button--primary {
-  background-color: var(--primary-color);
+  background-color: #4299e1;
   color: #ffffff;
+  border-color: #4299e1;
 }
 
 .base-button--secondary {
-  background-color: #6c757d;
+  background-color: #718096;
   color: #ffffff;
+  border-color: #718096;
 }
 
 .base-button--success {
-  background-color: #28a745;
+  background-color: #48bb78;
   color: #ffffff;
+  border-color: #48bb78;
 }
 
 .base-button--danger {
-  background-color: #dc3545;
+  background-color: #f56565;
   color: #ffffff;
+  border-color: #f56565;
 }
 
 .base-button--warning {
-  background-color: #ffc107;
+  background-color: #ecc94b;
   color: #000000;
+  border-color: #ecc94b;
 }
 
 .base-button--info {
-  background-color: #17a2b8;
+  background-color: #4fd1c5;
   color: #ffffff;
+  border-color: #4fd1c5;
 }
 
 .base-button--light {
-  background-color: #f8f9fa;
-  color: #000000;
-  border: 1px solid #dee2e6;
+  background-color: #f7fafc;
+  color: #1a202c;
+  border-color: #e2e8f0;
 }
 
 .base-button--dark {
-  background-color: #343a40;
+  background-color: #2d3748;
   color: #ffffff;
+  border-color: #2d3748;
 }
 
 .base-button--link {
   background-color: transparent;
-  color: var(--primary-color);
+  color: #4299e1;
   text-decoration: none;
+  border-color: transparent;
+}
+
+/* 輪廓按鈕 */
+.base-button--outline {
+  background-color: transparent;
+}
+
+.base-button--outline.base-button--primary {
+  color: #4299e1;
+}
+
+.base-button--outline.base-button--secondary {
+  color: #718096;
+}
+
+.base-button--outline.base-button--success {
+  color: #48bb78;
+}
+
+.base-button--outline.base-button--danger {
+  color: #f56565;
+}
+
+.base-button--outline.base-button--warning {
+  color: #ecc94b;
+}
+
+.base-button--outline.base-button--info {
+  color: #4fd1c5;
+}
+
+/* 圓角按鈕 */
+.base-button--rounded {
+  border-radius: 9999px;
 }
 
 /* 狀態樣式 */
-.base-button--disabled,
-.base-button:disabled {
+.base-button--disabled {
   opacity: 0.65;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .base-button--block {
@@ -191,7 +271,16 @@ export default {
 
 /* 圖標樣式 */
 .button-icon {
-  margin: 0 0.5rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.button-icon:first-child {
+  margin-right: 0.5rem;
+}
+
+.button-icon:last-child {
+  margin-left: 0.5rem;
 }
 
 /* 載入動畫 */
@@ -202,23 +291,33 @@ export default {
   transform: translate(-50%, -50%);
 }
 
-.button-loading ~ .button-content {
-  opacity: 0;
+.base-button--loading {
+  color: transparent !important;
+}
+
+.base-button--loading .button-content {
+  visibility: hidden;
 }
 
 /* 懸停效果 */
-.base-button:not(.base-button--disabled):not(:disabled):hover {
+.base-button:not(.base-button--disabled):not(.base-button--loading):hover {
   opacity: 0.9;
+  transform: translateY(-1px);
 }
 
 /* 點擊效果 */
-.base-button:not(.base-button--disabled):not(:disabled):active {
+.base-button:not(.base-button--disabled):not(.base-button--loading):active {
   transform: translateY(1px);
 }
 
-@media (max-width: 768px) {
-  .base-button--block-mobile {
-    width: 100%;
+/* 響應式設計 */
+@media (max-width: 640px) {
+  .base-button {
+    font-size: 0.875rem;
+  }
+
+  .base-button--large {
+    font-size: 1rem;
   }
 }
 </style>

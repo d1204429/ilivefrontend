@@ -13,6 +13,7 @@
         <div class="form-group">
           <label>用戶名</label>
           <BaseInput
+              :id="'username-input'"
               v-model="formData.username"
               type="text"
               placeholder="請輸入用戶名"
