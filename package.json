@@ -18,7 +18,7 @@
     "@vuelidate/validators": "^2.0.4",
     "axios": "^1.6.2",
     "bootstrap": "^5.3.2",
-    "bootstrap-vue-3": "^0.5.1",
+    "bootstrap-vue-3": "^0.3.12",
     "core-js": "^3.33.3",
     "pinia": "^2.1.7",
     "vue": "^3.3.4",

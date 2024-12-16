@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import axios from './utils/axios'
+import store from './store/index.js'
 import { BootstrapVue3 } from 'bootstrap-vue-3'
 
 // 引入樣式
@@ -16,15 +17,16 @@ import '@fortawesome/fontawesome-free/css/all.css'
 const app = createApp(App)
 
 // 使用插件
+app.use(store)  // Vuex store 必須在其他插件之前使用
 app.use(createPinia())
 app.use(router)
 app.use(BootstrapVue3)
 
-// 配置Axios
+// 配置 Axios
 app.config.globalProperties.$axios = axios
 axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1'
 axios.defaults.timeout = parseInt(import.meta.env.VITE_API_TIMEOUT || '15000')
-axios.defaults.withCredentials = false // 避免 CORS 預檢請求問題
+axios.defaults.withCredentials = false
 
 // 全局錯誤處理
 app.config.errorHandler = (err, vm, info) => {
@@ -33,7 +35,7 @@ app.config.errorHandler = (err, vm, info) => {
     console.error('錯誤信息:', info)
 
     if (import.meta.env.PROD) {
-        // TODO: 添加生產環境錯誤日誌上報服務
+        // 生產環境錯誤處理
     }
 }
 
@@ -54,17 +56,13 @@ router.beforeEach(async (to, from, next) => {
                 return
             }
 
-            // TODO: 添加 token 驗證邏輯
-            const user = JSON.parse(localStorage.getItem('user'))
-            if (user && user.accessToken) {
-                // 驗證 token
-                try {
-                    await axios.get('/users/verify-token')
-                } catch (error) {
-                    if (error.response?.status === 401) {
-                        next('/login')
-                        return
-                    }
+            // 驗證 token
+            try {
+                await store.dispatch('user/verifyToken')
+            } catch (error) {
+                if (error.response?.status === 401) {
+                    next('/login')
+                    return
                 }
             }
         }
@@ -120,6 +118,7 @@ const initializeApp = async () => {
         const accessToken = localStorage.getItem('accessToken')
         if (accessToken) {
             axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
+            await store.dispatch('user/initializeAuth')
         }
 
         // 掛載應用
@@ -133,4 +132,4 @@ const initializeApp = async () => {
 initializeApp()
 
 // 導出實例（用於測試）
-export { app, router }
+export { app, router, store }
