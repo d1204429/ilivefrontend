@@ -48,13 +48,15 @@
         </div>
 
         <!-- 記住我選項 -->
-        <div class="remember-me">
-          <input
-              type="checkbox"
-              v-model="formData.rememberMe"
-              id="remember-me"
-          >
-          <label for="remember-me">記住我</label>
+        <div class="remember-me-container">
+          <label class="remember-me-label">
+            <input
+                type="checkbox"
+                v-model="formData.rememberMe"
+                class="remember-me-checkbox"
+            >
+            <span class="remember-me-text">記住我</span>
+          </label>
         </div>
 
         <!-- 錯誤訊息顯示 -->
@@ -94,6 +96,7 @@ import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import { useVuelidate } from '@vuelidate/core'
 import { required, minLength, helpers } from '@vuelidate/validators'
+import { userApi } from '@/utils/axios'
 
 export default {
   name: 'LoginView',
@@ -104,14 +107,12 @@ export default {
     const isLoading = ref(false)
     const showPassword = ref(false)
 
-    // 表單數據
     const formData = reactive({
       username: '',
       password: '',
       rememberMe: false
     })
 
-    // 表單驗證規則
     const rules = {
       username: {
         required: helpers.withMessage('請輸入帳號', required),
@@ -124,32 +125,37 @@ export default {
     }
 
     const v$ = useVuelidate(rules, formData)
-
-    // 從 store 獲取錯誤狀態
     const authError = computed(() => store.state.user.error)
 
-    // 處理表單提交
     const handleSubmit = async () => {
       try {
         const isFormValid = await v$.value.$validate()
         if (!isFormValid) return
 
         isLoading.value = true
-        await store.dispatch('user/login', {
+        const response = await userApi.login({
           username: formData.username,
           password: formData.password
         })
 
-        // 處理"記住我"功能
-        if (formData.rememberMe) {
-          localStorage.setItem('rememberedUsername', formData.username)
-        } else {
-          localStorage.removeItem('rememberedUsername')
-        }
+        if (response.accessToken) {
+          localStorage.setItem('accessToken', response.accessToken)
+          if (response.refreshToken) {
+            localStorage.setItem('refreshToken', response.refreshToken)
+          }
 
-        router.push('/')
+          if (formData.rememberMe) {
+            localStorage.setItem('rememberedUsername', formData.username)
+          } else {
+            localStorage.removeItem('rememberedUsername')
+          }
+
+          await store.dispatch('user/setUserInfo', response.user)
+          router.push('/')
+        }
       } catch (error) {
         console.error('登入失敗:', error)
+        store.commit('user/SET_ERROR', error.message || '登入失敗，請稍後再試')
       } finally {
         isLoading.value = false
       }
@@ -159,7 +165,6 @@ export default {
       showPassword.value = !showPassword.value
     }
 
-    // 檢查記住的帳號
     onMounted(() => {
       const rememberedUsername = localStorage.getItem('rememberedUsername')
       if (rememberedUsername) {
@@ -365,4 +370,95 @@ input.error {
     gap: 1rem;
   }
 }
+
+
+.remember-me-container {
+  margin-bottom: 1.5rem;
+}
+
+.remember-me-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.remember-me-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #4299e1;
+  border-radius: 4px;
+  margin-right: 8px;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.remember-me-checkbox:checked {
+  background-color: #4299e1;
+}
+
+.remember-me-checkbox:checked::after {
+  content: '✓';
+  position: absolute;
+  color: white;
+  font-size: 12px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.remember-me-checkbox:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
+}
+
+.remember-me-text {
+  color: #2c3e50;
+  font-size: 0.875rem;
+}
+
+/* 更新錯誤訊息樣式 */
+.error-message {
+  background-color: #fff5f5;
+  border: 1px solid #feb2b2;
+  color: #c53030;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+}
+
+/* 更新按鈕樣式 */
+.login-btn {
+  width: 100%;
+  padding: 0.75rem;
+  background-color: #4299e1;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login-btn:hover:not(:disabled) {
+  background-color: #3182ce;
+  transform: translateY(-1px);
+}
+
+.login-btn:disabled {
+  background-color: #a0aec0;
+  cursor: not-allowed;
+  transform: none;
+}
+
 </style>

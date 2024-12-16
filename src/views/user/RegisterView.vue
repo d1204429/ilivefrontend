@@ -127,6 +127,7 @@ import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
+import { userApi } from '@/utils/axios'
 
 export default {
   name: 'RegisterView',
@@ -144,7 +145,6 @@ export default {
     const globalError = ref('')
     const validationErrors = reactive({})
 
-    // 表單資料
     const formData = reactive({
       username: '',
       email: '',
@@ -155,7 +155,6 @@ export default {
       confirmPassword: ''
     })
 
-    // 驗證規則
     const validationRules = {
       username: [
         v => !!v || '請輸入用戶名',
@@ -192,7 +191,6 @@ export default {
       ]
     }
 
-    // 驗證單個欄位
     const validateField = (fieldName) => {
       const rules = validationRules[fieldName]
       const value = formData[fieldName]
@@ -209,7 +207,6 @@ export default {
       return true
     }
 
-    // 驗證整個表單
     const validateForm = () => {
       let isValid = true
       for (const field in validationRules) {
@@ -220,18 +217,15 @@ export default {
       return isValid
     }
 
-    // 表單是否有效
     const isFormValid = computed(() => {
       return Object.keys(formData).every(field => !!formData[field]) &&
           Object.keys(validationErrors).length === 0
     })
 
-    // 切換密碼可見性
     const togglePasswordVisibility = () => {
       showPassword.value = !showPassword.value
     }
 
-    // 處理註冊
     const handleRegister = async () => {
       if (!validateForm()) return
 
@@ -239,7 +233,7 @@ export default {
         isLoading.value = true
         globalError.value = ''
 
-        await store.dispatch('user/register', {
+        const response = await userApi.register({
           username: formData.username,
           email: formData.email,
           fullName: formData.fullName,
@@ -248,16 +242,19 @@ export default {
           password: formData.password
         })
 
+        await store.dispatch('user/setUser', response.data)
+
         // 註冊成功後自動登入
-        await store.dispatch('user/login', {
+        const loginResponse = await userApi.login({
           username: formData.username,
           password: formData.password
         })
 
+        await store.dispatch('user/setToken', loginResponse.data.accessToken)
+
         router.push('/')
       } catch (error) {
         if (error.response?.data?.errors) {
-          // 處理後端返回的具體錯誤
           Object.assign(validationErrors, error.response.data.errors)
         } else {
           globalError.value = error.response?.data?.message || '註冊失敗，請稍後再試'

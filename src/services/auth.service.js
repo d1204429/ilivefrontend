@@ -1,10 +1,8 @@
 import axios from 'axios';
 
-// 設定API基礎URL和端點
 const API_URL = 'http://localhost:1988/api/v1/users';
 
 const authService = {
-    // 用戶登入
     async login(username, password) {
         try {
             const response = await axios.post(`${API_URL}/login`, {
@@ -16,18 +14,20 @@ const authService = {
                 const userData = {
                     accessToken: response.data.accessToken,
                     refreshToken: response.data.refreshToken,
-                    username: username
+                    username: username,
+                    userId: response.data.userId
                 };
                 localStorage.setItem('user', JSON.stringify(userData));
+                localStorage.setItem('accessToken', response.data.accessToken);
+                localStorage.setItem('refreshToken', response.data.refreshToken);
                 this.setAuthHeader(response.data.accessToken);
             }
             return response.data;
         } catch (error) {
-            throw new Error(error.response?.data || '登入失敗');
+            throw new Error(error.response?.data?.message || '登入失敗');
         }
     },
 
-    // 用戶註冊
     async register(userData) {
         try {
             const response = await axios.post(`${API_URL}/register`, {
@@ -38,45 +38,59 @@ const authService = {
                 phoneNumber: userData.phoneNumber,
                 address: userData.address
             });
+
+            // 如果註冊成功，自動登入
+            if (response.data) {
+                await this.login(userData.username, userData.password);
+            }
             return response.data;
         } catch (error) {
-            throw new Error(error.response?.data || '註冊失敗');
+            const errorMessage = error.response?.data?.message ||
+                error.response?.data?.errors ||
+                '註冊失敗';
+            throw new Error(errorMessage);
         }
     },
 
-    // 登出
     logout() {
         localStorage.removeItem('user');
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
         this.removeAuthHeader();
     },
 
-    // 設定Authorization標頭
     setAuthHeader(token) {
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        if (token) {
+            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        }
     },
 
-    // 移除Authorization標頭
     removeAuthHeader() {
         delete axios.defaults.headers.common['Authorization'];
     },
 
-    // 獲取當前用戶資料
     getCurrentUser() {
         const userStr = localStorage.getItem('user');
         return userStr ? JSON.parse(userStr) : null;
     },
 
-    // 更新用戶資料
     async updateProfile(userId, userData) {
         try {
             const response = await axios.put(`${API_URL}/${userId}`, userData);
+
+            // 更新本地存儲的用戶資訊
+            const currentUser = this.getCurrentUser();
+            if (currentUser) {
+                const updatedUser = { ...currentUser, ...response.data };
+                localStorage.setItem('user', JSON.stringify(updatedUser));
+            }
+
             return response.data;
         } catch (error) {
-            throw new Error(error.response?.data || '更新資料失敗');
+            throw new Error(error.response?.data?.message || '更新資料失敗');
         }
     },
 
-    // 修改密碼
     async changePassword(userId, oldPassword, newPassword) {
         try {
             const response = await axios.put(`${API_URL}/${userId}/password`, {
@@ -85,48 +99,40 @@ const authService = {
             });
             return response.data;
         } catch (error) {
-            throw new Error(error.response?.data || '修改密碼失敗');
+            throw new Error(error.response?.data?.message || '修改密碼失敗');
         }
     },
 
-    // 檢查是否已登入
     isAuthenticated() {
-        const user = this.getCurrentUser();
-        return !!user && !!user.accessToken;
+        const accessToken = localStorage.getItem('accessToken');
+        return !!accessToken;
     },
 
-    // 設定請求攔截器
     setupInterceptors() {
         axios.interceptors.response.use(
             (response) => response,
             async (error) => {
                 const originalRequest = error.config;
 
-                // 如果是401錯誤且不是重試請求
                 if (error.response?.status === 401 && !originalRequest._retry) {
                     originalRequest._retry = true;
 
                     try {
-                        const user = this.getCurrentUser();
-                        if (!user || !user.refreshToken) {
+                        const refreshToken = localStorage.getItem('refreshToken');
+                        if (!refreshToken) {
                             this.logout();
                             throw new Error('請重新登入');
                         }
 
-                        // 嘗試使用refreshToken獲取新的accessToken
                         const response = await axios.post(`${API_URL}/refresh-token`, {
-                            refreshToken: user.refreshToken
+                            refreshToken
                         });
 
                         if (response.data.accessToken) {
-                            // 更新localStorage中的token
-                            user.accessToken = response.data.accessToken;
-                            localStorage.setItem('user', JSON.stringify(user));
-
-                            // 更新Authorization標頭
+                            localStorage.setItem('accessToken', response.data.accessToken);
                             this.setAuthHeader(response.data.accessToken);
 
-                            // 重試原始請求
+                            // 更新原始請求的Authorization標頭
                             originalRequest.headers['Authorization'] = `Bearer ${response.data.accessToken}`;
                             return axios(originalRequest);
                         }
@@ -140,17 +146,15 @@ const authService = {
         );
     },
 
-    // 初始化服務
     init() {
-        const user = this.getCurrentUser();
-        if (user && user.accessToken) {
-            this.setAuthHeader(user.accessToken);
+        const accessToken = localStorage.getItem('accessToken');
+        if (accessToken) {
+            this.setAuthHeader(accessToken);
         }
         this.setupInterceptors();
     }
 };
 
-// 初始化服務
 authService.init();
 
 export default authService;
