@@ -11,9 +11,9 @@
       <form class="register-form" @submit.prevent="handleRegister">
         <!-- 用戶名欄位 -->
         <div class="form-group">
-          <label>用戶名</label>
+          <label for="username-input">用戶名</label>
           <BaseInput
-              :id="'username-input'"
+              id="username-input"
               v-model="formData.username"
               type="text"
               placeholder="請輸入用戶名"
@@ -24,8 +24,9 @@
 
         <!-- 電子郵件欄位 -->
         <div class="form-group">
-          <label>電子郵件</label>
+          <label for="email-input">電子郵件</label>
           <BaseInput
+              id="email-input"
               v-model="formData.email"
               type="email"
               placeholder="請輸入電子郵件"
@@ -36,8 +37,9 @@
 
         <!-- 全名欄位 -->
         <div class="form-group">
-          <label>全名</label>
+          <label for="fullname-input">全名</label>
           <BaseInput
+              id="fullname-input"
               v-model="formData.fullName"
               type="text"
               placeholder="請輸入全名"
@@ -48,8 +50,9 @@
 
         <!-- 手機號碼欄位 -->
         <div class="form-group">
-          <label>手機號碼</label>
+          <label for="phone-input">手機號碼</label>
           <BaseInput
+              id="phone-input"
               v-model="formData.phoneNumber"
               type="tel"
               placeholder="請輸入手機號碼"
@@ -60,8 +63,9 @@
 
         <!-- 地址欄位 -->
         <div class="form-group">
-          <label>地址</label>
+          <label for="address-input">地址</label>
           <BaseInput
+              id="address-input"
               v-model="formData.address"
               type="text"
               placeholder="請輸入地址"
@@ -72,8 +76,9 @@
 
         <!-- 密碼欄位 -->
         <div class="form-group">
-          <label>密碼</label>
+          <label for="password-input">密碼</label>
           <BaseInput
+              id="password-input"
               v-model="formData.password"
               :type="showPassword ? 'text' : 'password'"
               placeholder="請輸入密碼"
@@ -92,8 +97,9 @@
 
         <!-- 確認密碼欄位 -->
         <div class="form-group">
-          <label>確認密碼</label>
+          <label for="confirm-password-input">確認密碼</label>
           <BaseInput
+              id="confirm-password-input"
               v-model="formData.confirmPassword"
               :type="showPassword ? 'text' : 'password'"
               placeholder="請再次輸入密碼"
