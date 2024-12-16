@@ -2,16 +2,18 @@
   <div class="login-view">
     <div class="login-container">
       <h2>登入</h2>
-      <form @submit.prevent="handleLogin">
+      <form @submit.prevent="handleSubmit">
         <!-- 帳號輸入 -->
         <div class="form-group">
           <label>帳號</label>
           <input
               type="text"
-              v-model="loginForm.username"
+              v-model="formData.username"
+              :class="{ 'error': errors.username }"
+              @blur="validateUsername"
               placeholder="請輸入帳號"
-              required
           >
+          <span class="error-text" v-if="errors.username">{{ errors.username }}</span>
         </div>
 
         <!-- 密碼輸入 -->
@@ -20,9 +22,10 @@
           <div class="password-input">
             <input
                 :type="showPassword ? 'text' : 'password'"
-                v-model="loginForm.password"
+                v-model="formData.password"
+                :class="{ 'error': errors.password }"
+                @blur="validatePassword"
                 placeholder="請輸入密碼"
-                required
             >
             <i
                 class="password-toggle"
@@ -30,30 +33,31 @@
                 @click="togglePasswordVisibility"
             ></i>
           </div>
+          <span class="error-text" v-if="errors.password">{{ errors.password }}</span>
         </div>
 
         <!-- 記住我選項 -->
         <div class="remember-me">
           <input
               type="checkbox"
-              v-model="loginForm.rememberMe"
+              v-model="formData.rememberMe"
               id="remember-me"
           >
           <label for="remember-me">記住我</label>
         </div>
 
         <!-- 錯誤訊息顯示 -->
-        <div v-if="errorMessage" class="error-message">
-          {{ errorMessage }}
+        <div v-if="loginError" class="error-message">
+          {{ loginError }}
         </div>
 
         <!-- 登入按鈕 -->
         <button
             type="submit"
             class="login-btn"
-            :disabled="loading"
+            :disabled="isLoading || !isFormValid"
         >
-          {{ loading ? '登入中...' : '登入' }}
+          {{ isLoading ? '登入中...' : '登入' }}
         </button>
 
         <!-- 其他選項 -->
@@ -67,7 +71,7 @@
 </template>
 
 <script>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 
@@ -77,29 +81,73 @@ export default {
   setup() {
     const router = useRouter()
     const store = useStore()
-    const loading = ref(false)
-    const errorMessage = ref('')
+    const isLoading = ref(false)
+    const loginError = ref('')
     const showPassword = ref(false)
 
-    const loginForm = reactive({
+    // 表單數據
+    const formData = reactive({
       username: '',
       password: '',
       rememberMe: false
     })
 
-    const handleLogin = async () => {
-      try {
-        loading.value = true
-        errorMessage.value = ''
+    // 錯誤訊息
+    const errors = reactive({
+      username: '',
+      password: ''
+    })
 
-        const response = await store.dispatch('auth/login', {
-          username: loginForm.username,
-          password: loginForm.password
+    // 表單驗證
+    const validateUsername = () => {
+      errors.username = ''
+      if (!formData.username) {
+        errors.username = '請輸入帳號'
+      } else if (formData.username.length < 3) {
+        errors.username = '帳號長度至少需要3個字元'
+      }
+    }
+
+    const validatePassword = () => {
+      errors.password = ''
+      if (!formData.password) {
+        errors.password = '請輸入密碼'
+      } else if (formData.password.length < 6) {
+        errors.password = '密碼長度至少需要6個字元'
+      }
+    }
+
+    // 驗證整個表單
+    const validateForm = () => {
+      validateUsername()
+      validatePassword()
+      return !errors.username && !errors.password
+    }
+
+    // 計算表單是否有效
+    const isFormValid = computed(() => {
+      return formData.username &&
+          formData.password &&
+          !errors.username &&
+          !errors.password
+    })
+
+    // 處理表單提交
+    const handleSubmit = async () => {
+      if (!validateForm()) return
+
+      try {
+        isLoading.value = true
+        loginError.value = ''
+
+        await store.dispatch('auth/login', {
+          username: formData.username,
+          password: formData.password
         })
 
-        if (loginForm.rememberMe) {
+        if (formData.rememberMe) {
           localStorage.setItem('rememberMe', 'true')
-          localStorage.setItem('username', loginForm.username)
+          localStorage.setItem('username', formData.username)
         } else {
           localStorage.removeItem('rememberMe')
           localStorage.removeItem('username')
@@ -107,9 +155,9 @@ export default {
 
         router.push('/')
       } catch (error) {
-        errorMessage.value = error.message || '登入失敗，請檢查帳號密碼'
+        loginError.value = error.response?.data?.message || '登入失敗，請檢查帳號密碼'
       } finally {
-        loading.value = false
+        isLoading.value = false
       }
     }
 
@@ -117,13 +165,28 @@ export default {
       showPassword.value = !showPassword.value
     }
 
+    // 檢查是否有記住的帳號
+    const checkRememberedUser = () => {
+      if (localStorage.getItem('rememberMe') === 'true') {
+        formData.username = localStorage.getItem('username') || ''
+        formData.rememberMe = true
+      }
+    }
+
+    // 組件掛載時檢查記住的帳號
+    checkRememberedUser()
+
     return {
-      loginForm,
-      loading,
-      errorMessage,
+      formData,
+      errors,
+      isLoading,
+      loginError,
       showPassword,
-      handleLogin,
-      togglePasswordVisibility
+      isFormValid,
+      handleSubmit,
+      togglePasswordVisibility,
+      validateUsername,
+      validatePassword
     }
   }
 }
@@ -136,6 +199,7 @@ export default {
   align-items: center;
   min-height: 100vh;
   background-color: #f5f5f5;
+  padding: 1rem;
 }
 
 .login-container {
@@ -149,7 +213,7 @@ export default {
 
 h2 {
   text-align: center;
-  color: var(--primary-color);
+  color: #333;
   margin-bottom: 2rem;
 }
 
@@ -160,6 +224,7 @@ h2 {
 label {
   display: block;
   margin-bottom: 0.5rem;
+  color: #333;
   font-weight: 500;
 }
 
@@ -170,6 +235,18 @@ input[type="password"] {
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 1rem;
+  transition: border-color 0.3s;
+}
+
+input.error {
+  border-color: #dc3545;
+}
+
+.error-text {
+  color: #dc3545;
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+  display: block;
 }
 
 .password-input {
@@ -196,17 +273,25 @@ input[type="password"] {
   color: #dc3545;
   margin-bottom: 1rem;
   text-align: center;
+  padding: 0.5rem;
+  background-color: #f8d7da;
+  border-radius: 4px;
 }
 
 .login-btn {
   width: 100%;
   padding: 0.75rem;
-  background-color: var(--primary-color);
+  background-color: #007bff;
   color: white;
   border: none;
   border-radius: 4px;
   font-size: 1rem;
   cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.login-btn:hover:not(:disabled) {
+  background-color: #0056b3;
 }
 
 .login-btn:disabled {
@@ -221,8 +306,13 @@ input[type="password"] {
 }
 
 .additional-options a {
-  color: var(--primary-color);
+  color: #007bff;
   text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.additional-options a:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 768px) {

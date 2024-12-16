@@ -1,8 +1,12 @@
 <template>
   <div class="register-view">
-    <!-- 註冊表單區域 -->
     <div class="register-container">
       <h2 class="register-title">會員註冊</h2>
+
+      <!-- 全局錯誤訊息 -->
+      <div v-if="globalError" class="error-message">
+        {{ globalError }}
+      </div>
 
       <form class="register-form" @submit.prevent="handleRegister">
         <!-- 姓名欄位 -->
@@ -12,7 +16,8 @@
               v-model="formData.name"
               type="text"
               placeholder="請輸入姓名"
-              :error="errors.name"
+              :error="validationErrors.name"
+              @blur="validateField('name')"
           />
         </div>
 
@@ -23,7 +28,8 @@
               v-model="formData.email"
               type="email"
               placeholder="請輸入電子郵件"
-              :error="errors.email"
+              :error="validationErrors.email"
+              @blur="validateField('email')"
           />
         </div>
 
@@ -34,7 +40,8 @@
               v-model="formData.phone"
               type="tel"
               placeholder="請輸入手機號碼"
-              :error="errors.phone"
+              :error="validationErrors.phone"
+              @blur="validateField('phone')"
           />
         </div>
 
@@ -43,10 +50,19 @@
           <label>密碼</label>
           <BaseInput
               v-model="formData.password"
-              type="password"
+              :type="showPassword ? 'text' : 'password'"
               placeholder="請輸入密碼"
-              :error="errors.password"
-          />
+              :error="validationErrors.password"
+              @blur="validateField('password')"
+          >
+            <template #append>
+              <i
+                  class="password-toggle"
+                  :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"
+                  @click="togglePasswordVisibility"
+              ></i>
+            </template>
+          </BaseInput>
         </div>
 
         <!-- 確認密碼欄位 -->
@@ -54,9 +70,10 @@
           <label>確認密碼</label>
           <BaseInput
               v-model="formData.confirmPassword"
-              type="password"
+              :type="showPassword ? 'text' : 'password'"
               placeholder="請再次輸入密碼"
-              :error="errors.confirmPassword"
+              :error="validationErrors.confirmPassword"
+              @blur="validateField('confirmPassword')"
           />
         </div>
 
@@ -80,7 +97,7 @@
 </template>
 
 <script>
-import { ref, computed } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
@@ -98,10 +115,12 @@ export default {
     const router = useRouter()
     const store = useStore()
     const isLoading = ref(false)
-    const errors = ref({})
+    const showPassword = ref(false)
+    const globalError = ref('')
+    const validationErrors = reactive({})
 
     // 表單資料
-    const formData = ref({
+    const formData = reactive({
       name: '',
       email: '',
       phone: '',
@@ -109,51 +128,72 @@ export default {
       confirmPassword: ''
     })
 
-    // 表單驗證
+    // 驗證規則
+    const validationRules = {
+      name: [
+        v => !!v || '請輸入姓名',
+        v => v.length >= 2 || '姓名至少需要2個字元',
+        v => v.length <= 20 || '姓名不能超過20個字元'
+      ],
+      email: [
+        v => !!v || '請輸入電子郵件',
+        v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || '請輸入有效的電子郵件'
+      ],
+      phone: [
+        v => !!v || '請輸入手機號碼',
+        v => /^09\d{8}$/.test(v) || '請輸入有效的手機號碼'
+      ],
+      password: [
+        v => !!v || '請輸入密碼',
+        v => v.length >= 6 || '密碼長度至少6個字元',
+        v => /[A-Z]/.test(v) || '密碼需包含至少一個大寫字母',
+        v => /[a-z]/.test(v) || '密碼需包含至少一個小寫字母',
+        v => /[0-9]/.test(v) || '密碼需包含至少一個數字'
+      ],
+      confirmPassword: [
+        v => !!v || '請確認密碼',
+        v => v === formData.password || '密碼不一致'
+      ]
+    }
+
+    // 驗證單個欄位
+    const validateField = (fieldName) => {
+      const rules = validationRules[fieldName]
+      const value = formData[fieldName]
+
+      for (const rule of rules) {
+        const result = rule(value)
+        if (result !== true) {
+          validationErrors[fieldName] = result
+          return false
+        }
+      }
+
+      delete validationErrors[fieldName]
+      return true
+    }
+
+    // 驗證整個表單
     const validateForm = () => {
-      const newErrors = {}
-
-      if (!formData.value.name) {
-        newErrors.name = '請輸入姓名'
+      let isValid = true
+      for (const field in validationRules) {
+        if (!validateField(field)) {
+          isValid = false
+        }
       }
-
-      if (!formData.value.email) {
-        newErrors.email = '請輸入電子郵件'
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.value.email)) {
-        newErrors.email = '請輸入有效的電子郵件'
-      }
-
-      if (!formData.value.phone) {
-        newErrors.phone = '請輸入手機號碼'
-      } else if (!/^09\d{8}$/.test(formData.value.phone)) {
-        newErrors.phone = '請輸入有效的手機號碼'
-      }
-
-      if (!formData.value.password) {
-        newErrors.password = '請輸入密碼'
-      } else if (formData.value.password.length < 6) {
-        newErrors.password = '密碼長度至少6個字元'
-      }
-
-      if (!formData.value.confirmPassword) {
-        newErrors.confirmPassword = '請確認密碼'
-      } else if (formData.value.password !== formData.value.confirmPassword) {
-        newErrors.confirmPassword = '密碼不一致'
-      }
-
-      errors.value = newErrors
-      return Object.keys(newErrors).length === 0
+      return isValid
     }
 
     // 表單是否有效
     const isFormValid = computed(() => {
-      return formData.value.name &&
-          formData.value.email &&
-          formData.value.phone &&
-          formData.value.password &&
-          formData.value.confirmPassword &&
-          Object.keys(errors.value).length === 0
+      return Object.keys(formData).every(field => !!formData[field]) &&
+          Object.keys(validationErrors).length === 0
     })
+
+    // 切換密碼可見性
+    const togglePasswordVisibility = () => {
+      showPassword.value = !showPassword.value
+    }
 
     // 處理註冊
     const handleRegister = async () => {
@@ -161,18 +201,28 @@ export default {
 
       try {
         isLoading.value = true
+        globalError.value = ''
+
         await store.dispatch('auth/register', {
-          name: formData.value.name,
-          email: formData.value.email,
-          phone: formData.value.phone,
-          password: formData.value.password
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          password: formData.password
         })
-        router.push('/login')
+
+        // 註冊成功後自動登入
+        await store.dispatch('auth/login', {
+          email: formData.email,
+          password: formData.password
+        })
+
+        router.push('/')
       } catch (error) {
         if (error.response?.data?.errors) {
-          errors.value = error.response.data.errors
+          // 處理後端返回的具體錯誤
+          Object.assign(validationErrors, error.response.data.errors)
         } else {
-          errors.value.general = '註冊失敗，請稍後再試'
+          globalError.value = error.response?.data?.message || '註冊失敗，請稍後再試'
         }
       } finally {
         isLoading.value = false
@@ -181,10 +231,14 @@ export default {
 
     return {
       formData,
-      errors,
+      validationErrors,
       isLoading,
+      showPassword,
+      globalError,
       isFormValid,
-      handleRegister
+      handleRegister,
+      validateField,
+      togglePasswordVisibility
     }
   }
 }

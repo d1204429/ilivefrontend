@@ -1,105 +1,129 @@
-import axios from 'axios'
+import axios from 'axios';
 
-export default {
-    // 登入
+const AUTH_API_URL = '/api/v1/auth';
+
+const authService = {
     async login(credentials) {
         try {
-            const response = await axios.post('/api/v1/users/login', credentials)
-            const { token, user } = response.data
-
-            // 儲存token到localStorage
-            localStorage.setItem('token', token)
-
-            // 設定axios預設headers
-            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-
-            return response.data
+            const response = await axios.post(`${AUTH_API_URL}/login`, credentials);
+            if (response.data.token) {
+                localStorage.setItem('user', JSON.stringify(response.data));
+                axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
+            }
+            return response.data;
         } catch (error) {
-            throw new Error(error.response?.data?.message || '登入失敗')
+            throw new Error(error.response?.data?.message || '登入失敗');
         }
     },
 
-    // 登出
-    async logout() {
+    async register(user) {
         try {
-            await axios.post('/api/v1/users/logout')
-
-            // 清除localStorage
-            localStorage.removeItem('token')
-
-            // 清除axios headers
-            delete axios.defaults.headers.common['Authorization']
+            const response = await axios.post(`${AUTH_API_URL}/register`, user);
+            return response.data;
         } catch (error) {
-            console.error('登出失敗:', error)
-            throw error
+            throw new Error(error.response?.data?.message || '註冊失敗');
         }
     },
 
-    // 註冊
-    async register(userData) {
+    logout() {
+        localStorage.removeItem('user');
+        delete axios.defaults.headers.common['Authorization'];
+    },
+
+    getCurrentUser() {
+        return JSON.parse(localStorage.getItem('user'));
+    },
+
+    async refreshToken() {
         try {
-            const response = await axios.post('/api/v1/users/register', userData)
-            return response.data
+            const user = this.getCurrentUser();
+            if (user && user.refreshToken) {
+                const response = await axios.post(`${AUTH_API_URL}/refresh-token`, {
+                    refreshToken: user.refreshToken
+                });
+                if (response.data.token) {
+                    user.token = response.data.token;
+                    localStorage.setItem('user', JSON.stringify(user));
+                    axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
+                }
+                return response.data;
+            }
         } catch (error) {
-            throw new Error(error.response?.data?.message || '註冊失敗')
+            this.logout();
+            throw new Error('Token刷新失敗，請重新登入');
         }
     },
 
-    // 檢查登入狀態
-    checkAuth() {
-        const token = localStorage.getItem('token')
-        if (token) {
-            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-            return true
-        }
-        return false
-    },
-
-    // 取得當前用戶資訊
-    async getCurrentUser() {
+    async changePassword(oldPassword, newPassword) {
         try {
-            const response = await axios.get('/api/v1/users/profile')
-            return response.data
+            const response = await axios.post(`${AUTH_API_URL}/change-password`, {
+                oldPassword,
+                newPassword
+            });
+            return response.data;
         } catch (error) {
-            throw new Error('獲取用戶資訊失敗')
+            throw new Error(error.response?.data?.message || '修改密碼失敗');
         }
     },
 
-    // 更新用戶資料
-    async updateProfile(userData) {
-        try {
-            const response = await axios.put('/api/v1/users/profile', userData)
-            return response.data
-        } catch (error) {
-            throw new Error(error.response?.data?.message || '更新資料失敗')
-        }
-    },
-
-    // 修改密碼
-    async changePassword(passwords) {
-        try {
-            await axios.put('/api/v1/users/password', passwords)
-        } catch (error) {
-            throw new Error(error.response?.data?.message || '修改密碼失敗')
-        }
-    },
-
-    // 重設密碼請求
     async requestPasswordReset(email) {
         try {
-            await axios.post('/api/v1/users/password-reset', { email })
+            const response = await axios.post(`${AUTH_API_URL}/request-password-reset`, { email });
+            return response.data;
         } catch (error) {
-            throw new Error(error.response?.data?.message || '重設密碼請求失敗')
+            throw new Error(error.response?.data?.message || '請求密碼重設失敗');
         }
     },
 
-    // 驗證token
-    async validateToken(token) {
+    async resetPassword(token, newPassword) {
         try {
-            const response = await axios.post('/api/v1/users/validate-token', { token })
-            return response.data
+            const response = await axios.post(`${AUTH_API_URL}/reset-password`, {
+                token,
+                newPassword
+            });
+            return response.data;
         } catch (error) {
-            throw new Error('無效的token')
+            throw new Error(error.response?.data?.message || '重設密碼失敗');
         }
+    },
+
+    async verifyEmail(token) {
+        try {
+            const response = await axios.post(`${AUTH_API_URL}/verify-email`, { token });
+            return response.data;
+        } catch (error) {
+            throw new Error(error.response?.data?.message || '驗證電子郵件失敗');
+        }
+    },
+
+    isLoggedIn() {
+        const user = this.getCurrentUser();
+        return !!user && !!user.token;
+    },
+
+    getToken() {
+        const user = this.getCurrentUser();
+        return user ? user.token : null;
+    },
+
+    setAxiosInterceptors() {
+        axios.interceptors.response.use(
+            (response) => response,
+            async (error) => {
+                const originalRequest = error.config;
+                if (error.response.status === 401 && !originalRequest._retry) {
+                    originalRequest._retry = true;
+                    try {
+                        await this.refreshToken();
+                        return axios(originalRequest);
+                    } catch (refreshError) {
+                        return Promise.reject(refreshError);
+                    }
+                }
+                return Promise.reject(error);
+            }
+        );
     }
-}
+};
+
+export default authService;

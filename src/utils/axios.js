@@ -26,37 +26,51 @@ api.interceptors.request.use(
 
 // 響應攔截器
 api.interceptors.response.use(
-    response => {
-        return response.data
-    },
-    error => {
-        if (error.response) {
-            switch (error.response.status) {
-                case 401:
-                    // 未授權,清除 token 並跳轉到登入頁
-                    localStorage.removeItem('token')
-                    window.location.href = '/login'
-                    break
-                case 403:
-                    // 無權限
-                    window.location.href = '/403'
-                    break
-                case 404:
-                    // 找不到資源
-                    window.location.href = '/404'
-                    break
-                case 500:
-                    // 伺服器錯誤
-                    window.location.href = '/500'
-                    break
-                default:
-                    console.error('API錯誤:', error.response.data)
+    response => response.data,
+    async error => {
+        const originalRequest = error.config;
+        if (error.response.status === 401 && !originalRequest._retry) {
+            originalRequest._retry = true;
+            try {
+                // 嘗試刷新 token
+                await store.dispatch('auth/refreshToken');
+                return api(originalRequest);
+            } catch (refreshError) {
+                // 如果刷新失敗，登出用戶
+                await store.dispatch('auth/logout');
+                window.location.href = '/login';
+                return Promise.reject(refreshError);
             }
         }
-        return Promise.reject(error)
+        handleError(error);
+        return Promise.reject(error);
     }
 )
-
+// 全局錯誤處理函數
+function handleError(error) {
+    if (error.response) {
+        switch (error.response.status) {
+            case 403:
+                // 無權限
+                window.location.href = '/403';
+                break;
+            case 404:
+                // 找不到資源
+                window.location.href = '/404';
+                break;
+            case 500:
+                // 伺服器錯誤
+                window.location.href = '/500';
+                break;
+            default:
+                console.error('API錯誤:', error.response.data);
+        }
+    } else if (error.request) {
+        console.error('無法連接到伺服器');
+    } else {
+        console.error('請求配置錯誤', error.message);
+    }
+}
 // 用戶相關 API
 export const userApi = {
     // 登入
