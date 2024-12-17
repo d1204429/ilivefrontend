@@ -12,7 +12,7 @@ export default defineConfig({
     }
   },
   server: {
-    port: 3000,
+    port: 8080,
     host: true, // 新增host設定以允許網路訪問
     proxy: {
       '/api': {
