@@ -1,12 +1,13 @@
+// src/store/modules/app.js
 import { defineStore } from 'pinia'
 
-export const useAppStore = defineStore('app', {
+// 使用 export default 導出 store
+export default defineStore('app', {
     state: () => ({
         loading: false,
         error: null,
+        success: null,
         notification: null,
-        globalLoading: false,
-        lastApiCall: null,
         systemStatus: {
             isOnline: navigator.onLine,
             maintenance: false,
@@ -19,38 +20,43 @@ export const useAppStore = defineStore('app', {
             this.loading = status
         },
 
-        setGlobalLoading(status) {
-            this.globalLoading = status
-        },
-
         setError(error) {
             this.error = {
-                show: true,
-                code: error?.code || '',
-                message: error?.message || '發生錯誤',
+                message: typeof error === 'string' ? error : error?.message || '發生錯誤',
                 type: error?.type || 'error',
                 timestamp: new Date().toISOString()
             }
 
-            // 自動清除錯誤
             setTimeout(() => {
                 this.clearError()
-            }, 5000)
+            }, 3000)
+        },
+
+        setSuccess(message) {
+            this.success = {
+                message,
+                timestamp: new Date().toISOString()
+            }
+
+            setTimeout(() => {
+                this.clearSuccess()
+            }, 3000)
         },
 
         clearError() {
             this.error = null
         },
 
-        showNotification({ message, type = 'info', duration = 3000 }) {
-            // 先清除現有通知
-            this.clearNotification()
+        clearSuccess() {
+            this.success = null
+        },
+
+        showNotification(options) {
+            const { message, type = 'info', duration = 3000 } = options
 
             this.notification = {
                 message,
                 type,
-                duration,
-                id: Date.now(),
                 timestamp: new Date().toISOString()
             }
 
@@ -74,48 +80,47 @@ export const useAppStore = defineStore('app', {
         },
 
         async initializeApp() {
-            // 監聽網路狀態
             window.addEventListener('online', () => this.updateOnlineStatus(true))
             window.addEventListener('offline', () => this.updateOnlineStatus(false))
 
-            // 檢查系統狀態
-            await this.checkSystemStatus()
+            try {
+                await this.checkSystemStatus()
+            } catch (error) {
+                console.error('初始化失敗:', error)
+            }
         },
 
         async checkSystemStatus() {
             try {
-                const response = await fetch('/api/v1/system/status')
+                const response = await fetch('/api/v1/system/health')
                 const status = await response.json()
-                this.systemStatus = {
-                    ...this.systemStatus,
-                    ...status
+
+                if (!status.healthy) {
+                    this.systemStatus.maintenance = true
+                    this.showNotification({
+                        message: '系統維護中，部分功能可能無法使用',
+                        type: 'warning'
+                    })
                 }
             } catch (error) {
                 console.error('系統狀態檢查失敗:', error)
-                this.setError({
-                    message: '系統狀態檢查失敗',
-                    type: 'error'
-                })
             }
-        },
-
-        setLastApiCall() {
-            this.lastApiCall = new Date().toISOString()
         }
     },
 
     getters: {
         isLoading: (state) => state.loading,
-        isGlobalLoading: (state) => state.globalLoading,
         currentError: (state) => state.error,
+        currentSuccess: (state) => state.success,
         currentNotification: (state) => state.notification,
         isOnline: (state) => state.systemStatus.isOnline,
         isMaintenance: (state) => state.systemStatus.maintenance,
         systemVersion: (state) => state.systemStatus.version,
         hasError: (state) => !!state.error,
+        hasSuccess: (state) => !!state.success,
         hasNotification: (state) => !!state.notification,
-        lastApiCallTime: (state) => state.lastApiCall ? new Date(state.lastApiCall) : null,
         errorMessage: (state) => state.error?.message || '',
+        successMessage: (state) => state.success?.message || '',
         notificationMessage: (state) => state.notification?.message || ''
     }
 })

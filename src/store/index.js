@@ -4,14 +4,22 @@ import cart from './modules/cart'
 import product from './modules/product'
 import user from './modules/user'
 import order from './modules/order'
+import app from './modules/app'
 
 export default createStore({
+    modules: {
+        app,
+        auth,
+        cart,
+        product,
+        user,
+        order
+    },
+
     state: {
         loading: false,
         error: null,
         notification: null,
-        globalLoading: false,
-        lastApiCall: null,
         systemStatus: {
             isOnline: navigator.onLine,
             maintenance: false,
@@ -23,12 +31,8 @@ export default createStore({
         SET_LOADING(state, status) {
             state.loading = status
         },
-        SET_GLOBAL_LOADING(state, status) {
-            state.globalLoading = status
-        },
         SET_ERROR(state, error) {
             state.error = error
-            state.lastApiCall = new Date().toISOString()
         },
         CLEAR_ERROR(state) {
             state.error = null
@@ -36,8 +40,7 @@ export default createStore({
         SET_NOTIFICATION(state, notification) {
             state.notification = {
                 ...notification,
-                id: Date.now(),
-                timestamp: new Date().toISOString()
+                id: Date.now()
             }
         },
         CLEAR_NOTIFICATION(state) {
@@ -48,9 +51,6 @@ export default createStore({
                 ...state.systemStatus,
                 ...status
             }
-        },
-        UPDATE_ONLINE_STATUS(state, isOnline) {
-            state.systemStatus.isOnline = isOnline
         }
     },
 
@@ -58,21 +58,11 @@ export default createStore({
         setLoading({ commit }, status) {
             commit('SET_LOADING', status)
         },
-        setGlobalLoading({ commit }, status) {
-            commit('SET_GLOBAL_LOADING', status)
-        },
-        setError({ commit, dispatch }, error) {
+        setError({ commit }, error) {
             commit('SET_ERROR', error)
-            dispatch('showNotification', {
-                message: error.message || '發生錯誤',
-                type: 'error'
-            })
             setTimeout(() => {
                 commit('CLEAR_ERROR')
             }, 3000)
-        },
-        clearError({ commit }) {
-            commit('CLEAR_ERROR')
         },
         showNotification({ commit }, { message, type = 'info', duration = 3000 }) {
             commit('SET_NOTIFICATION', { message, type })
@@ -83,25 +73,30 @@ export default createStore({
         initializeApp({ commit, dispatch }) {
             // 監聽網路狀態
             window.addEventListener('online', () => {
-                commit('UPDATE_ONLINE_STATUS', true)
+                commit('SET_SYSTEM_STATUS', { isOnline: true })
                 dispatch('showNotification', {
                     message: '網路連接已恢復',
                     type: 'success'
                 })
             })
+
             window.addEventListener('offline', () => {
-                commit('UPDATE_ONLINE_STATUS', false)
+                commit('SET_SYSTEM_STATUS', { isOnline: false })
                 dispatch('showNotification', {
                     message: '網路連接已斷開',
                     type: 'warning'
                 })
             })
 
-            // 初始化各模組
-            dispatch('auth/initializeAuth')
-            dispatch('cart/initializeCart')
-            dispatch('user/initializeUserData')
+            // 初始化認證狀態
+            if (localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)) {
+                dispatch('auth/checkAuth')
+            }
+
+            // 初始化購物車
+            dispatch('cart/fetchCartItems')
         },
+
         async checkSystemStatus({ commit }) {
             try {
                 const response = await fetch('/api/v1/system/status')
@@ -113,24 +108,12 @@ export default createStore({
         }
     },
 
-    modules: {
-        auth,
-        cart,
-        product,
-        user,
-        order
-    },
-
     getters: {
         isLoading: state => state.loading,
-        isGlobalLoading: state => state.globalLoading,
         error: state => state.error,
         notification: state => state.notification,
         isOnline: state => state.systemStatus.isOnline,
         isMaintenance: state => state.systemStatus.maintenance,
-        systemVersion: state => state.systemStatus.version,
-        hasError: state => !!state.error,
-        hasNotification: state => !!state.notification,
-        lastApiCallTime: state => state.lastApiCall ? new Date(state.lastApiCall) : null
+        systemVersion: state => state.systemStatus.version
     }
 })
