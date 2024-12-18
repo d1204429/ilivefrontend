@@ -114,6 +114,21 @@ export default {
     const goToCategory = (categoryId) => {
       router.push(`/products/category/${categoryId}`)
     }
+    const getProducts = async () => {
+      try {
+        const [categoriesRes, productsRes] = await Promise.all([
+          productApi.getCategories(),
+          productApi.getList({ featured: true })
+        ])
+        categories.value = categoriesRes
+        featuredProducts.value = productsRes
+      } catch (error) {
+        store.dispatch('app/setError', {
+          message: '獲取數據失敗',
+          type: 'error'
+        })
+      }
+    }
 
     // 加入購物車
     const addToCart = async (product) => {
@@ -160,7 +175,8 @@ export default {
       onSlideStart,
       onSlideEnd,
       goToCategory,
-      addToCart
+      addToCart,
+      getProducts
     }
   }
 }

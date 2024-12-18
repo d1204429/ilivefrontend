@@ -11,27 +11,20 @@ class AuthService {
 
     async login(username, password) {
         try {
-            const response = await axios.post(`${API_URL}/login`, {
+            const response = await axios.post('/users/login', {
                 username,
                 password
             })
-
             if (response.data.accessToken) {
-                const userData = {
-                    accessToken: response.data.accessToken,
-                    refreshToken: response.data.refreshToken,
-                    username: username,
-                    userId: response.data.userId,
-                    email: response.data.email,
-                    fullName: response.data.fullName
-                }
-                this.setUserData(userData)
+                localStorage.setItem('accessToken', response.data.accessToken)
+                this.setAuthHeader(response.data.accessToken)
             }
             return response.data
         } catch (error) {
             throw this.handleError(error)
         }
     }
+
 
     async register(userData) {
         try {

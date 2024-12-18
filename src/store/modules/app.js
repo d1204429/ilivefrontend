@@ -65,7 +65,7 @@ export default {
                     message: error.message || '發生錯誤'
                 }
             }
-        }
+        },
 
     },
 
