@@ -1,19 +1,18 @@
 // src/store/modules/app.js
 import { defineStore } from 'pinia'
 
-// 使用 export default 導出 store
 export default defineStore('app', {
-    state: () => ({
-        loading: false,
-        error: null,
-        success: null,
-        notification: null,
-        systemStatus: {
-            isOnline: navigator.onLine,
-            maintenance: false,
-            version: import.meta.env.VITE_APP_VERSION || '1.0.0'
-        }
-    }),
+        state: () => ({
+            loading: false,
+            error: null,
+            success: null,
+            notification: null,
+            systemStatus: {
+                isOnline: navigator.onLine,
+                maintenance: false,
+                version: import.meta.env.VITE_APP_VERSION || '1.0.0'
+            }
+        }),
 
     actions: {
         setLoading(status) {

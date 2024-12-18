@@ -3,9 +3,10 @@
     <!-- 商品圖片區塊 -->
     <div class="product-image">
       <img
-          :src="product.imageUrl || '/images/placeholder.png'"
+          :src="getProductImageUrl"
           :alt="product.name"
           @error="handleImageError"
+          class="product-image"
       >
       <div class="product-badges" v-if="showBadges">
         <span v-if="product.isNew" class="badge new">新品</span>
@@ -61,26 +62,21 @@
 </template>
 
 <script>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseButton from '@/components/common/BaseButton.vue'
 
 export default {
   name: 'ProductCard',
-
-  components: {
-    BaseButton
-  },
+  components: { BaseButton },
 
   props: {
     product: {
       type: Object,
       required: true,
       validator(product) {
-        return product.id &&
-            product.name &&
-            typeof product.price === 'number'
+        return product.productId && product.name && typeof product.price === 'number'
       }
     }
   },
@@ -88,11 +84,16 @@ export default {
   setup(props) {
     const router = useRouter()
     const store = useStore()
+    const imageError = ref(false)
 
-    // 計算屬性
-    const showBadges = computed(() =>
-        props.product.isNew || props.product.isOnSale
-    )
+    const getProductImageUrl = computed(() => {
+      if (imageError.value || !props.product.imageUrl) {
+        return `${import.meta.env.VITE_API_BASE_URL}/api/v1/images/default`
+      }
+      return `${import.meta.env.VITE_API_BASE_URL}/api/v1/products/${props.product.productId}/image`
+    })
+
+    const showBadges = computed(() => props.product.isNew || props.product.isOnSale)
 
     const stockStatusClass = computed(() => ({
       'in-stock': props.product.stock > 10,
@@ -106,42 +107,50 @@ export default {
       return '現貨充足'
     })
 
-    // 方法
     const formatPrice = (price) => {
-      return price.toLocaleString('zh-TW')
+      return new Intl.NumberFormat('zh-TW', {
+        style: 'decimal',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(price)
     }
 
     const truncateText = (text, length) => {
       if (!text) return ''
-      return text.length > length
-          ? `${text.substring(0, length)}...`
-          : text
+      return text.length > length ? `${text.substring(0, length)}...` : text
     }
 
     const handleImageError = (e) => {
-      e.target.src = '/images/placeholder.png'
+      imageError.value = true
+      e.target.onerror = null
     }
 
     const handleAddToCart = async () => {
+      if (!props.product.stock) return
+
       try {
         await store.dispatch('cart/addToCart', {
-          productId: props.product.id,
+          productId: props.product.productId,
           quantity: 1
         })
-        store.dispatch('app/showNotification', {
-          type: 'success',
-          message: '已加入購物車'
+
+        store.dispatch('app/setSuccess', {
+          message: '已加入購物車',
+          duration: 3000
         })
       } catch (error) {
-        store.dispatch('app/showNotification', {
-          type: 'error',
-          message: '加入購物車失敗'
+        store.dispatch('app/setError', {
+          message: '加入購物車失敗',
+          duration: 3000
         })
       }
     }
 
     const handleViewDetail = () => {
-      router.push(`/products/${props.product.id}`)
+      router.push({
+        name: 'ProductDetail',
+        params: { id: props.product.productId }
+      })
     }
 
     return {
@@ -150,6 +159,7 @@ export default {
       stockStatusText,
       formatPrice,
       truncateText,
+      getProductImageUrl,
       handleImageError,
       handleAddToCart,
       handleViewDetail
@@ -157,144 +167,3 @@ export default {
   }
 }
 </script>
-
-<style scoped>
-.product-card {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.product-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-
-.product-image {
-  position: relative;
-  aspect-ratio: 1;
-  overflow: hidden;
-}
-
-.product-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s ease;
-}
-
-.product-image:hover img {
-  transform: scale(1.05);
-}
-
-.product-badges {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  display: flex;
-  gap: 4px;
-}
-
-.badge {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.badge.new {
-  background: #4CAF50;
-  color: white;
-}
-
-.badge.sale {
-  background: #f44336;
-  color: white;
-}
-
-.product-content {
-  padding: 16px;
-}
-
-.product-title {
-  margin: 0 0 8px;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.product-meta {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 14px;
-  color: #666;
-}
-
-.product-price {
-  margin-bottom: 12px;
-}
-
-.current-price {
-  font-size: 18px;
-  font-weight: 600;
-  color: #f44336;
-}
-
-.original-price {
-  margin-left: 8px;
-  font-size: 14px;
-  color: #999;
-  text-decoration: line-through;
-}
-
-.product-description {
-  margin-bottom: 12px;
-  font-size: 14px;
-  color: #666;
-  line-height: 1.5;
-}
-
-.product-stock {
-  margin-bottom: 16px;
-  font-size: 14px;
-}
-
-.in-stock {
-  color: #4CAF50;
-}
-
-.low-stock {
-  color: #FF9800;
-}
-
-.out-of-stock {
-  color: #f44336;
-}
-
-.product-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.cart-btn,
-.detail-btn {
-  width: 100%;
-  padding: 8px;
-  font-size: 14px;
-}
-
-.cart-btn i,
-.detail-btn i {
-  margin-right: 4px;
-}
-
-@media (max-width: 768px) {
-  .product-actions {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

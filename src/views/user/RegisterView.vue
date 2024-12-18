@@ -6,7 +6,11 @@
       <div v-if="globalError" class="error-message">
         {{ globalError }}
       </div>
-
+      <!-- 添加成功通知 -->
+      <div v-if="successMessage" class="success-message">
+        {{ successMessage }}
+        <div class="countdown">{{ countdown }} 秒後自動跳轉到登入頁面</div>
+      </div>
       <form class="register-form" @submit.prevent="handleRegister">
         <!-- 用戶名欄位 -->
         <div class="form-group">
@@ -124,6 +128,7 @@
   </div>
 </template>
 
+
 <script>
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -142,6 +147,7 @@ export default {
     const isLoading = ref(false)
     const showPassword = ref(false)
     const globalError = ref('')
+    const countdown = ref(5)
     const validationErrors = reactive({})
 
     const formData = reactive({
@@ -158,27 +164,36 @@ export default {
       username: [
         v => !!v || '請輸入用戶名',
         v => v.length >= 3 || '用戶名至少需要3個字元',
-        v => /^[a-zA-Z0-9_]+$/.test(v) || '用戶名只能包含字母、數字和底線'
+        v => v.length <= 20 || '用戶名不能超過20個字元',
+        v => /^[a-zA-Z0-9_]+$/.test(v) || '用戶名只能包含字母、數字和底線',
+        v => !/^\d+$/.test(v) || '用戶名不能全為數字'
       ],
       email: [
         v => !!v || '請輸入電子郵件',
-        v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || '請輸入有效的電子郵件'
+        v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || '請輸入有效的電子郵件',
+        v => v.length <= 50 || '電子郵件長度不能超過50個字元'
       ],
       fullName: [
         v => !!v || '請輸入全名',
-        v => v.length >= 2 || '全名至少需要2個字元'
+        v => v.length >= 2 || '全名至少需要2個字元',
+        v => v.length <= 50 || '全名不能超過50個字元',
+        v => /^[\u4e00-\u9fa5a-zA-Z\s]+$/.test(v) || '全名只能包含中文、英文和空格'
       ],
       phoneNumber: [
         v => !!v || '請輸入手機號碼',
-        v => /^09\d{8}$/.test(v) || '請輸入有效的手機號碼'
+        v => /^09\d{8}$/.test(v) || '請輸入有效的台灣手機號碼'
       ],
       address: [
-        v => !!v || '請輸入地址'
+        v => !!v || '請輸入地址',
+        v => v.length >= 5 || '地址至少需要5個字元',
+        v => v.length <= 100 || '地址不能超過100個字元'
       ],
       password: [
         v => !!v || '請輸入密碼',
-        v => v.length >= 6 || '密碼長度至少需要6個字元',
-        v => /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/.test(v) || '密碼必須包含字母和數字'
+        v => v.length >= 8 || '密碼長度至少需要8個字元',
+        v => v.length <= 20 || '密碼長度不能超過20個字元',
+        v => /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)[\w!@#$%^&*()-+=]{8,}$/.test(v) ||
+            '密碼必須包含大小寫字母和數字'
       ],
       confirmPassword: [
         v => !!v || '請確認密碼',
@@ -221,6 +236,16 @@ export default {
       showPassword.value = !showPassword.value
     }
 
+    const startCountdown = () => {
+      const timer = setInterval(() => {
+        countdown.value--
+        if (countdown.value <= 0) {
+          clearInterval(timer)
+          router.push('/login')
+        }
+      }, 1000)
+    }
+
     const handleRegister = async () => {
       if (!validateForm()) return
 
@@ -229,27 +254,40 @@ export default {
         globalError.value = ''
 
         const userData = {
-          username: formData.username,
+          username: formData.username.trim(),
           password: formData.password,
-          email: formData.email,
-          fullName: formData.fullName,
-          phoneNumber: formData.phoneNumber,
-          address: formData.address
+          email: formData.email.trim(),
+          fullName: formData.fullName.trim(),
+          phoneNumber: formData.phoneNumber.trim(),
+          address: formData.address.trim()
         }
 
-        const response = await authService.register(userData)
+        await authService.register(userData)
 
-        store.dispatch('app/setSuccess', '註冊成功，請登入')
-        router.push('/login')
+        store.dispatch('app/setSuccess', {
+          message: `註冊成功！${countdown.value}秒後自動跳轉到登入頁面...`,
+          duration: 5000
+        })
+
+        startCountdown()
+
       } catch (error) {
         const errorMessage = error.response?.data || error.message
-        globalError.value = errorMessage || '註冊失敗，請稍後再試'
 
         if (errorMessage.includes('用戶名已存在')) {
           validationErrors.username = '此用戶名已被使用'
         } else if (errorMessage.includes('電子郵件已存在')) {
           validationErrors.email = '此電子郵件已被註冊'
+        } else if (errorMessage.includes('手機號碼已存在')) {
+          validationErrors.phoneNumber = '此手機號碼已被註冊'
+        } else {
+          globalError.value = errorMessage || '註冊失敗，請稍後再試'
         }
+
+        store.dispatch('app/setError', {
+          message: globalError.value,
+          duration: 3000
+        })
       } finally {
         isLoading.value = false
       }
@@ -261,6 +299,7 @@ export default {
       isLoading,
       showPassword,
       globalError,
+      countdown,
       isFormValid,
       handleRegister,
       validateField,
@@ -269,6 +308,7 @@ export default {
   }
 }
 </script>
+
 
 <style scoped>
 .register-view {
@@ -350,4 +390,25 @@ label {
     font-size: 1.5rem;
   }
 }
+
+.success-message {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #48bb78;
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  z-index: 1000;
+}
+
+.countdown {
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  opacity: 0.9;
+}
+
 </style>
