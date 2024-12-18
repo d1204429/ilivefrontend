@@ -1,9 +1,7 @@
-// src/store/modules/app.js
+import { defineStore } from 'pinia'
 
-export default {
-    namespaced: true,
-
-    state: {
+export const useAppStore = defineStore('app', {
+    state: () => ({
         loading: false,
         error: null,
         notification: null,
@@ -14,153 +12,110 @@ export default {
             maintenance: false,
             version: import.meta.env.VITE_APP_VERSION || '1.0.0'
         }
-    },
-
-    mutations: {
-        SET_LOADING(state, status) {
-            state.loading = status
-        },
-        SET_GLOBAL_LOADING(state, status) {
-            state.globalLoading = status
-        },
-        SET_ERROR(state, error) {
-            state.error = {
-                show: true,
-                code: error.code || '',
-                message: error.message || '發生錯誤',
-                type: error.type || 'error',
-                timestamp: new Date().toISOString()
-            }
-        },
-        CLEAR_ERROR(state) {
-            state.error = null
-        },
-        SET_NOTIFICATION(state, notification) {
-            state.notification = {
-                ...notification,
-                id: Date.now(),
-                timestamp: new Date().toISOString()
-            }
-        },
-        CLEAR_NOTIFICATION(state) {
-            state.notification = null
-        },
-        SET_SYSTEM_STATUS(state, status) {
-            state.systemStatus = {
-                ...state.systemStatus,
-                ...status
-            }
-        },
-        UPDATE_ONLINE_STATUS(state, isOnline) {
-            state.systemStatus.isOnline = isOnline
-        },
-        SET_LAST_API_CALL(state) {
-            state.lastApiCall = new Date().toISOString()
-        },// SET_ERROR mutation
-        mutations: {
-            SET_ERROR(state, error) {
-                state.error = {
-                    show: true,
-                    code: error.code || '',
-                    message: error.message || '發生錯誤'
-                }
-            }
-        },
-
-    },
+    }),
 
     actions: {
-        setLoading({ commit }, status) {
-            commit('SET_LOADING', status)
+        setLoading(status) {
+            this.loading = status
         },
-        setGlobalLoading({ commit }, status) {
-            commit('SET_GLOBAL_LOADING', status)
-        },
-        setError({ commit, dispatch }, error) {
-            commit('SET_ERROR', error)
 
-            // 顯示錯誤通知
-            dispatch('showNotification', {
-                message: error.message || '發生錯誤',
-                type: 'error',
-                duration: 5000
-            })
+        setGlobalLoading(status) {
+            this.globalLoading = status
+        },
+
+        setError(error) {
+            this.error = {
+                show: true,
+                code: error?.code || '',
+                message: error?.message || '發生錯誤',
+                type: error?.type || 'error',
+                timestamp: new Date().toISOString()
+            }
 
             // 自動清除錯誤
             setTimeout(() => {
-                commit('CLEAR_ERROR')
+                this.clearError()
             }, 5000)
         },
-        clearError({ commit }) {
-            commit('CLEAR_ERROR')
-        },
-        showNotification({ commit }, { message, type = 'info', duration = 3000 }) {
-            // 先清除現有通知
-            commit('CLEAR_NOTIFICATION')
 
-            commit('SET_NOTIFICATION', {
+        clearError() {
+            this.error = null
+        },
+
+        showNotification({ message, type = 'info', duration = 3000 }) {
+            // 先清除現有通知
+            this.clearNotification()
+
+            this.notification = {
                 message,
                 type,
-                duration
-            })
+                duration,
+                id: Date.now(),
+                timestamp: new Date().toISOString()
+            }
 
             if (duration > 0) {
                 setTimeout(() => {
-                    commit('CLEAR_NOTIFICATION')
+                    this.clearNotification()
                 }, duration)
             }
         },
-        clearNotification({ commit }) {
-            commit('CLEAR_NOTIFICATION')
-        },
-        initializeApp({ commit, dispatch }) {
-            // 監聽網路狀態
-            window.addEventListener('online', () => {
-                commit('UPDATE_ONLINE_STATUS', true)
-                dispatch('showNotification', {
-                    message: '網路連接已恢復',
-                    type: 'success'
-                })
-            })
 
-            window.addEventListener('offline', () => {
-                commit('UPDATE_ONLINE_STATUS', false)
-                dispatch('showNotification', {
-                    message: '網路連接已斷開',
-                    type: 'warning'
-                })
+        clearNotification() {
+            this.notification = null
+        },
+
+        updateOnlineStatus(isOnline) {
+            this.systemStatus.isOnline = isOnline
+            this.showNotification({
+                message: isOnline ? '網路連接已恢復' : '網路連接已斷開',
+                type: isOnline ? 'success' : 'warning'
             })
+        },
+
+        async initializeApp() {
+            // 監聽網路狀態
+            window.addEventListener('online', () => this.updateOnlineStatus(true))
+            window.addEventListener('offline', () => this.updateOnlineStatus(false))
 
             // 檢查系統狀態
-            dispatch('checkSystemStatus')
+            await this.checkSystemStatus()
         },
-        async checkSystemStatus({ commit }) {
+
+        async checkSystemStatus() {
             try {
                 const response = await fetch('/api/v1/system/status')
                 const status = await response.json()
-                commit('SET_SYSTEM_STATUS', status)
+                this.systemStatus = {
+                    ...this.systemStatus,
+                    ...status
+                }
             } catch (error) {
                 console.error('系統狀態檢查失敗:', error)
-                commit('SET_ERROR', {
+                this.setError({
                     message: '系統狀態檢查失敗',
                     type: 'error'
                 })
             }
+        },
+
+        setLastApiCall() {
+            this.lastApiCall = new Date().toISOString()
         }
     },
 
     getters: {
-        isLoading: state => state.loading,
-        isGlobalLoading: state => state.globalLoading,
-        error: state => state.error,
-        notification: state => state.notification,
-        isOnline: state => state.systemStatus.isOnline,
-        isMaintenance: state => state.systemStatus.maintenance,
-        systemVersion: state => state.systemStatus.version,
-        hasError: state => !!state.error,
-        hasNotification: state => !!state.notification,
-        lastApiCallTime: state => state.lastApiCall ? new Date(state.lastApiCall) : null,
-        getErrorMessage: state => state.error?.message || '',
-        getNotificationMessage: state => state.notification?.message || ''
+        isLoading: (state) => state.loading,
+        isGlobalLoading: (state) => state.globalLoading,
+        currentError: (state) => state.error,
+        currentNotification: (state) => state.notification,
+        isOnline: (state) => state.systemStatus.isOnline,
+        isMaintenance: (state) => state.systemStatus.maintenance,
+        systemVersion: (state) => state.systemStatus.version,
+        hasError: (state) => !!state.error,
+        hasNotification: (state) => !!state.notification,
+        lastApiCallTime: (state) => state.lastApiCall ? new Date(state.lastApiCall) : null,
+        errorMessage: (state) => state.error?.message || '',
+        notificationMessage: (state) => state.notification?.message || ''
     }
-}
+})

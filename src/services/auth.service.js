@@ -1,26 +1,51 @@
-import axios from 'axios'
-import router from '@/router'
-import store from '@/store'
 import api from '@/utils/axios'
-
-const API_URL = import.meta.env.VITE_API_BASE_URL + '/users'
 
 class AuthService {
     constructor() {
-        this.init()
+        this.token = localStorage.getItem('token')
+        this.user = JSON.parse(localStorage.getItem('user'))
+    }
+
+    setUserData(data) {
+        if (data.accessToken) {
+            localStorage.setItem('token', data.accessToken)
+            this.token = data.accessToken
+        }
+        if (data.user) {
+            localStorage.setItem('user', JSON.stringify(data.user))
+            this.user = data.user
+        }
+    }
+
+    clearUserData() {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        this.token = null
+        this.user = null
+    }
+
+    getCurrentUser() {
+        return this.user
+    }
+
+    isAuthenticated() {
+        return !!this.token
     }
 
     async login(username, password) {
         try {
-            const response = await api.post('/users/login', {
+            const response = await api.post('/api/v1/users/login', {
                 username,
                 password
             })
 
-            if (response.accessToken) {
-                this.setUserData(response)
+            if (response.data.accessToken) {
+                this.setUserData({
+                    accessToken: response.data.accessToken,
+                    user: response.data.user
+                })
                 await this.fetchUserProfile()
-                return response
+                return response.data
             }
             throw new Error('登入失敗：未收到有效的認證Token')
         } catch (error) {
@@ -30,11 +55,11 @@ class AuthService {
 
     async fetchUserProfile() {
         try {
-            const response = await api.get('/users/profile')
+            const response = await api.get('/api/v1/users/profile')
             const userData = this.getCurrentUser()
-            const updatedUserData = { ...userData, ...response }
-            this.setUserData(updatedUserData)
-            return response
+            const updatedUserData = { ...userData, ...response.data }
+            this.setUserData({ user: updatedUserData })
+            return response.data
         } catch (error) {
             throw this.handleError(error)
         }
@@ -42,7 +67,7 @@ class AuthService {
 
     async register(userData) {
         try {
-            const response = await api.post('/users/register', {
+            const response = await api.post('/api/v1/users/register', {
                 username: userData.username,
                 password: userData.password,
                 email: userData.email,
@@ -53,9 +78,9 @@ class AuthService {
                 gender: userData.gender
             })
 
-            if (response) {
+            if (response.data) {
                 await this.login(userData.username, userData.password)
-                return response
+                return response.data
             }
             throw new Error('註冊失敗')
         } catch (error) {
@@ -65,97 +90,11 @@ class AuthService {
 
     async logout() {
         try {
-            await api.post('/users/logout')
+            await api.post('/api/v1/users/logout')
         } catch (error) {
             console.error('登出時發生錯誤:', error)
         } finally {
             this.clearUserData()
-        }
-    }
-
-    clearUserData() {
-        localStorage.clear()
-        sessionStorage.clear()
-        this.removeAuthHeader()
-        store.commit('auth/CLEAR_USER_STATE')
-        store.commit('cart/CLEAR_CART')
-        router.push('/login')
-    }
-
-    setUserData(userData) {
-        if (!userData) return
-
-        const userDataToStore = {
-            ...userData,
-            lastLoginTime: new Date().toISOString()
-        }
-
-        localStorage.setItem('user', JSON.stringify(userDataToStore))
-
-        if (userData.accessToken) {
-            localStorage.setItem('accessToken', userData.accessToken)
-            this.setAuthHeader(userData.accessToken)
-        }
-
-        if (userData.refreshToken) {
-            localStorage.setItem('refreshToken', userData.refreshToken)
-        }
-
-        store.commit('auth/SET_USER', userDataToStore)
-    }
-
-    setAuthHeader(token) {
-        if (token) {
-            api.defaults.headers.common['Authorization'] = `Bearer ${token}`
-            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-        }
-    }
-
-    removeAuthHeader() {
-        delete api.defaults.headers.common['Authorization']
-        delete axios.defaults.headers.common['Authorization']
-    }
-
-    getCurrentUser() {
-        try {
-            return JSON.parse(localStorage.getItem('user'))
-        } catch (error) {
-            this.clearUserData()
-            return null
-        }
-    }
-
-    isAuthenticated() {
-        const user = this.getCurrentUser()
-        const token = localStorage.getItem('accessToken')
-        return !!(user && token)
-    }
-
-    async refreshToken() {
-        try {
-            const refreshToken = localStorage.getItem('refreshToken')
-            if (!refreshToken) {
-                throw new Error('無可用的重整Token')
-            }
-
-            const response = await api.post('/users/refresh-token', {
-                refreshToken,
-                grantType: 'refresh_token'
-            })
-
-            const { accessToken, refreshToken: newRefreshToken } = response
-            const userData = this.getCurrentUser()
-
-            if (userData) {
-                userData.accessToken = accessToken
-                userData.refreshToken = newRefreshToken
-                this.setUserData(userData)
-            }
-
-            return accessToken
-        } catch (error) {
-            this.clearUserData()
-            throw error
         }
     }
 
@@ -195,64 +134,6 @@ class AuthService {
         }
 
         return new Error(errorMessage)
-    }
-
-    setupInterceptors() {
-        let isRefreshing = false
-        let failedQueue = []
-
-        const processQueue = (error, token = null) => {
-            failedQueue.forEach(prom => {
-                if (error) {
-                    prom.reject(error)
-                } else {
-                    prom.resolve(token)
-                }
-            })
-            failedQueue = []
-        }
-
-        api.interceptors.response.use(
-            response => response,
-            async error => {
-                const originalRequest = error.config
-
-                if (error.response?.status === 401 && !originalRequest._retry) {
-                    if (isRefreshing) {
-                        return new Promise((resolve, reject) => {
-                            failedQueue.push({ resolve, reject })
-                        }).then(token => {
-                            originalRequest.headers['Authorization'] = `Bearer ${token}`
-                            return api(originalRequest)
-                        }).catch(err => Promise.reject(err))
-                    }
-
-                    originalRequest._retry = true
-                    isRefreshing = true
-
-                    try {
-                        const token = await this.refreshToken()
-                        processQueue(null, token)
-                        originalRequest.headers['Authorization'] = `Bearer ${token}`
-                        return api(originalRequest)
-                    } catch (refreshError) {
-                        processQueue(refreshError, null)
-                        return Promise.reject(refreshError)
-                    } finally {
-                        isRefreshing = false
-                    }
-                }
-                return Promise.reject(error)
-            }
-        )
-    }
-
-    init() {
-        const accessToken = localStorage.getItem('accessToken')
-        if (accessToken) {
-            this.setAuthHeader(accessToken)
-        }
-        this.setupInterceptors()
     }
 }
 
