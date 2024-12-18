@@ -89,7 +89,7 @@ import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
-import { userApi } from '@/utils/axios'
+import authService from '@/services/auth.service'
 
 export default {
   name: 'LoginView',
@@ -140,6 +140,16 @@ export default {
       return true
     }
 
+    const validateForm = () => {
+      let isValid = true
+      Object.keys(validationRules).forEach(field => {
+        if (!validateField(field)) {
+          isValid = false
+        }
+      })
+      return isValid
+    }
+
     const isFormValid = computed(() => {
       return formData.username &&
           formData.password &&
@@ -152,40 +162,40 @@ export default {
 
     const handleSubmit = async () => {
       try {
-        if (!isFormValid.value) return
+        if (!validateForm()) return
 
         isLoading.value = true
         globalError.value = ''
 
-        const response = await userApi.login({
-          username: formData.username,
-          password: formData.password
-        })
+        const response = await authService.login(
+            formData.username,
+            formData.password
+        )
 
-        if (response.accessToken) {
-          localStorage.setItem('accessToken', response.accessToken)
-          if (response.refreshToken) {
-            localStorage.setItem('refreshToken', response.refreshToken)
-          }
-
-          if (formData.rememberMe) {
-            localStorage.setItem('rememberedUsername', formData.username)
-          } else {
-            localStorage.removeItem('rememberedUsername')
-          }
-
-          await store.dispatch('user/setUserInfo', response.user)
-          router.push('/')
+        if (formData.rememberMe) {
+          localStorage.setItem('rememberedUsername', formData.username)
+        } else {
+          localStorage.removeItem('rememberedUsername')
         }
+
+        await store.dispatch('auth/loginSuccess', response)
+
+        const redirect = router.currentRoute.value.query.redirect || '/'
+        router.push(redirect)
+
       } catch (error) {
         console.error('登入失敗:', error)
-        globalError.value = error.response?.data?.message || '登入失敗，請稍後再試'
+        globalError.value = error.message || '登入失敗，請檢查帳號密碼是否正確'
+        store.dispatch('app/setError', {
+          message: error.message,
+          type: 'error'
+        })
       } finally {
         isLoading.value = false
       }
     }
 
-    // 初始化時檢查是否有記住的用戶名
+    // 初始化表單
     const initializeForm = () => {
       const rememberedUsername = localStorage.getItem('rememberedUsername')
       if (rememberedUsername) {

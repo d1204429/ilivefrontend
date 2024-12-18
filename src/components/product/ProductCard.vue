@@ -1,97 +1,158 @@
 <template>
-  <div class="product-card" :class="{ 'out-of-stock': product.stock === 0 }">
-    <!-- 商品圖片 -->
+  <div class="product-card" :class="{ 'out-of-stock': !product.stock }">
+    <!-- 商品圖片區塊 -->
     <div class="product-image">
-      <img :src="product.imageUrl" :alt="product.name">
-      <div class="product-tags" v-if="product.isNew || product.isOnSale">
-        <span class="tag new-tag" v-if="product.isNew">新品</span>
-        <span class="tag sale-tag" v-if="product.isOnSale">特價</span>
+      <img
+          :src="product.imageUrl || '/images/placeholder.png'"
+          :alt="product.name"
+          @error="handleImageError"
+      >
+      <div class="product-badges" v-if="showBadges">
+        <span v-if="product.isNew" class="badge new">新品</span>
+        <span v-if="product.isOnSale" class="badge sale">特價</span>
       </div>
     </div>
 
-    <!-- 商品資訊 -->
-    <div class="product-info">
-      <h3 class="product-name">{{ product.name }}</h3>
-      <div class="product-brand">{{ product.brand }}</div>
+    <!-- 商品內容區塊 -->
+    <div class="product-content">
+      <h3 class="product-title">{{ product.name }}</h3>
 
-      <!-- 價格區 -->
+      <div class="product-meta">
+        <span class="brand">{{ product.brand }}</span>
+        <span class="category">{{ product.categoryName }}</span>
+      </div>
+
       <div class="product-price">
-        <span class="current-price">${{ formatPrice(product.price) }}</span>
-        <span class="original-price" v-if="product.originalPrice">
-          ${{ formatPrice(product.originalPrice) }}
+        <span class="current-price">NT$ {{ formatPrice(product.price) }}</span>
+        <span v-if="product.originalPrice" class="original-price">
+          NT$ {{ formatPrice(product.originalPrice) }}
         </span>
       </div>
 
-      <!-- 商品描述 -->
-      <p class="product-description">{{ truncateDescription(product.description) }}</p>
+      <p class="product-description">
+        {{ truncateText(product.description, 50) }}
+      </p>
 
-      <!-- 庫存狀態 -->
-      <div class="stock-status" :class="{ 'out-of-stock': product.stock === 0 }">
-        {{ product.stock > 0 ? `庫存: ${product.stock}` : '已售完' }}
+      <div class="product-stock" :class="stockStatusClass">
+        {{ stockStatusText }}
       </div>
 
-      <!-- 操作按鈕 -->
       <div class="product-actions">
-        <b-button
-            variant="primary"
-            class="add-to-cart-btn"
-            @click="addToCart"
-            :disabled="product.stock === 0"
+        <BaseButton
+            class="cart-btn"
+            :disabled="!product.stock"
+            @click="handleAddToCart"
         >
-          <i class="fas fa-shopping-cart"></i>
-          加入購物車
-        </b-button>
-        <b-button
-            variant="outline-secondary"
-            class="details-btn"
-            @click="viewDetails"
+          <i class="fas fa-cart-plus"></i>
+          {{ product.stock ? '加入購物車' : '已售完' }}
+        </BaseButton>
+
+        <BaseButton
+            class="detail-btn"
+            variant="outline"
+            @click="handleViewDetail"
         >
-          查看詳情
-        </b-button>
+          <i class="fas fa-info-circle"></i>
+          商品詳情
+        </BaseButton>
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useStore } from 'vuex'
+import BaseButton from '@/components/common/BaseButton.vue'
+
 export default {
   name: 'ProductCard',
+
+  components: {
+    BaseButton
+  },
 
   props: {
     product: {
       type: Object,
       required: true,
-      validator: function(product) {
-        return product.hasOwnProperty('id') &&
-            product.hasOwnProperty('name') &&
-            product.hasOwnProperty('price') &&
-            product.hasOwnProperty('stock')
+      validator(product) {
+        return product.id &&
+            product.name &&
+            typeof product.price === 'number'
       }
     }
   },
 
-  methods: {
-    formatPrice(price) {
+  setup(props) {
+    const router = useRouter()
+    const store = useStore()
+
+    // 計算屬性
+    const showBadges = computed(() =>
+        props.product.isNew || props.product.isOnSale
+    )
+
+    const stockStatusClass = computed(() => ({
+      'in-stock': props.product.stock > 10,
+      'low-stock': props.product.stock > 0 && props.product.stock <= 10,
+      'out-of-stock': !props.product.stock
+    }))
+
+    const stockStatusText = computed(() => {
+      if (!props.product.stock) return '已售完'
+      if (props.product.stock <= 10) return `剩餘 ${props.product.stock} 件`
+      return '現貨充足'
+    })
+
+    // 方法
+    const formatPrice = (price) => {
       return price.toLocaleString('zh-TW')
-    },
+    }
 
-    truncateDescription(description) {
-      return description.length > 100
-          ? `${description.substring(0, 100)}...`
-          : description
-    },
+    const truncateText = (text, length) => {
+      if (!text) return ''
+      return text.length > length
+          ? `${text.substring(0, length)}...`
+          : text
+    }
 
-    addToCart() {
-      if (this.product.stock > 0) {
-        this.$emit('add-to-cart', {
-          productId: this.product.id,
+    const handleImageError = (e) => {
+      e.target.src = '/images/placeholder.png'
+    }
+
+    const handleAddToCart = async () => {
+      try {
+        await store.dispatch('cart/addToCart', {
+          productId: props.product.id,
           quantity: 1
         })
+        store.dispatch('app/showNotification', {
+          type: 'success',
+          message: '已加入購物車'
+        })
+      } catch (error) {
+        store.dispatch('app/showNotification', {
+          type: 'error',
+          message: '加入購物車失敗'
+        })
       }
-    },
+    }
 
-    viewDetails() {
-      this.$router.push(`/products/${this.product.id}`)
+    const handleViewDetail = () => {
+      router.push(`/products/${props.product.id}`)
+    }
+
+    return {
+      showBadges,
+      stockStatusClass,
+      stockStatusText,
+      formatPrice,
+      truncateText,
+      handleImageError,
+      handleAddToCart,
+      handleViewDetail
     }
   }
 }
@@ -99,24 +160,21 @@ export default {
 
 <style scoped>
 .product-card {
-  background: #ffffff;
+  background: #fff;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transition: all 0.3s ease;
   overflow: hidden;
-  margin: 1rem;
-  max-width: 300px;
 }
 
 .product-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .product-image {
   position: relative;
-  width: 100%;
-  height: 200px;
+  aspect-ratio: 1;
   overflow: hidden;
 }
 
@@ -124,108 +182,119 @@ export default {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.3s ease;
 }
 
-.product-tags {
+.product-image:hover img {
+  transform: scale(1.05);
+}
+
+.product-badges {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 8px;
+  left: 8px;
   display: flex;
-  gap: 0.5rem;
+  gap: 4px;
 }
 
-.tag {
+.badge {
   padding: 4px 8px;
   border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: bold;
-}
-
-.new-tag {
-  background-color: var(--primary-color);
-  color: white;
-}
-
-.sale-tag {
-  background-color: var(--danger-color);
-  color: white;
-}
-
-.product-info {
-  padding: 1rem;
-}
-
-.product-name {
-  font-size: 1.1rem;
+  font-size: 12px;
   font-weight: 600;
-  margin-bottom: 0.5rem;
 }
 
-.product-brand {
+.badge.new {
+  background: #4CAF50;
+  color: white;
+}
+
+.badge.sale {
+  background: #f44336;
+  color: white;
+}
+
+.product-content {
+  padding: 16px;
+}
+
+.product-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.product-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
   color: #666;
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
 }
 
 .product-price {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 12px;
 }
 
 .current-price {
-  font-size: 1.2rem;
-  font-weight: bold;
-  color: var(--primary-color);
+  font-size: 18px;
+  font-weight: 600;
+  color: #f44336;
 }
 
 .original-price {
-  font-size: 0.9rem;
+  margin-left: 8px;
+  font-size: 14px;
   color: #999;
   text-decoration: line-through;
 }
 
 .product-description {
-  font-size: 0.9rem;
+  margin-bottom: 12px;
+  font-size: 14px;
   color: #666;
-  margin-bottom: 1rem;
+  line-height: 1.5;
 }
 
-.stock-status {
-  font-size: 0.9rem;
-  color: #28a745;
-  margin-bottom: 1rem;
+.product-stock {
+  margin-bottom: 16px;
+  font-size: 14px;
 }
 
-.stock-status.out-of-stock {
-  color: var(--danger-color);
+.in-stock {
+  color: #4CAF50;
+}
+
+.low-stock {
+  color: #FF9800;
+}
+
+.out-of-stock {
+  color: #f44336;
 }
 
 .product-actions {
-  display: flex;
-  gap: 0.5rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
-.add-to-cart-btn,
-.details-btn {
-  flex: 1;
-  padding: 0.5rem;
-  font-size: 0.9rem;
+.cart-btn,
+.detail-btn {
+  width: 100%;
+  padding: 8px;
+  font-size: 14px;
 }
 
-.out-of-stock .add-to-cart-btn {
-  opacity: 0.5;
-  cursor: not-allowed;
+.cart-btn i,
+.detail-btn i {
+  margin-right: 4px;
 }
 
 @media (max-width: 768px) {
-  .product-card {
-    max-width: 100%;
-  }
-
   .product-actions {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 }
 </style>

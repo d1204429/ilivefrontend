@@ -3,15 +3,18 @@ import router from '@/router'
 import store from '@/store'
 
 // 建立 axios 實例
+// axios 實例配置 - 優化請求配置
 const api = axios.create({
-    baseURL: 'http://localhost:1988/api/v1',
-    timeout: 15000,
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
+    timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '15000'),
     headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
     },
-    withCredentials: false // 修改為 false 以避免 CORS 預檢請求問題
+    withCredentials: false
 })
+
 
 // 請求攔截器
 api.interceptors.request.use(
@@ -148,22 +151,23 @@ function handleApiError(error) {
 }
 // API 端點定義
 // API 定義
+// API 端點定義 - 修正路徑對應後端 Controller
 export const authApi = {
-    login: data => api.post('/auth/login', data),
-    register: data => api.post('/auth/register', data),
-    logout: () => api.post('/auth/logout'),
-    refreshToken: refreshToken => api.post('/auth/refresh-token', { refreshToken }),
-    verifyToken: () => api.get('/auth/verify')
+    // 認證相關 API
+    login: data => api.post('/users/login', data),          // 登入
+    register: data => api.post('/users/register', data),    // 註冊
+    logout: () => api.post('/users/logout'),                // 登出
+    refreshToken: refreshToken => api.post('/users/refresh-token', { refreshToken }), // 更新 Token
+    verifyToken: () => api.get('/users/verify-token')       // 驗證 Token
 }
 
 export const userApi = {
-    getProfile: () => api.get('/users/profile'),
-    updateProfile: data => api.put('/users/profile', data),
-    changePassword: data => api.put('/users/password', data),
-    uploadAvatar: formData => api.post('/users/avatar', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-    })
+    // 用戶相關 API
+    getProfile: () => api.get('/users/profile'),            // 取得用戶資料
+    updateProfile: data => api.put('/users/profile', data), // 更新用戶資料
+    changePassword: data => api.put('/users/password', data), // 修改密碼
 }
+
 
 export const productApi = {
     getList: params => api.get('/products', { params }),
