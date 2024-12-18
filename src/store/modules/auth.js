@@ -1,180 +1,147 @@
-import axios from 'axios'
-import authService from '@/services/auth.service'
+import api from '@/utils/axios'
 import router from '@/router'
+
+const TOKEN_KEY = import.meta.env.VITE_JWT_TOKEN_KEY
+const REFRESH_TOKEN_KEY = import.meta.env.VITE_JWT_REFRESH_KEY
 
 const state = {
     user: JSON.parse(localStorage.getItem('user')) || null,
-    accessToken: localStorage.getItem('accessToken') || null,
-    refreshToken: localStorage.getItem('refreshToken') || null,
-    status: '',
-    error: null,
+    token: localStorage.getItem(TOKEN_KEY) || null,
     loading: false,
-    lastLoginTime: localStorage.getItem('lastLoginTime') || null,
+    error: null,
     successMessage: null
 }
 
 const getters = {
-    isAuthenticated: state => !!state.accessToken && !!state.user,
-    authStatus: state => state.status,
+    isAuthenticated: state => !!state.token && !!state.user,
     currentUser: state => state.user,
-    authError: state => state.error,
-    isLoading: state => state.loading,
-    hasError: state => !!state.error,
-    successMessage: state => state.successMessage,
-    userRole: state => state.user?.role || 'guest',
     isAdmin: state => state.user?.role === 'ADMIN',
-    lastLoginTime: state => state.lastLoginTime
+    isLoading: state => state.loading,
+    error: state => state.error,
+    successMessage: state => state.successMessage
 }
 
 const actions = {
-    async login({ commit, dispatch }, { username, password }) {
+    // 登入
+    async login({ commit, dispatch }, credentials) {
         commit('SET_LOADING', true)
         commit('CLEAR_ERROR')
+
         try {
-            const response = await authService.login(username, password)
-            const { accessToken, refreshToken, user } = response
+            const response = await api.post('/users/login', credentials)
 
-            localStorage.setItem('accessToken', accessToken)
-            localStorage.setItem('refreshToken', refreshToken)
+            const { accessToken, user } = response
+            localStorage.setItem(TOKEN_KEY, accessToken)
             localStorage.setItem('user', JSON.stringify(user))
-            localStorage.setItem('lastLoginTime', new Date().toISOString())
 
-            commit('AUTH_SUCCESS', { accessToken, refreshToken, user })
-            dispatch('initUserData')
+            commit('AUTH_SUCCESS', { token: accessToken, user })
+            await dispatch('initializeUserData')
+
             return response
         } catch (error) {
-            commit('AUTH_ERROR', error.message || '登入失敗')
+            commit('AUTH_ERROR', error.message)
             throw error
         } finally {
             commit('SET_LOADING', false)
         }
     },
 
+    // 註冊
     async register({ commit }, userData) {
         commit('SET_LOADING', true)
         commit('CLEAR_ERROR')
+
         try {
-            const response = await authService.register(userData)
+            const response = await api.post('/users/register', userData)
             commit('SET_SUCCESS_MESSAGE', '註冊成功，請登入')
             return response
         } catch (error) {
-            commit('AUTH_ERROR', error.message || '註冊失敗')
+            commit('AUTH_ERROR', error.message)
             throw error
         } finally {
             commit('SET_LOADING', false)
         }
     },
 
-    async logout({ commit, dispatch }) {
+    // 登出
+    async logout({ commit }) {
         try {
-            commit('CLEAR_ERROR')
-            await authService.logout()
+            await api.post('/users/logout')
         } catch (error) {
-            console.error('登出時發生錯誤:', error)
+            console.error('登出錯誤:', error)
         } finally {
-            dispatch('clearUserData')
+            commit('CLEAR_AUTH')
             router.push('/login')
         }
     },
 
-    async refreshToken({ commit, dispatch, state }) {
+    // 獲取用戶資料
+    async fetchUserProfile({ commit }) {
         try {
-            if (!state.refreshToken) {
-                throw new Error('無可用的重整Token')
-            }
-
-            const response = await authService.refreshToken(state.refreshToken)
-            const { accessToken, refreshToken } = response
-
-            localStorage.setItem('accessToken', accessToken)
-            localStorage.setItem('refreshToken', refreshToken)
-
-            commit('UPDATE_TOKENS', { accessToken, refreshToken })
+            const response = await api.get('/users/profile')
+            commit('UPDATE_USER', response)
             return response
         } catch (error) {
-            dispatch('clearUserData')
-            router.push('/login')
+            commit('AUTH_ERROR', error.message)
             throw error
         }
     },
 
-    async updateProfile({ commit }, userData) {
+    // 更新用戶資料
+    async updateProfile({ commit }, profileData) {
         commit('SET_LOADING', true)
         commit('CLEAR_ERROR')
-        try {
-            const response = await authService.updateProfile(userData)
-            const updatedUser = { ...state.user, ...response.data }
 
-            localStorage.setItem('user', JSON.stringify(updatedUser))
-            commit('UPDATE_USER', updatedUser)
+        try {
+            const response = await api.put('/users/profile', profileData)
+            commit('UPDATE_USER', response)
             commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
-
             return response
         } catch (error) {
-            commit('AUTH_ERROR', error.message || '更新個人資料失敗')
+            commit('AUTH_ERROR', error.message)
             throw error
         } finally {
             commit('SET_LOADING', false)
         }
     },
 
-    async changePassword({ commit }, passwords) {
+    // 修改密碼
+    async changePassword({ commit }, passwordData) {
         commit('SET_LOADING', true)
         commit('CLEAR_ERROR')
+
         try {
-            await authService.changePassword(passwords)
+            await api.put('/users/password', passwordData)
             commit('SET_SUCCESS_MESSAGE', '密碼修改成功')
         } catch (error) {
-            commit('AUTH_ERROR', error.message || '密碼修改失敗')
+            commit('AUTH_ERROR', error.message)
             throw error
         } finally {
             commit('SET_LOADING', false)
         }
     },
 
-    async initAuth({ commit, dispatch }) {
-        const accessToken = localStorage.getItem('accessToken')
+    // 初始化用戶數據
+    async initializeUserData({ dispatch }) {
+        try {
+            await Promise.all([
+                dispatch('cart/fetchCart', null, { root: true }),
+                dispatch('fetchUserProfile')
+            ])
+        } catch (error) {
+            console.error('初始化用戶數據失敗:', error)
+        }
+    },
+
+    // 檢查認證狀態
+    checkAuth({ commit, dispatch }) {
+        const token = localStorage.getItem(TOKEN_KEY)
         const user = JSON.parse(localStorage.getItem('user'))
-        const lastLoginTime = localStorage.getItem('lastLoginTime')
 
-        if (accessToken && user) {
-            commit('AUTH_SUCCESS', {
-                accessToken,
-                refreshToken: localStorage.getItem('refreshToken'),
-                user
-            })
-            commit('SET_LAST_LOGIN_TIME', lastLoginTime)
-            await dispatch('validateSession')
+        if (token && user) {
+            commit('AUTH_SUCCESS', { token, user })
+            dispatch('initializeUserData')
         }
-    },
-
-    async validateSession({ dispatch, state }) {
-        try {
-            await authService.verifyToken()
-        } catch (error) {
-            dispatch('clearUserData')
-        }
-    },
-
-    async initUserData({ dispatch }) {
-        try {
-            await dispatch('cart/fetchCartItems', null, { root: true })
-            await dispatch('user/fetchUserPreferences', null, { root: true })
-        } catch (error) {
-            console.error('初始化用戶資料失敗:', error)
-        }
-    },
-
-    clearUserData({ commit }) {
-        localStorage.removeItem('accessToken')
-        localStorage.removeItem('refreshToken')
-        localStorage.removeItem('user')
-        localStorage.removeItem('lastLoginTime')
-
-        delete axios.defaults.headers.common['Authorization']
-        commit('LOGOUT')
-        commit('cart/CLEAR_CART', null, { root: true })
-        commit('user/CLEAR_USER_DATA', null, { root: true })
     }
 }
 
@@ -183,37 +150,28 @@ const mutations = {
         state.loading = status
     },
 
-    AUTH_SUCCESS(state, { accessToken, refreshToken, user }) {
-        state.status = 'success'
-        state.accessToken = accessToken
-        state.refreshToken = refreshToken
+    AUTH_SUCCESS(state, { token, user }) {
+        state.token = token
         state.user = user
         state.error = null
-        state.lastLoginTime = new Date().toISOString()
     },
 
     AUTH_ERROR(state, error) {
-        state.status = 'error'
         state.error = error
     },
 
-    UPDATE_TOKENS(state, { accessToken, refreshToken }) {
-        state.accessToken = accessToken
-        state.refreshToken = refreshToken
-    },
-
     UPDATE_USER(state, user) {
-        state.user = user
+        state.user = { ...state.user, ...user }
+        localStorage.setItem('user', JSON.stringify(state.user))
     },
 
-    LOGOUT(state) {
-        state.status = ''
-        state.accessToken = null
-        state.refreshToken = null
+    CLEAR_AUTH(state) {
+        state.token = null
         state.user = null
         state.error = null
-        state.lastLoginTime = null
         state.successMessage = null
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem('user')
     },
 
     CLEAR_ERROR(state) {
@@ -221,17 +179,11 @@ const mutations = {
     },
 
     SET_SUCCESS_MESSAGE(state, message) {
-        state.status = 'success'
         state.successMessage = message
-        state.error = null
     },
 
     CLEAR_SUCCESS_MESSAGE(state) {
         state.successMessage = null
-    },
-
-    SET_LAST_LOGIN_TIME(state, time) {
-        state.lastLoginTime = time
     }
 }
 

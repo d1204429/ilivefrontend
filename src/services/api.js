@@ -1,29 +1,27 @@
 import axios from 'axios'
 import router from '@/router'
 import store from '@/store'
+import { handleError } from '@/utils/errorHandler'
 
+// API 基礎配置
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL,
-    timeout: import.meta.env.VITE_API_TIMEOUT || 15000,
+    timeout: 5000,
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
-    },
-    withCredentials: true
+    }
 })
 
 // 請求攔截器
 api.interceptors.request.use(
     config => {
-        const accessToken = localStorage.getItem('accessToken')
-        if (accessToken) {
-            config.headers['Authorization'] = `Bearer ${accessToken}`
+        const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+        if (token) {
+            config.headers['Authorization'] = `Bearer ${token}`
         }
 
-        // 添加請求ID和時間戳
-        config.headers['X-Request-ID'] = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-
-        // GET請求添加快取破壞參數
+        // 防止 GET 請求快取
         if (config.method === 'get') {
             config.params = {
                 ...config.params,
@@ -33,174 +31,100 @@ api.interceptors.request.use(
 
         return config
     },
-    error => {
-        console.error('Request Error:', error)
-        return Promise.reject(error)
-    }
+    error => Promise.reject(error)
 )
 
 // 響應攔截器
 api.interceptors.response.use(
-    response => {
-        const res = response.data
-
-        // 處理成功響應
-        if (res.success === false || (res.code && res.code !== 200)) {
-            handleApiError({ response })
-            return Promise.reject(new Error(res.message || '請求失敗'))
-        }
-
-        return res
-    },
+    response => response.data,
     async error => {
-        const originalRequest = error.config
-
-        // Token過期處理
-        if (error.response?.status === 401 && !originalRequest._retry) {
-            originalRequest._retry = true
-
-            try {
-                const refreshToken = localStorage.getItem('refreshToken')
-                if (!refreshToken) {
-                    throw new Error('無可用的重整Token')
-                }
-
-                const response = await api.post('/users/refresh-token', {
-                    refreshToken,
-                    grantType: 'refresh_token'
-                })
-
-                const { accessToken, refreshToken: newRefreshToken } = response.data
-
-                localStorage.setItem('accessToken', accessToken)
-                localStorage.setItem('refreshToken', newRefreshToken)
-                api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
-
-                originalRequest.headers['Authorization'] = `Bearer ${accessToken}`
-                return api(originalRequest)
-            } catch (refreshError) {
-                await handleLogout()
-                return Promise.reject(refreshError)
-            }
+        if (error.response?.status === 401) {
+            // 清除認證信息
+            store.dispatch('auth/logout')
+            router.push('/login')
         }
 
-        handleApiError(error)
+        handleError(error)
         return Promise.reject(error)
     }
 )
 
-async function handleLogout() {
-    localStorage.removeItem('accessToken')
-    localStorage.removeItem('refreshToken')
-    localStorage.removeItem('user')
-    if (store?.dispatch) {
-        await store.dispatch('auth/logout')
-    }
-    router.push('/login')
-}
-
-function handleApiError(error) {
-    let errorMessage = '系統錯誤'
-    let errorCode = ''
-
-    if (error.response) {
-        const { status, data } = error.response
-        errorCode = status
-        errorMessage = data?.message || getDefaultErrorMessage(status)
-
-        if (status === 403) {
-            router.push('/403')
-        } else if (status === 404) {
-            router.push('/404')
-        } else if (status === 500) {
-            router.push('/500')
-        }
-    } else if (error.request) {
-        errorCode = 'NETWORK_ERROR'
-        errorMessage = '網路連接失敗，請檢查網路設置'
-    } else {
-        errorCode = 'ERROR'
-        errorMessage = error.message
-    }
-
-    if (store?.commit) {
-        store.commit('app/SET_ERROR', {
-            show: true,
-            code: errorCode,
-            message: errorMessage
-        })
-    }
-
-    console.error('[API Error]', {
-        code: errorCode,
-        message: errorMessage,
-        error
-    })
-}
-
-function getDefaultErrorMessage(status) {
-    const errorMessages = {
-        400: '請求參數錯誤',
-        401: '未授權，請重新登入',
-        403: '無權限訪問',
-        404: '請求的資源不存在',
-        500: '伺服器錯誤',
-        502: '網關錯誤',
-        503: '服務暫時無法使用',
-        504: '網關超時'
-    }
-    return errorMessages[status] || `請求失敗(${status})`
-}
-
-// API端點定義
+// 認證相關 API
 export const authApi = {
-    login: data => api.post('/users/login', data),
-    register: data => api.post('/users/register', data),
-    logout: () => api.post('/users/logout'),
-    refreshToken: refreshToken => api.post('/users/refresh-token', { refreshToken }),
-    verifyToken: () => api.get('/users/verify-token')
+    login: (credentials) => api.post('/users/login', credentials),
+    register: (userData) => api.post('/users/register', userData),
+    logout: () => api.post('/users/logout')
 }
 
+// 用戶相關 API
 export const userApi = {
     getProfile: () => api.get('/users/profile'),
-    updateProfile: data => api.put('/users/profile', data),
-    changePassword: data => api.put('/users/password', data),
-    updateAvatar: formData => api.post('/users/avatar', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-    })
+    updateProfile: (data) => api.put('/users/profile', data),
+    changePassword: (data) => api.put('/users/password', data)
 }
 
+// 商品相關 API
 export const productApi = {
-    getProducts: params => api.get('/products', { params }),
+    getList: (params) => api.get('/products', { params }),
+    getDetail: (id) => api.get(`/products/${id}`),
+    search: (params) => api.get('/products/search', { params }),
     getCategories: () => api.get('/products/categories'),
-    getProductById: id => api.get(`/products/${id}`),
-    searchProducts: params => api.get('/products/search', { params }),
-    getRecommended: () => api.get('/products/recommended'),
-    getNewArrivals: () => api.get('/products/new-arrivals')
+    getNewArrivals: () => api.get('/products/new-arrivals'),
+    getRecommended: () => api.get('/products/recommended')
 }
 
+// 購物車相關 API
 export const cartApi = {
-    getItems: () => api.get('/cart'),
-    addItem: data => api.post('/cart/items', data),
+    getCart: () => api.get('/cart'),
+    addItem: (data) => api.post('/cart/items', data),
     updateItem: (id, data) => api.put(`/cart/items/${id}`, data),
-    removeItem: id => api.delete(`/cart/items/${id}`),
+    removeItem: (id) => api.delete(`/cart/items/${id}`),
     clear: () => api.delete('/cart'),
-    applyCoupon: code => api.post('/cart/coupon', { code }),
+    applyCoupon: (code) => api.post('/cart/coupon', { code }),
     removeCoupon: () => api.delete('/cart/coupon')
 }
 
+// 訂單相關 API
 export const orderApi = {
-    create: data => api.post('/orders', data),
-    getList: params => api.get('/orders', { params }),
-    getDetail: id => api.get(`/orders/${id}`),
-    cancel: id => api.put(`/orders/${id}/cancel`),
-    pay: (id, data) => api.post(`/orders/${id}/payment`, data),
-    getPaymentMethods: () => api.get('/orders/payment-methods'),
-    confirmReceipt: id => api.put(`/orders/${id}/confirm-receipt`)
+    create: (data) => api.post('/orders', data),
+    getList: (params) => api.get('/orders', { params }),
+    getDetail: (id) => api.get(`/orders/${id}`),
+    cancel: (id) => api.put(`/orders/${id}/cancel`),
+    pay: (id, paymentData) => api.post(`/orders/${id}/payment`, paymentData),
+    confirmReceipt: (id) => api.put(`/orders/${id}/confirm`)
 }
 
-export const healthApi = {
-    check: () => api.get('/health')
+// 地址相關 API
+export const addressApi = {
+    getList: () => api.get('/addresses'),
+    create: (data) => api.post('/addresses', data),
+    update: (id, data) => api.put(`/addresses/${id}`, data),
+    delete: (id) => api.delete(`/addresses/${id}`),
+    setDefault: (id) => api.put(`/addresses/${id}/default`)
 }
 
-export default api
+// 收藏相關 API
+export const favoriteApi = {
+    getList: () => api.get('/favorites'),
+    add: (productId) => api.post('/favorites', { productId }),
+    remove: (productId) => api.delete(`/favorites/${productId}`)
+}
+
+// 評論相關 API
+export const reviewApi = {
+    getProductReviews: (productId, params) => api.get(`/products/${productId}/reviews`, { params }),
+    create: (productId, data) => api.post(`/products/${productId}/reviews`, data),
+    update: (reviewId, data) => api.put(`/reviews/${reviewId}`, data),
+    delete: (reviewId) => api.delete(`/reviews/${reviewId}`)
+}
+
+export default {
+    auth: authApi,
+    user: userApi,
+    product: productApi,
+    cart: cartApi,
+    order: orderApi,
+    address: addressApi,
+    favorite: favoriteApi,
+    review: reviewApi
+}

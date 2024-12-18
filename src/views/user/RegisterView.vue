@@ -130,15 +130,11 @@ import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
-import { userApi } from '@/utils/axios'
+import authService from '@/services/auth.service'
 
 export default {
   name: 'RegisterView',
-
-  components: {
-    BaseInput,
-    BaseButton
-  },
+  components: { BaseInput, BaseButton },
 
   setup() {
     const router = useRouter()
@@ -162,7 +158,7 @@ export default {
       username: [
         v => !!v || '請輸入用戶名',
         v => v.length >= 3 || '用戶名至少需要3個字元',
-        v => v.length <= 20 || '用戶名不能超過20個字元'
+        v => /^[a-zA-Z0-9_]+$/.test(v) || '用戶名只能包含字母、數字和底線'
       ],
       email: [
         v => !!v || '請輸入電子郵件',
@@ -170,27 +166,23 @@ export default {
       ],
       fullName: [
         v => !!v || '請輸入全名',
-        v => v.length >= 2 || '全名至少需要2個字元',
-        v => v.length <= 50 || '全名不能超過50個字元'
+        v => v.length >= 2 || '全名至少需要2個字元'
       ],
       phoneNumber: [
         v => !!v || '請輸入手機號碼',
         v => /^09\d{8}$/.test(v) || '請輸入有效的手機號碼'
       ],
       address: [
-        v => !!v || '請輸入地址',
-        v => v.length >= 5 || '地址至少需要5個字元'
+        v => !!v || '請輸入地址'
       ],
       password: [
         v => !!v || '請輸入密碼',
-        v => v.length >= 6 || '密碼長度至少6個字元',
-        v => /[A-Z]/.test(v) || '密碼需包含至少一個大寫字母',
-        v => /[a-z]/.test(v) || '密碼需包含至少一個小寫字母',
-        v => /[0-9]/.test(v) || '密碼需包含至少一個數字'
+        v => v.length >= 6 || '密碼長度至少需要6個字元',
+        v => /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/.test(v) || '密碼必須包含字母和數字'
       ],
       confirmPassword: [
         v => !!v || '請確認密碼',
-        v => v === formData.password || '密碼不一致'
+        v => v === formData.password || '兩次輸入的密碼不一致'
       ]
     }
 
@@ -212,11 +204,11 @@ export default {
 
     const validateForm = () => {
       let isValid = true
-      for (const field in validationRules) {
+      Object.keys(validationRules).forEach(field => {
         if (!validateField(field)) {
           isValid = false
         }
-      }
+      })
       return isValid
     }
 
@@ -236,22 +228,27 @@ export default {
         isLoading.value = true
         globalError.value = ''
 
-        const response = await userApi.register({
+        const userData = {
           username: formData.username,
+          password: formData.password,
           email: formData.email,
           fullName: formData.fullName,
           phoneNumber: formData.phoneNumber,
-          address: formData.address,
-          password: formData.password
-        })
+          address: formData.address
+        }
 
-        await store.dispatch('auth/register', response.data)
+        const response = await authService.register(userData)
+
+        store.dispatch('app/setSuccess', '註冊成功，請登入')
         router.push('/login')
       } catch (error) {
-        if (error.response?.data?.errors) {
-          Object.assign(validationErrors, error.response.data.errors)
-        } else {
-          globalError.value = error.response?.data?.message || '註冊失敗，請稍後再試'
+        const errorMessage = error.response?.data || error.message
+        globalError.value = errorMessage || '註冊失敗，請稍後再試'
+
+        if (errorMessage.includes('用戶名已存在')) {
+          validationErrors.username = '此用戶名已被使用'
+        } else if (errorMessage.includes('電子郵件已存在')) {
+          validationErrors.email = '此電子郵件已被註冊'
         }
       } finally {
         isLoading.value = false

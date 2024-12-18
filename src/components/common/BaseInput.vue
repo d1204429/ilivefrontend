@@ -1,6 +1,5 @@
 <template>
   <div class="form-group">
-    <!-- 標籤 -->
     <label
         v-if="label"
         :for="id"
@@ -10,7 +9,6 @@
       <span v-if="required" class="required-mark">*</span>
     </label>
 
-    <!-- 輸入框 -->
     <div class="input-wrapper" :class="{ 'has-error': error }">
       <input
           v-bind="$attrs"
@@ -21,32 +19,32 @@
           :disabled="disabled"
           :readonly="readonly"
           :class="[
-          'form-control',
-          size && `form-control-${size}`,
-          { 'is-invalid': error }
-        ]"
+            'form-control',
+            size && `form-control-${size}`,
+            { 'is-invalid': error }
+          ]"
           @input="updateValue"
           @blur="onBlur"
           @focus="onFocus"
       >
 
-      <!-- 前綴圖標 -->
-      <span v-if="prefixIcon" class="prefix-icon">
-        <i :class="prefixIcon"></i>
-      </span>
+      <slot name="prefix">
+        <span v-if="prefixIcon" class="prefix-icon">
+          <i :class="prefixIcon"></i>
+        </span>
+      </slot>
 
-      <!-- 後綴圖標 -->
-      <span v-if="suffixIcon" class="suffix-icon">
-        <i :class="suffixIcon"></i>
-      </span>
+      <slot name="append">
+        <span v-if="suffixIcon" class="suffix-icon">
+          <i :class="suffixIcon"></i>
+        </span>
+      </slot>
     </div>
 
-    <!-- 錯誤提示 -->
     <div v-if="error" class="invalid-feedback">
       {{ error }}
     </div>
 
-    <!-- 幫助文字 -->
     <div v-if="helpText" class="help-text">
       {{ helpText }}
     </div>
@@ -64,92 +62,71 @@ export default {
 import { computed } from 'vue'
 
 const props = defineProps({
-  // 輸入框標籤
   label: {
     type: String,
     default: ''
   },
-  // 輸入框ID
   id: {
     type: String,
     default: ''
   },
-  // 輸入框類型
   type: {
     type: String,
     default: 'text'
   },
-  // 預設提示文字
   placeholder: {
     type: String,
     default: ''
   },
-  // 綁定值
   modelValue: {
     type: [String, Number],
     default: ''
   },
-  // 是否禁用
   disabled: {
     type: Boolean,
     default: false
   },
-  // 是否唯讀
   readonly: {
     type: Boolean,
     default: false
   },
-  // 是否必填
   required: {
     type: Boolean,
     default: false
   },
-  // 錯誤訊息
   error: {
     type: String,
     default: ''
   },
-  // 幫助文字
   helpText: {
     type: String,
     default: ''
   },
-  // 尺寸(sm/lg)
   size: {
     type: String,
     default: ''
   },
-  // 前綴圖標
   prefixIcon: {
     type: String,
     default: ''
   },
-  // 後綴圖標
   suffixIcon: {
     type: String,
     default: ''
   }
 })
 
-const emit = defineEmits([
-  'update:modelValue',
-  'blur',
-  'focus',
-  'change'
-])
+const emit = defineEmits(['update:modelValue', 'blur', 'focus', 'change'])
 
-// 更新輸入值
 const updateValue = (event) => {
   emit('update:modelValue', event.target.value)
   emit('change', event.target.value)
 }
 
-// 失去焦點事件
 const onBlur = (event) => {
   emit('blur', event)
 }
 
-// 獲得焦點事件
 const onFocus = (event) => {
   emit('focus', event)
 }
@@ -164,7 +141,7 @@ const onFocus = (event) => {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
-  color: var(--text-color);
+  color: #2c3e50;
 }
 
 .required-mark {
@@ -181,55 +158,42 @@ const onFocus = (event) => {
 .form-control {
   display: block;
   width: 100%;
-  padding: 0.375rem 0.75rem;
-  font-size: 1rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
   line-height: 1.5;
-  color: var(--text-color);
+  color: #2c3e50;
   background-color: #fff;
-  background-clip: padding-box;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.375rem;
+  transition: all 0.2s ease;
 }
 
 .form-control:focus {
-  border-color: var(--primary-color);
-  outline: 0;
-  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+  border-color: #4299e1;
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
+  outline: none;
 }
 
-.form-control-sm {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.875rem;
-}
-
-.form-control-lg {
-  padding: 0.5rem 1rem;
-  font-size: 1.25rem;
-}
-
-.form-control:disabled,
-.form-control[readonly] {
-  background-color: #e9ecef;
-  opacity: 1;
-}
-
-.is-invalid {
+.form-control.is-invalid {
   border-color: #dc3545;
+}
+
+.form-control:disabled {
+  background-color: #f8f9fa;
+  cursor: not-allowed;
 }
 
 .invalid-feedback {
   display: block;
-  width: 100%;
   margin-top: 0.25rem;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   color: #dc3545;
 }
 
 .help-text {
   margin-top: 0.25rem;
-  font-size: 0.875rem;
-  color: #6c757d;
+  font-size: 0.75rem;
+  color: #718096;
 }
 
 .prefix-icon,
@@ -237,7 +201,8 @@ const onFocus = (event) => {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  color: #6c757d;
+  color: #718096;
+  pointer-events: none;
 }
 
 .prefix-icon {
@@ -248,11 +213,15 @@ const onFocus = (event) => {
   right: 0.75rem;
 }
 
-.prefix-icon + input {
-  padding-left: 2.5rem;
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
 }
 
-.suffix-icon + input {
-  padding-right: 2.5rem;
+@media (max-width: 640px) {
+  .form-control {
+    font-size: 1rem;
+    padding: 0.5rem 0.75rem;
+  }
 }
 </style>

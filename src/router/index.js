@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import store from '@/store'
 
 const router = createRouter({
     history: createWebHistory(),
@@ -99,11 +100,30 @@ const router = createRouter({
             }
         },
         {
+            path: '/403',
+            name: 'Forbidden',
+            component: () => import('@/views/ErrorView.vue'),
+            props: { code: 403, message: '無權限訪問' },
+            meta: {
+                title: '403 Forbidden'
+            }
+        },
+        {
             path: '/404',
             name: 'NotFound',
-            component: () => import('@/views/NotFoundView.vue'),
+            component: () => import('@/views/ErrorView.vue'),
+            props: { code: 404, message: '頁面不存在' },
             meta: {
                 title: '404 Not Found'
+            }
+        },
+        {
+            path: '/500',
+            name: 'ServerError',
+            component: () => import('@/views/ErrorView.vue'),
+            props: { code: 500, message: '伺服器錯誤' },
+            meta: {
+                title: '500 Server Error'
             }
         },
         {
@@ -114,14 +134,13 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-    // 設置頁面標題
     document.title = to.meta.title ? `${to.meta.title} - iLive商城` : 'iLive商城'
 
     try {
-        const token = localStorage.getItem('token')
-        const isAuthenticated = !!token
+        const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+        const isAuthenticated = !!token && store.getters['auth/isAuthenticated']
 
-        // 檢查需要登入的頁面
+        // 需要認證的路由檢查
         if (to.matched.some(record => record.meta.requiresAuth)) {
             if (!isAuthenticated) {
                 next({
@@ -132,28 +151,35 @@ router.beforeEach(async (to, from, next) => {
             }
         }
 
-        // 檢查已登入用戶不能訪問的頁面
+        // 已登入用戶的路由限制
         if (isAuthenticated && to.meta.hideForAuth) {
             next({ path: '/' })
             return
         }
 
-        // 儲存上一頁路徑（用於返回功能）
-        if (!to.meta.hideForAuth) {
+        // 儲存前一頁路徑
+        if (!to.meta.hideForAuth && from.name) {
             localStorage.setItem('previousPath', from.fullPath)
         }
 
         next()
     } catch (error) {
         console.error('路由守衛錯誤:', error)
-        next('/404')
+        store.dispatch('app/setError', {
+            message: '路由錯誤，請重新登入',
+            type: 'error'
+        })
+        next('/login')
     }
 })
 
-// 全局路由錯誤處理
 router.onError((error) => {
     console.error('路由錯誤:', error)
-    router.push('/404')
+    store.dispatch('app/setError', {
+        message: '頁面載入失敗',
+        type: 'error'
+    })
+    router.push('/500')
 })
 
 export default router

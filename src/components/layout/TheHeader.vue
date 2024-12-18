@@ -72,40 +72,86 @@
 </template>
 
 <script>
+import { ref, computed, onMounted } from 'vue'
+import { useStore } from 'vuex'
+import { useRouter } from 'vue-router'
+
 export default {
-  name: 'Header',
-  data() {
-    return {
-      isMenuOpen: false,
-      isCategoryOpen: false,
-      searchKeyword: '',
-      cartItemCount: 0
-    }
-  },
-  computed: {
-    isLoggedIn() {
-      return !!localStorage.getItem('token')
-    }
-  },
-  methods: {
-    toggleMenu() {
-      this.isMenuOpen = !this.isMenuOpen;
-      if (!this.isMenuOpen) {
-        this.isCategoryOpen = false;
+  name: 'TheHeader',
+
+  setup() {
+    const store = useStore()
+    const router = useRouter()
+
+    const isMenuOpen = ref(false)
+    const isCategoryOpen = ref(false)
+    const searchKeyword = ref('')
+
+    const isLoggedIn = computed(() => {
+      return store.getters['auth/isAuthenticated']
+    })
+
+    const cartItemCount = computed(() => {
+      return store.getters['cart/itemCount']
+    })
+
+    const toggleMenu = () => {
+      isMenuOpen.value = !isMenuOpen.value
+      if (!isMenuOpen.value) {
+        isCategoryOpen.value = false
       }
-      document.body.style.overflow = this.isMenuOpen ? 'hidden' : '';
-    },
-    toggleCategory() {
-      this.isCategoryOpen = !this.isCategoryOpen;
-    },
-    handleSearch() {
-      if (this.searchKeyword.trim()) {
-        this.$router.push({
+      document.body.style.overflow = isMenuOpen.value ? 'hidden' : ''
+    }
+
+    const toggleCategory = () => {
+      isCategoryOpen.value = !isCategoryOpen.value
+    }
+
+    const handleSearch = () => {
+      if (searchKeyword.value.trim()) {
+        router.push({
           path: '/products',
-          query: { search: this.searchKeyword.trim() }
-        });
-        this.searchKeyword = '';
+          query: {
+            search: searchKeyword.value.trim(),
+            page: 1
+          }
+        })
+        searchKeyword.value = ''
+        if (isMenuOpen.value) {
+          toggleMenu()
+        }
       }
+    }
+
+    const initializeHeader = () => {
+      // 初始化購物車數量
+      if (isLoggedIn.value) {
+        store.dispatch('cart/fetchCartItems')
+      }
+    }
+
+    // 監聽視窗大小變化
+    const handleResize = () => {
+      if (window.innerWidth > 768 && isMenuOpen.value) {
+        isMenuOpen.value = false
+        document.body.style.overflow = ''
+      }
+    }
+
+    onMounted(() => {
+      initializeHeader()
+      window.addEventListener('resize', handleResize)
+    })
+
+    return {
+      isMenuOpen,
+      isCategoryOpen,
+      searchKeyword,
+      isLoggedIn,
+      cartItemCount,
+      toggleMenu,
+      toggleCategory,
+      handleSearch
     }
   }
 }

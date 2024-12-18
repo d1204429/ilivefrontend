@@ -93,11 +93,7 @@ import authService from '@/services/auth.service'
 
 export default {
   name: 'LoginView',
-
-  components: {
-    BaseInput,
-    BaseButton
-  },
+  components: { BaseInput, BaseButton },
 
   setup() {
     const router = useRouter()
@@ -113,14 +109,17 @@ export default {
       rememberMe: false
     })
 
+    // 更新驗證規則以符合後端要求
     const validationRules = {
       username: [
         v => !!v || '請輸入帳號',
-        v => v.length >= 3 || '帳號長度至少需要3個字元'
+        v => v.length >= 3 || '帳號長度至少需要3個字元',
+        v => /^[a-zA-Z0-9_]+$/.test(v) || '帳號只能包含字母、數字和底線'
       ],
       password: [
         v => !!v || '請輸入密碼',
-        v => v.length >= 6 || '密碼長度至少需要6個字元'
+        v => v.length >= 6 || '密碼長度至少需要6個字元',
+        v => /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/.test(v) || '密碼必須包含至少一個字母和一個數字'
       ]
     }
 
@@ -156,10 +155,6 @@ export default {
           Object.keys(validationErrors).length === 0
     })
 
-    const togglePasswordVisibility = () => {
-      showPassword.value = !showPassword.value
-    }
-
     const handleSubmit = async () => {
       try {
         if (!validateForm()) return
@@ -167,22 +162,31 @@ export default {
         isLoading.value = true
         globalError.value = ''
 
-        const response = await authService.login(
-            formData.username,
-            formData.password
-        )
+        // 調整為符合後端 API 的請求格式
+        const response = await authService.login({
+          username: formData.username,
+          password: formData.password
+        })
 
-        if (formData.rememberMe) {
-          localStorage.setItem('rememberedUsername', formData.username)
+        if (response.accessToken) {
+          if (formData.rememberMe) {
+            localStorage.setItem('rememberedUsername', formData.username)
+          } else {
+            localStorage.removeItem('rememberedUsername')
+          }
+
+          // 更新 store 中的認證狀態
+          await store.dispatch('auth/login', {
+            accessToken: response.accessToken,
+            refreshToken: response.refreshToken,
+            user: response.user
+          })
+
+          const redirect = router.currentRoute.value.query.redirect || '/'
+          router.push(redirect)
         } else {
-          localStorage.removeItem('rememberedUsername')
+          throw new Error('登入失敗：未收到有效的認證Token')
         }
-
-        await store.dispatch('auth/loginSuccess', response)
-
-        const redirect = router.currentRoute.value.query.redirect || '/'
-        router.push(redirect)
-
       } catch (error) {
         console.error('登入失敗:', error)
         globalError.value = error.message || '登入失敗，請檢查帳號密碼是否正確'
@@ -193,6 +197,10 @@ export default {
       } finally {
         isLoading.value = false
       }
+    }
+
+    const togglePasswordVisibility = () => {
+      showPassword.value = !showPassword.value
     }
 
     // 初始化表單
