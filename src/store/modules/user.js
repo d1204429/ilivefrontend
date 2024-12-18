@@ -52,7 +52,6 @@ const mutations = {
 }
 
 const actions = {
-    // 登入
     async login({ commit }, { username, password }) {
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
@@ -71,7 +70,6 @@ const actions = {
         }
     },
 
-    // 註冊
     async register({ commit }, userData) {
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
@@ -86,7 +84,6 @@ const actions = {
         }
     },
 
-    // 登出
     async logout({ commit }) {
         try {
             await authService.logout()
@@ -95,7 +92,6 @@ const actions = {
         }
     },
 
-    // 獲取用戶資料
     async fetchUserInfo({ commit, state }) {
         if (!state.accessToken) return
 
@@ -113,7 +109,6 @@ const actions = {
         }
     },
 
-    // 更新用戶資料
     async updateUserInfo({ commit }, userData) {
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
@@ -129,7 +124,6 @@ const actions = {
         }
     },
 
-    // 修改密碼
     async changePassword({ commit }, { oldPassword, newPassword }) {
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
@@ -143,7 +137,6 @@ const actions = {
         }
     },
 
-    // 重設密碼
     async resetPassword({ commit }, { token, newPassword }) {
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
@@ -157,12 +150,11 @@ const actions = {
         }
     },
 
-    // 刷新Token
     async refreshToken({ commit, state }) {
         if (!state.refreshToken) return
 
         try {
-            const response = await authService.refreshToken()
+            const response = await authService.refreshToken(state.refreshToken)
             const { accessToken, refreshToken } = response
             commit('SET_TOKENS', { accessToken, refreshToken })
             return response
