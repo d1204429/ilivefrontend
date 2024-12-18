@@ -1,11 +1,8 @@
-import { createStore } from 'vuex'
-import auth from './modules/auth'
-import cart from './modules/cart'
-import product from './modules/product'
-import user from './modules/user'
-import order from './modules/order'
+// src/store/modules/app.js
 
-export default createStore({
+export default {
+    namespaced: true,
+
     state: {
         loading: false,
         error: null,
@@ -27,8 +24,12 @@ export default createStore({
             state.globalLoading = status
         },
         SET_ERROR(state, error) {
-            state.error = error
-            state.lastApiCall = new Date().toISOString()
+            state.error = {
+                show: true,
+                message: error.message || '發生錯誤',
+                type: error.type || 'error',
+                timestamp: new Date().toISOString()
+            }
         },
         CLEAR_ERROR(state) {
             state.error = null
@@ -51,6 +52,9 @@ export default createStore({
         },
         UPDATE_ONLINE_STATUS(state, isOnline) {
             state.systemStatus.isOnline = isOnline
+        },
+        SET_LAST_API_CALL(state) {
+            state.lastApiCall = new Date().toISOString()
         }
     },
 
@@ -80,8 +84,10 @@ export default createStore({
                 commit('CLEAR_NOTIFICATION')
             }, duration)
         },
+        clearNotification({ commit }) {
+            commit('CLEAR_NOTIFICATION')
+        },
         initializeApp({ commit, dispatch }) {
-            // 監聽網路狀態
             window.addEventListener('online', () => {
                 commit('UPDATE_ONLINE_STATUS', true)
                 dispatch('showNotification', {
@@ -96,11 +102,6 @@ export default createStore({
                     type: 'warning'
                 })
             })
-
-            // 初始化各模組
-            dispatch('auth/initializeAuth')
-            dispatch('cart/initializeCart')
-            dispatch('user/initializeUserData')
         },
         async checkSystemStatus({ commit }) {
             try {
@@ -111,14 +112,6 @@ export default createStore({
                 console.error('系統狀態檢查失敗:', error)
             }
         }
-    },
-
-    modules: {
-        auth,
-        cart,
-        product,
-        user,
-        order
     },
 
     getters: {
@@ -133,4 +126,4 @@ export default createStore({
         hasNotification: state => !!state.notification,
         lastApiCallTime: state => state.lastApiCall ? new Date(state.lastApiCall) : null
     }
-})
+}

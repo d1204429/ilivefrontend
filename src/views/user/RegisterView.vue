@@ -3,7 +3,6 @@
     <div class="register-container">
       <h2 class="register-title">會員註冊</h2>
 
-      <!-- 全局錯誤訊息 -->
       <div v-if="globalError" class="error-message">
         {{ globalError }}
       </div>
@@ -11,9 +10,9 @@
       <form class="register-form" @submit.prevent="handleRegister">
         <!-- 用戶名欄位 -->
         <div class="form-group">
-          <label for="username-input">用戶名</label>
+          <label for="username">用戶名</label>
           <BaseInput
-              id="username-input"
+              id="username"
               v-model="formData.username"
               type="text"
               placeholder="請輸入用戶名"
@@ -24,9 +23,9 @@
 
         <!-- 電子郵件欄位 -->
         <div class="form-group">
-          <label for="email-input">電子郵件</label>
+          <label for="email">電子郵件</label>
           <BaseInput
-              id="email-input"
+              id="email"
               v-model="formData.email"
               type="email"
               placeholder="請輸入電子郵件"
@@ -37,9 +36,9 @@
 
         <!-- 全名欄位 -->
         <div class="form-group">
-          <label for="fullname-input">全名</label>
+          <label for="fullName">全名</label>
           <BaseInput
-              id="fullname-input"
+              id="fullName"
               v-model="formData.fullName"
               type="text"
               placeholder="請輸入全名"
@@ -50,9 +49,9 @@
 
         <!-- 手機號碼欄位 -->
         <div class="form-group">
-          <label for="phone-input">手機號碼</label>
+          <label for="phoneNumber">手機號碼</label>
           <BaseInput
-              id="phone-input"
+              id="phoneNumber"
               v-model="formData.phoneNumber"
               type="tel"
               placeholder="請輸入手機號碼"
@@ -63,9 +62,9 @@
 
         <!-- 地址欄位 -->
         <div class="form-group">
-          <label for="address-input">地址</label>
+          <label for="address">地址</label>
           <BaseInput
-              id="address-input"
+              id="address"
               v-model="formData.address"
               type="text"
               placeholder="請輸入地址"
@@ -76,9 +75,9 @@
 
         <!-- 密碼欄位 -->
         <div class="form-group">
-          <label for="password-input">密碼</label>
+          <label for="password">密碼</label>
           <BaseInput
-              id="password-input"
+              id="password"
               v-model="formData.password"
               :type="showPassword ? 'text' : 'password'"
               placeholder="請輸入密碼"
@@ -97,9 +96,9 @@
 
         <!-- 確認密碼欄位 -->
         <div class="form-group">
-          <label for="confirm-password-input">確認密碼</label>
+          <label for="confirmPassword">確認密碼</label>
           <BaseInput
-              id="confirm-password-input"
+              id="confirmPassword"
               v-model="formData.confirmPassword"
               :type="showPassword ? 'text' : 'password'"
               placeholder="請再次輸入密碼"
@@ -108,7 +107,6 @@
           />
         </div>
 
-        <!-- 註冊按鈕 -->
         <BaseButton
             type="submit"
             :disabled="!isFormValid || isLoading"
@@ -117,7 +115,6 @@
           {{ isLoading ? '註冊中...' : '註冊' }}
         </BaseButton>
 
-        <!-- 登入連結 -->
         <div class="login-link">
           已有帳號？
           <router-link to="/login">立即登入</router-link>
@@ -248,17 +245,8 @@ export default {
           password: formData.password
         })
 
-        await store.dispatch('user/setUser', response.data)
-
-        // 註冊成功後自動登入
-        const loginResponse = await userApi.login({
-          username: formData.username,
-          password: formData.password
-        })
-
-        await store.dispatch('user/setToken', loginResponse.data.accessToken)
-
-        router.push('/')
+        await store.dispatch('auth/register', response.data)
+        router.push('/login')
       } catch (error) {
         if (error.response?.data?.errors) {
           Object.assign(validationErrors, error.response.data.errors)
@@ -286,7 +274,6 @@ export default {
 </script>
 
 <style scoped>
-/* 將 .register-view 和 .register-container 使用登入頁面的樣式 */
 .register-view {
   display: flex;
   justify-content: center;
@@ -305,7 +292,6 @@ export default {
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-/* 標題樣式 */
 .register-title {
   text-align: center;
   color: #2c3e50;
@@ -313,7 +299,6 @@ export default {
   font-weight: 600;
 }
 
-/* 表單群組樣式 */
 .form-group {
   margin-bottom: 1.5rem;
 }
@@ -325,48 +310,6 @@ label {
   font-weight: 500;
 }
 
-/* 輸入框樣式 */
-input {
-  width: 100%;
-  padding: 0.75rem;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 1rem;
-  transition: all 0.3s ease;
-}
-
-input:focus {
-  outline: none;
-  border-color: #4299e1;
-  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
-}
-
-input.error {
-  border-color: #e53e3e;
-}
-
-/* 密碼輸入框樣式 */
-.password-input {
-  position: relative;
-}
-
-.password-toggle {
-  position: absolute;
-  right: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: #718096;
-  cursor: pointer;
-  padding: 0.25rem;
-}
-
-.password-toggle:hover {
-  color: #4a5568;
-}
-
-/* 錯誤訊息樣式 */
 .error-message {
   background-color: #fff5f5;
   border: 1px solid #feb2b2;
@@ -378,36 +321,11 @@ input.error {
   font-size: 0.875rem;
 }
 
-/* 註冊按鈕樣式 */
 .register-button {
   width: 100%;
-  padding: 0.75rem;
-  background-color: #4299e1;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  margin-top: 1rem;
 }
 
-.register-button:hover:not(:disabled) {
-  background-color: #3182ce;
-  transform: translateY(-1px);
-}
-
-.register-button:disabled {
-  background-color: #a0aec0;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* 登入連結樣式 */
 .login-link {
   text-align: center;
   margin-top: 1.5rem;
@@ -417,7 +335,6 @@ input.error {
 .login-link a {
   color: #4299e1;
   text-decoration: none;
-  font-size: 0.875rem;
   transition: color 0.3s ease;
 }
 
@@ -426,18 +343,6 @@ input.error {
   text-decoration: underline;
 }
 
-/* 動畫效果 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-/* 響應式設計 */
 @media (max-width: 640px) {
   .register-container {
     margin: 1rem;

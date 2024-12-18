@@ -20,6 +20,13 @@ api.interceptors.request.use(
         if (accessToken) {
             config.headers['Authorization'] = `Bearer ${accessToken}`
         }
+        // 添加時間戳防止快取
+        if (config.method === 'get') {
+            config.params = {
+                ...config.params,
+                _t: Date.now()
+            }
+        }
         return config
     },
     error => {
@@ -30,9 +37,18 @@ api.interceptors.request.use(
 
 // 響應攔截器
 api.interceptors.response.use(
-    response => response.data,
+    response => {
+        const res = response.data
+        if (res.code && res.code !== 200) {
+            handleApiError({ response })
+            return Promise.reject(new Error(res.message || '錯誤'))
+        }
+        return res
+    },
     async error => {
         const originalRequest = error.config
+
+        // Token 過期處理
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true
             try {
@@ -40,44 +56,64 @@ api.interceptors.response.use(
                 if (!refreshToken) {
                     throw new Error('No refresh token available')
                 }
-                const response = await api.post('/users/refresh-token', { refreshToken })
-                const { accessToken } = response.data
+
+                // 刷新 Token
+                const response = await api.post('/auth/refresh-token', {
+                    refreshToken,
+                    grantType: 'refresh_token'
+                })
+
+                const { accessToken, refreshToken: newRefreshToken } = response.data
+
+                // 更新 Token
                 localStorage.setItem('accessToken', accessToken)
+                localStorage.setItem('refreshToken', newRefreshToken)
                 api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
+
+                // 重試原始請求
+                originalRequest.headers['Authorization'] = `Bearer ${accessToken}`
                 return api(originalRequest)
             } catch (refreshError) {
+                // Token 刷新失敗,清除用戶信息並跳轉登入頁
                 localStorage.removeItem('accessToken')
                 localStorage.removeItem('refreshToken')
-                if (store && store.dispatch) {
+                localStorage.removeItem('user')
+                if (store?.dispatch) {
                     await store.dispatch('user/logout')
                 }
                 router.push('/login')
                 return Promise.reject(refreshError)
             }
         }
+
         handleApiError(error)
         return Promise.reject(error)
     }
 )
 
-// 全局錯誤處理函數
+// 錯誤處理
 function handleApiError(error) {
-    let errorMessage = '發生未知錯誤'
+    let errorMessage = '系統錯誤'
+    let errorCode = ''
 
     if (error.response) {
-        const status = error.response.status
-        errorMessage = error.response.data?.message || '請求失敗'
+        const { status, data } = error.response
+        errorCode = status
+        errorMessage = data?.message || '請求失敗'
 
         switch (status) {
             case 400:
-                console.error('請求錯誤:', errorMessage)
+                errorMessage = data?.message || '請求參數錯誤'
+                break
+            case 401:
+                errorMessage = '未授權,請重新登入'
                 break
             case 403:
                 errorMessage = '無權限訪問'
                 router.push('/403')
                 break
             case 404:
-                errorMessage = '資源不存在'
+                errorMessage = '請求的資源不存在'
                 router.push('/404')
                 break
             case 500:
@@ -85,55 +121,73 @@ function handleApiError(error) {
                 router.push('/500')
                 break
             default:
-                console.error(`HTTP Error ${status}:`, errorMessage)
+                errorMessage = `請求失敗(${status})`
         }
     } else if (error.request) {
-        errorMessage = '無法連接到伺服器，請檢查網路連線'
-        console.error('Network Error:', error.request)
+        errorCode = 'NETWORK_ERROR'
+        errorMessage = '網路連接失敗,請檢查網路設置'
+    } else {
+        errorCode = 'ERROR'
+        errorMessage = error.message
     }
 
-    if (store && store.commit) {
+    // 提交錯誤到 store
+    if (store?.commit) {
         store.commit('app/SET_ERROR', {
             show: true,
+            code: errorCode,
             message: errorMessage
         })
     }
+
+    console.error('[API Error]', {
+        code: errorCode,
+        message: errorMessage,
+        error
+    })
+}
+// API 端點定義
+// API 定義
+export const authApi = {
+    login: data => api.post('/auth/login', data),
+    register: data => api.post('/auth/register', data),
+    logout: () => api.post('/auth/logout'),
+    refreshToken: refreshToken => api.post('/auth/refresh-token', { refreshToken }),
+    verifyToken: () => api.get('/auth/verify')
 }
 
-// API 端點定義
 export const userApi = {
-    login: (data) => api.post('/users/login', data),
-    register: (data) => api.post('/users/register', data),
-    getUserInfo: () => api.get('/users/profile'),
-    updateUserInfo: (data) => api.put('/users/profile', data),
-    changePassword: (data) => api.put('/users/password', data),
-    refreshToken: (refreshToken) => api.post('/users/refresh-token', { refreshToken }),
-    verifyToken: () => api.get('/users/verify-token')
+    getProfile: () => api.get('/users/profile'),
+    updateProfile: data => api.put('/users/profile', data),
+    changePassword: data => api.put('/users/password', data),
+    uploadAvatar: formData => api.post('/users/avatar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    })
 }
 
 export const productApi = {
-    getProducts: (params) => api.get('/products', { params }),
-    getProductById: (id) => api.get(`/products/${id}`),
+    getList: params => api.get('/products', { params }),
+    getDetail: id => api.get(`/products/${id}`),
     getCategories: () => api.get('/products/categories'),
-    searchProducts: (params) => api.get('/products/search', { params }),
-    getProductsByCategory: (categoryId) => api.get(`/products/category/${categoryId}`)
+    search: params => api.get('/products/search', { params })
 }
 
 export const cartApi = {
-    getCartItems: () => api.get('/cart/items'),
-    addToCart: (data) => api.post('/cart/items/add', data),
-    updateQuantity: (cartItemId, data) => api.put(`/cart/items/${cartItemId}`, data),
-    removeItem: (cartItemId) => api.delete(`/cart/items/${cartItemId}`),
-    clearCart: () => api.delete('/cart')
+    getItems: () => api.get('/cart'),
+    addItem: data => api.post('/cart/items', data),
+    updateItem: (id, data) => api.put(`/cart/items/${id}`, data),
+    removeItem: id => api.delete(`/cart/items/${id}`),
+    clear: () => api.delete('/cart')
 }
 
 export const orderApi = {
-    createOrder: (data) => api.post('/orders', data),
-    getOrders: () => api.get('/orders'),
-    getOrderById: (id) => api.get(`/orders/${id}`),
-    cancelOrder: (id) => api.put(`/orders/${id}/cancel`),
-    processPayment: (orderId, paymentData) => api.post(`/orders/${orderId}/payment`, paymentData)
+    create: data => api.post('/orders', data),
+    getList: params => api.get('/orders', { params }),
+    getDetail: id => api.get(`/orders/${id}`),
+    cancel: id => api.put(`/orders/${id}/cancel`),
+    pay: (id, data) => api.post(`/orders/${id}/payment`, data)
 }
+
 
 // 健康檢查 API
 export const healthApi = {
