@@ -26,6 +26,7 @@ export default {
         SET_ERROR(state, error) {
             state.error = {
                 show: true,
+                code: error.code || '',
                 message: error.message || '發生錯誤',
                 type: error.type || 'error',
                 timestamp: new Date().toISOString()
@@ -55,7 +56,17 @@ export default {
         },
         SET_LAST_API_CALL(state) {
             state.lastApiCall = new Date().toISOString()
+        },// SET_ERROR mutation
+        mutations: {
+            SET_ERROR(state, error) {
+                state.error = {
+                    show: true,
+                    code: error.code || '',
+                    message: error.message || '發生錯誤'
+                }
+            }
         }
+
     },
 
     actions: {
@@ -67,27 +78,43 @@ export default {
         },
         setError({ commit, dispatch }, error) {
             commit('SET_ERROR', error)
+
+            // 顯示錯誤通知
             dispatch('showNotification', {
                 message: error.message || '發生錯誤',
-                type: 'error'
+                type: 'error',
+                duration: 5000
             })
+
+            // 自動清除錯誤
             setTimeout(() => {
                 commit('CLEAR_ERROR')
-            }, 3000)
+            }, 5000)
         },
         clearError({ commit }) {
             commit('CLEAR_ERROR')
         },
         showNotification({ commit }, { message, type = 'info', duration = 3000 }) {
-            commit('SET_NOTIFICATION', { message, type })
-            setTimeout(() => {
-                commit('CLEAR_NOTIFICATION')
-            }, duration)
+            // 先清除現有通知
+            commit('CLEAR_NOTIFICATION')
+
+            commit('SET_NOTIFICATION', {
+                message,
+                type,
+                duration
+            })
+
+            if (duration > 0) {
+                setTimeout(() => {
+                    commit('CLEAR_NOTIFICATION')
+                }, duration)
+            }
         },
         clearNotification({ commit }) {
             commit('CLEAR_NOTIFICATION')
         },
         initializeApp({ commit, dispatch }) {
+            // 監聽網路狀態
             window.addEventListener('online', () => {
                 commit('UPDATE_ONLINE_STATUS', true)
                 dispatch('showNotification', {
@@ -95,6 +122,7 @@ export default {
                     type: 'success'
                 })
             })
+
             window.addEventListener('offline', () => {
                 commit('UPDATE_ONLINE_STATUS', false)
                 dispatch('showNotification', {
@@ -102,6 +130,9 @@ export default {
                     type: 'warning'
                 })
             })
+
+            // 檢查系統狀態
+            dispatch('checkSystemStatus')
         },
         async checkSystemStatus({ commit }) {
             try {
@@ -110,6 +141,10 @@ export default {
                 commit('SET_SYSTEM_STATUS', status)
             } catch (error) {
                 console.error('系統狀態檢查失敗:', error)
+                commit('SET_ERROR', {
+                    message: '系統狀態檢查失敗',
+                    type: 'error'
+                })
             }
         }
     },
@@ -124,6 +159,8 @@ export default {
         systemVersion: state => state.systemStatus.version,
         hasError: state => !!state.error,
         hasNotification: state => !!state.notification,
-        lastApiCallTime: state => state.lastApiCall ? new Date(state.lastApiCall) : null
+        lastApiCallTime: state => state.lastApiCall ? new Date(state.lastApiCall) : null,
+        getErrorMessage: state => state.error?.message || '',
+        getNotificationMessage: state => state.notification?.message || ''
     }
 }

@@ -5,15 +5,15 @@ import store from '@/store'
 // 建立 axios 實例
 // axios 實例配置 - 優化請求配置
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
-    timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '15000'),
+    baseURL: 'http://localhost:1988/api/v1',
+    timeout: 15000,
     headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
+        'Accept': 'application/json'
     },
     withCredentials: false
 })
+
 
 
 // 請求攔截器
@@ -170,10 +170,11 @@ export const userApi = {
 
 
 export const productApi = {
-    getList: params => api.get('/products', { params }),
-    getDetail: id => api.get(`/products/${id}`),
-    getCategories: () => api.get('/products/categories'),
-    search: params => api.get('/products/search', { params })
+    // 修正方法名稱與後端對應
+    getProducts: params => api.get('/products', { params }), // 改為 getProducts
+    getCategories: () => api.get('/products/categories'),    // 保持 getCategories
+    getProductById: id => api.get(`/products/${id}`),       // 改為 getProductById
+    searchProducts: params => api.get('/products/search', { params })
 }
 
 export const cartApi = {

@@ -138,19 +138,18 @@ export default {
     // 初始化數據
     onMounted(async () => {
       try {
-        const [categoriesRes, featuredRes, newRes] = await Promise.all([
+        const [categoriesRes, productsRes] = await Promise.all([
           productApi.getCategories(),
-          productApi.getProducts({ featured: true }),
-          productApi.getProducts({ sort: 'newest' })
+          productApi.getProducts({ featured: true })
         ])
 
         categories.value = categoriesRes.data
-        featuredProducts.value = featuredRes.data
-        newProducts.value = newRes.data
+        featuredProducts.value = productsRes.data
       } catch (error) {
         console.error('獲取數據失敗:', error)
       }
     })
+
 
     return {
       currentSlide,
