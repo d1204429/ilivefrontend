@@ -4,19 +4,21 @@
       <h2>登入 iLive</h2>
 
       <form @submit.prevent="handleSubmit" class="login-form">
+        <!-- Username Input -->
         <div class="form-group">
           <label for="username">帳號</label>
           <BaseInput
               id="username"
               v-model="formData.username"
               type="text"
-              placeholder="請輸入帳號"
+              placeholder="請輸入帳號 (至少3個字元)"
               :error="validationErrors.username"
               @blur="validateField('username')"
               autocomplete="username"
           />
         </div>
 
+        <!-- Password Input -->
         <div class="form-group">
           <label for="password">密碼</label>
           <div class="password-input">
@@ -24,7 +26,7 @@
                 id="password"
                 v-model="formData.password"
                 :type="showPassword ? 'text' : 'password'"
-                placeholder="請輸入密碼"
+                placeholder="請輸入密碼 (至少8個字元)"
                 :error="validationErrors.password"
                 @blur="validateField('password')"
                 autocomplete="current-password"
@@ -34,14 +36,19 @@
                     type="button"
                     class="password-toggle"
                     @click="togglePasswordVisibility"
+                    aria-label="Toggle password visibility"
                 >
                   <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
                 </button>
               </template>
             </BaseInput>
           </div>
+          <small class="password-hint" v-if="formData.password">
+            密碼必須包含大小寫字母、數字，長度至少8個字元
+          </small>
         </div>
 
+        <!-- Remember Me Checkbox -->
         <div class="remember-me-container">
           <label class="remember-me-label">
             <input
@@ -53,25 +60,30 @@
           </label>
         </div>
 
-        <div v-if="globalError" class="error-message">
+        <!-- Error Message -->
+        <div v-if="globalError" class="error-message" role="alert">
           {{ globalError }}
         </div>
 
-        <div v-if="successMessage" class="success-message">
+        <!-- Success Message -->
+        <div v-if="successMessage" class="success-message" role="status">
           {{ successMessage }}
-          <button @click="redirectToHome" class="home-link">立即回首頁</button>
+          <button @click="redirectToHome" class="home-link">
+            立即回首頁
+          </button>
         </div>
 
-
+        <!-- Submit Button -->
         <BaseButton
             type="submit"
             :disabled="!isFormValid || isLoading"
             class="login-btn"
         >
-          <span v-if="isLoading" class="loading-spinner"></span>
+          <span v-if="isLoading" class="loading-spinner" aria-hidden="true"></span>
           {{ isLoading ? '登入中...' : '登入' }}
         </BaseButton>
 
+        <!-- Additional Options -->
         <div class="additional-options">
           <router-link to="/forgot-password" class="forgot-password">
             忘記密碼？
@@ -86,7 +98,6 @@
 </template>
 
 <script>
-
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
@@ -123,8 +134,9 @@ export default {
       ],
       password: [
         v => !!v || '請輸入密碼',
-        v => v.length >= 6 || '密碼長度至少需要6個字元',
-        v => /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/.test(v) || '密碼必須包含字母和數字'
+        v => v.length >= 8 || '密碼長度至少需要8個字元',
+        v => /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])[A-Za-z\d!@#$%^&*(),.?":{}|<>]{8,}$/.test(v) ||
+            '密碼必須包含大小寫字母、數字和特殊符號'
       ]
     }
 
@@ -280,9 +292,7 @@ export default {
   }
 }
 
-
 </script>
-
 <style scoped>
 .login-view {
   display: flex;
@@ -317,6 +327,12 @@ h2 {
   position: relative;
 }
 
+.password-hint {
+  color: #718096;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
 .password-toggle {
   position: absolute;
   right: 1rem;
@@ -327,6 +343,11 @@ h2 {
   color: #718096;
   cursor: pointer;
   padding: 0.25rem;
+  transition: color 0.3s ease;
+}
+
+.password-toggle:hover {
+  color: #4a5568;
 }
 
 .error-message {
@@ -338,6 +359,7 @@ h2 {
   margin-bottom: 1rem;
   text-align: center;
   font-size: 0.875rem;
+  animation: fadeIn 0.3s ease;
 }
 
 .success-message {
@@ -349,6 +371,7 @@ h2 {
   margin-bottom: 1rem;
   text-align: center;
   font-size: 0.875rem;
+  animation: fadeIn 0.3s ease;
 }
 
 .remember-me-container {
@@ -360,15 +383,24 @@ h2 {
   align-items: center;
   cursor: pointer;
   user-select: none;
+  color: #4a5568;
+  font-size: 0.875rem;
 }
 
 .remember-me-checkbox {
   margin-right: 0.5rem;
+  cursor: pointer;
 }
 
 .login-btn {
   width: 100%;
   position: relative;
+  transition: all 0.3s ease;
+}
+
+.login-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .loading-spinner {
@@ -400,9 +432,38 @@ h2 {
   text-decoration: underline;
 }
 
+.home-link {
+  margin-left: 1rem;
+  color: #1c1c1c;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.3s ease;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.home-link:hover {
+  color: #e2e8f0;
+  background: #173e21;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -422,22 +483,5 @@ h2 {
     gap: 1rem;
   }
 }
-
-.home-link {
-  margin-left: 1rem;
-  color: #1c1c1c;
-  text-decoration: underline;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 0.875rem;
-  transition: 0.3s ease;
-}
-
-.home-link:hover {
-  color: #e2e8f0;
-  background: #173e21;
-  transition: 0.4s ease;
-}
-
 </style>
+
