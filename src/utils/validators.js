@@ -1,3 +1,5 @@
+// src/utils/validators.js
+
 // 基礎驗證規則
 export const required = (value) => {
     if (value === null || value === undefined || value === '') {
@@ -13,6 +15,9 @@ export const username = (value) => {
     if (!pattern.test(value)) {
         return '使用者名稱只能包含英文、數字和底線，長度3-20個字元'
     }
+    if (/^\d+$/.test(value)) {
+        return '使用者名稱不能全為數字'
+    }
     return true
 }
 
@@ -23,6 +28,9 @@ export const email = (value) => {
     if (!pattern.test(value)) {
         return '請輸入有效的電子郵件地址'
     }
+    if (value.length > 50) {
+        return '電子郵件長度不能超過50個字元'
+    }
     return true
 }
 
@@ -31,6 +39,7 @@ export const password = (value) => {
     if (!value) return '請輸入密碼'
 
     const minLength = 8
+    const maxLength = 20
     const hasUpperCase = /[A-Z]/.test(value)
     const hasLowerCase = /[a-z]/.test(value)
     const hasNumbers = /\d/.test(value)
@@ -40,6 +49,9 @@ export const password = (value) => {
 
     if (value.length < minLength) {
         errors.push(`密碼長度至少${minLength}個字元`)
+    }
+    if (value.length > maxLength) {
+        errors.push(`密碼長度不能超過${maxLength}個字元`)
     }
     if (!hasUpperCase) {
         errors.push('需包含大寫字母')
@@ -91,27 +103,23 @@ export const phoneNumber = (value) => {
     return true
 }
 
-// 身分證字號驗證（台灣格式）
-export const taiwanId = (value) => {
+// 全名驗證
+export const fullName = (value) => {
     if (!value) return true
-
-    const pattern = /^[A-Z][12]\d{8}$/
-    if (!pattern.test(value)) {
-        return '請輸入有效的身分證字號'
+    if (value.length < 2) return '全名至少需要2個字元'
+    if (value.length > 50) return '全名不能超過50個字元'
+    if (!/^[\u4e00-\u9fa5a-zA-Z\s]+$/.test(value)) {
+        return '全名只能包含中文、英文和空格'
     }
+    return true
+}
 
-    // 進一步驗證檢查碼
-    const idArray = Array.from(value)
-    const prefix = idArray[0]
-    const prefixNum = 'ABCDEFGHJKLMNPQRSTUVXYWZIO'.indexOf(prefix) + 10
-
-    let sum = Math.floor(prefixNum / 10) + (prefixNum % 10) * 9
-    for (let i = 1; i < 9; i++) {
-        sum += parseInt(idArray[i]) * (9 - i)
-    }
-    sum += parseInt(idArray[9])
-
-    return sum % 10 === 0 ? true : '身分證字號格式不正確'
+// 地址驗證
+export const address = (value) => {
+    if (!value) return true
+    if (value.length < 5) return '地址至少需要5個字元'
+    if (value.length > 100) return '地址不能超過100個字元'
+    return true
 }
 
 // 日期驗證
@@ -129,39 +137,7 @@ export const date = (value) => {
     return true
 }
 
-// 信用卡號驗證（Luhn 演算法）
-export const creditCard = (value) => {
-    if (!value) return true
-
-    // 移除所有非數字字符
-    const digits = value.replace(/\D/g, '')
-
-    if (digits.length !== 16) {
-        return '信用卡號必須為16位數字'
-    }
-
-    // Luhn 演算法驗證
-    let sum = 0
-    let isEven = false
-
-    for (let i = digits.length - 1; i >= 0; i--) {
-        let digit = parseInt(digits[i])
-
-        if (isEven) {
-            digit *= 2
-            if (digit > 9) {
-                digit -= 9
-            }
-        }
-
-        sum += digit
-        isEven = !isEven
-    }
-
-    return sum % 10 === 0 ? true : '請輸入有效的信用卡號'
-}
-
-// 檔案大小和類型驗證
+// 檔案驗證
 export const file = (maxSize, allowedTypes) => (file) => {
     if (!file) return true
 
@@ -198,9 +174,9 @@ export default {
     calculatePasswordStrength,
     confirmPassword,
     phoneNumber,
-    taiwanId,
+    fullName,
+    address,
     date,
-    creditCard,
     file,
     compose
 }

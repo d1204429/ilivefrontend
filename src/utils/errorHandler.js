@@ -1,3 +1,5 @@
+// src/utils/errorHandler.js
+
 import store from '@/store'
 import router from '@/router'
 
@@ -6,7 +8,8 @@ export const ErrorTypes = {
     AUTH: 'AUTH_ERROR',
     NETWORK: 'NETWORK_ERROR',
     SERVER: 'SERVER_ERROR',
-    UNKNOWN: 'UNKNOWN_ERROR'
+    UNKNOWN: 'UNKNOWN_ERROR',
+    BUSINESS: 'BUSINESS_ERROR'
 }
 
 export const handleError = (error) => {
@@ -27,10 +30,19 @@ export const handleError = (error) => {
             case 401:
                 errorType = ErrorTypes.AUTH
                 errorMessage = '身份驗證已過期，請重新登入'
-                shouldRedirect = true
-                redirectPath = '/login'
-                // 清除用戶認證信息
-                store.dispatch('auth/logout')
+                // 嘗試刷新 Token
+                if (store.getters['auth/refreshToken']) {
+                    store.dispatch('auth/refreshToken')
+                        .catch(() => {
+                            store.dispatch('auth/logout')
+                            shouldRedirect = true
+                            redirectPath = '/login'
+                        })
+                } else {
+                    store.dispatch('auth/logout')
+                    shouldRedirect = true
+                    redirectPath = '/login'
+                }
                 break
 
             case 403:
@@ -73,6 +85,9 @@ export const handleError = (error) => {
     } else if (error.request) {
         errorType = ErrorTypes.NETWORK
         errorMessage = '網路連線錯誤，請檢查您的網路連接'
+    } else if (error instanceof AppError) {
+        errorType = error.type
+        errorMessage = error.message
     } else {
         errorType = ErrorTypes.UNKNOWN
         errorMessage = error.message || '發生未知錯誤'
@@ -86,11 +101,20 @@ export const handleError = (error) => {
     })
 
     // 顯示錯誤訊息
-    store.dispatch('app/setError', errorMessage)
+    if (errorType !== ErrorTypes.AUTH || status !== 401) {
+        store.dispatch('app/setError', {
+            message: errorMessage,
+            type: errorType,
+            duration: import.meta.env.VITE_ERROR_SHOW_DURATION
+        })
+    }
 
     // 處理重定向
     if (shouldRedirect && router.currentRoute.value.path !== redirectPath) {
-        router.push(redirectPath)
+        router.push({
+            path: redirectPath,
+            query: redirectPath === '/login' ? { redirect: router.currentRoute.value.fullPath } : {}
+        })
     }
 
     return {
@@ -99,26 +123,21 @@ export const handleError = (error) => {
     }
 }
 
-// 格式化驗證錯誤
 const formatValidationErrors = (errors) => {
     if (!errors) return null
-
     if (typeof errors === 'string') return errors
-
-    if (Array.isArray(errors)) {
-        return errors.join(', ')
-    }
+    if (Array.isArray(errors)) return errors.join(', ')
 
     if (typeof errors === 'object') {
         return Object.values(errors)
-            .map(error => Array.isArray(error) ? error.join(', ') : error)
+            .flat()
+            .filter(error => typeof error === 'string')
             .join(', ')
     }
 
     return null
 }
 
-// 錯誤日誌
 export const logError = (errorInfo) => {
     const { type, message, error } = errorInfo
 
@@ -131,10 +150,13 @@ export const logError = (errorInfo) => {
         stack: error?.stack,
         response: error?.response?.data,
         status: error?.response?.status,
-        config: error?.config
+        config: {
+            url: error?.config?.url,
+            method: error?.config?.method,
+            params: error?.config?.params
+        }
     }
 
-    // 開發環境下在控制台輸出詳細錯誤信息
     if (import.meta.env.DEV) {
         console.group('Error Details')
         console.error('Error Type:', type)
@@ -143,17 +165,22 @@ export const logError = (errorInfo) => {
         console.groupEnd()
     }
 
-    // TODO: 可以在這裡添加錯誤上報邏輯
-    // sendErrorToServer(logData)
+    if (import.meta.env.PROD) {
+        // 可以在這裡添加錯誤上報邏輯
+        // sendErrorToServer(logData)
+    }
 }
 
-// 自定義錯誤類
 export class AppError extends Error {
     constructor(message, type = ErrorTypes.UNKNOWN, data = null) {
         super(message)
         this.name = 'AppError'
         this.type = type
         this.data = data
+
+        if (Error.captureStackTrace) {
+            Error.captureStackTrace(this, AppError)
+        }
     }
 }
 

@@ -40,7 +40,7 @@
         <input
             type="search"
             v-model="searchKeyword"
-            placeholder="収尋"
+            placeholder="搜尋"
             @keyup.enter="handleSearch"
         >
         <button @click="handleSearch">
@@ -55,6 +55,7 @@
             <i class="fas fa-user"></i>
           </router-link>
           <router-link to="/orders" class="nav-link">訂單</router-link>
+          <a href="#" class="nav-link" @click.prevent="handleLogout">登出</a>
         </template>
         <template v-else>
           <router-link to="/login" class="nav-link">登入</router-link>
@@ -72,7 +73,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 
@@ -87,13 +88,8 @@ export default {
     const isCategoryOpen = ref(false)
     const searchKeyword = ref('')
 
-    const isLoggedIn = computed(() => {
-      return store.getters['auth/isAuthenticated']
-    })
-
-    const cartItemCount = computed(() => {
-      return store.getters['cart/itemCount']
-    })
+    const isLoggedIn = computed(() => store.getters['auth/isAuthenticated'])
+    const cartItemCount = computed(() => store.getters['cart/itemCount'])
 
     const toggleMenu = () => {
       isMenuOpen.value = !isMenuOpen.value
@@ -123,14 +119,21 @@ export default {
       }
     }
 
-    const initializeHeader = () => {
-      // 初始化購物車數量
-      if (isLoggedIn.value) {
-        store.dispatch('cart/fetchCartItems')
+    const handleLogout = async () => {
+      try {
+        await store.dispatch('auth/logout')
+        router.push('/login')
+      } catch (error) {
+        console.error('登出失敗:', error)
       }
     }
 
-    // 監聽視窗大小變化
+    const initializeHeader = async () => {
+      if (isLoggedIn.value) {
+        await store.dispatch('cart/fetchCartItems')
+      }
+    }
+
     const handleResize = () => {
       if (window.innerWidth > 768 && isMenuOpen.value) {
         isMenuOpen.value = false
@@ -143,6 +146,10 @@ export default {
       window.addEventListener('resize', handleResize)
     })
 
+    onUnmounted(() => {
+      window.removeEventListener('resize', handleResize)
+    })
+
     return {
       isMenuOpen,
       isCategoryOpen,
@@ -151,12 +158,12 @@ export default {
       cartItemCount,
       toggleMenu,
       toggleCategory,
-      handleSearch
+      handleSearch,
+      handleLogout
     }
   }
 }
 </script>
-
 <style scoped>
 .header {
   background: #fff;

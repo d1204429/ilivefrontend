@@ -4,7 +4,7 @@ import store from '@/store'
 
 // API 基礎配置
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1',
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
     timeout: 5000,
     headers: {
         'Content-Type': 'application/json',
@@ -38,9 +38,25 @@ api.interceptors.response.use(
     response => response.data,
     async error => {
         if (error.response?.status === 401) {
-            store.dispatch('auth/logout')
-            router.push('/login')
-            return Promise.reject(error)
+            // 嘗試刷新 Token
+            try {
+                const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+                if (refreshToken) {
+                    const response = await api.post('/users/refresh-token', { refreshToken })
+                    if (response.data?.accessToken) {
+                        localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.data.accessToken)
+                        localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, response.data.refreshToken)
+
+                        // 重試原始請求
+                        error.config.headers['Authorization'] = `Bearer ${response.data.accessToken}`
+                        return api(error.config)
+                    }
+                }
+            } catch (refreshError) {
+                store.dispatch('auth/logout')
+                router.push('/login')
+                return Promise.reject(refreshError)
+            }
         }
 
         handleApiError(error)
@@ -88,13 +104,18 @@ const handleApiError = (error) => {
 export const authApi = {
     login: (data) => api.post('/users/login', data),
     register: (data) => api.post('/users/register', data),
-    logout: () => api.post('/users/logout')
+    logout: () => api.post('/users/logout'),
+    refreshToken: (refreshToken) => api.post('/users/refresh-token', { refreshToken }),
+    verifyEmail: (token) => api.post('/users/verify-email', { token })
 }
 
 export const userApi = {
     getProfile: (userId) => api.get(`/users/${userId}`),
     updateProfile: (userId, data) => api.put(`/users/${userId}`, data),
-    changePassword: (userId, data) => api.put(`/users/${userId}/password`, data)
+    changePassword: (userId, data) => api.put(`/users/${userId}/password`, data),
+    uploadAvatar: (userId, formData) => api.post(`/users/${userId}/avatar`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    })
 }
 
 export const productApi = {
@@ -103,25 +124,30 @@ export const productApi = {
     getCategories: () => api.get('/products/categories'),
     search: (params) => api.get('/products/search', { params }),
     getNewArrivals: () => api.get('/products/new-arrivals'),
-    getRecommended: () => api.get('/products/recommended')
+    getRecommended: () => api.get('/products/recommended'),
+    getReviews: (productId) => api.get(`/products/${productId}/reviews`)
 }
 
 export const cartApi = {
     getItems: () => api.get('/cart/items'),
-    addItem: (data) => api.post('/cart/items/add', data),
+    addItem: (data) => api.post('/cart/items', data),
     updateItem: (id, data) => api.put(`/cart/items/${id}`, data),
     removeItem: (id) => api.delete(`/cart/items/${id}`),
     clear: () => api.delete('/cart'),
     applyCoupon: (code) => api.post('/cart/coupon', { code }),
-    removeCoupon: () => api.delete('/cart/coupon')
+    removeCoupon: () => api.delete('/cart/coupon'),
+    getShippingMethods: () => api.get('/cart/shipping-methods'),
+    setShippingMethod: (methodId) => api.put('/cart/shipping-method', { methodId })
 }
 
 export const orderApi = {
     create: (data) => api.post('/orders', data),
-    getList: () => api.get('/orders'),
+    getList: (params) => api.get('/orders', { params }),
     getById: (id) => api.get(`/orders/${id}`),
     cancel: (id) => api.put(`/orders/${id}/cancel`),
-    pay: (id, data) => api.post(`/orders/${id}/payment`, data)
+    pay: (id, data) => api.post(`/orders/${id}/payment`, data),
+    getPaymentMethods: () => api.get('/orders/payment-methods'),
+    confirmReceipt: (id) => api.put(`/orders/${id}/confirm-receipt`)
 }
 
 export default api

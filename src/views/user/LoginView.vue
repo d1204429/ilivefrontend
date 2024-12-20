@@ -4,7 +4,6 @@
       <h2>登入 iLive</h2>
 
       <form @submit.prevent="handleSubmit" class="login-form">
-        <!-- 帳號輸入 -->
         <div class="form-group">
           <label for="username">帳號</label>
           <BaseInput
@@ -17,7 +16,6 @@
           />
         </div>
 
-        <!-- 密碼輸入 -->
         <div class="form-group">
           <label for="password">密碼</label>
           <div class="password-input">
@@ -42,7 +40,6 @@
           </div>
         </div>
 
-        <!-- 記住我選項 -->
         <div class="remember-me-container">
           <label class="remember-me-label">
             <input
@@ -54,12 +51,10 @@
           </label>
         </div>
 
-        <!-- 錯誤訊息顯示 -->
         <div v-if="globalError" class="error-message">
           {{ globalError }}
         </div>
 
-        <!-- 登入按鈕 -->
         <BaseButton
             type="submit"
             :disabled="!isFormValid || isLoading"
@@ -69,7 +64,6 @@
           {{ isLoading ? '登入中...' : '登入' }}
         </BaseButton>
 
-        <!-- 其他選項 -->
         <div class="additional-options">
           <router-link to="/forgot-password" class="forgot-password">
             忘記密碼？
@@ -109,7 +103,6 @@ export default {
       rememberMe: false
     })
 
-    // 更新驗證規則以符合後端要求
     const validationRules = {
       username: [
         v => !!v || '請輸入帳號',
@@ -162,11 +155,7 @@ export default {
         isLoading.value = true
         globalError.value = ''
 
-        // 調整為符合後端 API 的請求格式
-        const response = await authService.login({
-          username: formData.username,
-          password: formData.password
-        })
+        const response = await authService.login(formData.username, formData.password)
 
         if (response.accessToken) {
           if (formData.rememberMe) {
@@ -175,25 +164,12 @@ export default {
             localStorage.removeItem('rememberedUsername')
           }
 
-          // 更新 store 中的認證狀態
-          await store.dispatch('auth/login', {
-            accessToken: response.accessToken,
-            refreshToken: response.refreshToken,
-            user: response.user
-          })
-
-          const redirect = router.currentRoute.value.query.redirect || '/'
-          router.push(redirect)
-        } else {
-          throw new Error('登入失敗：未收到有效的認證Token')
+          await store.dispatch('auth/login', response)
+          router.push(router.currentRoute.value.query.redirect || '/')
         }
       } catch (error) {
         console.error('登入失敗:', error)
         globalError.value = error.message || '登入失敗，請檢查帳號密碼是否正確'
-        store.dispatch('app/setError', {
-          message: error.message,
-          type: 'error'
-        })
       } finally {
         isLoading.value = false
       }
@@ -203,7 +179,6 @@ export default {
       showPassword.value = !showPassword.value
     }
 
-    // 初始化表單
     const initializeForm = () => {
       const rememberedUsername = localStorage.getItem('rememberedUsername')
       if (rememberedUsername) {

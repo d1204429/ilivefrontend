@@ -6,13 +6,13 @@
       <div v-if="globalError" class="error-message">
         {{ globalError }}
       </div>
-      <!-- 添加成功通知 -->
+
       <div v-if="successMessage" class="success-message">
         {{ successMessage }}
         <div class="countdown">{{ countdown }} 秒後自動跳轉到登入頁面</div>
       </div>
+
       <form class="register-form" @submit.prevent="handleRegister">
-        <!-- 用戶名欄位 -->
         <div class="form-group">
           <label for="username">用戶名</label>
           <BaseInput
@@ -25,7 +25,6 @@
           />
         </div>
 
-        <!-- 電子郵件欄位 -->
         <div class="form-group">
           <label for="email">電子郵件</label>
           <BaseInput
@@ -38,7 +37,6 @@
           />
         </div>
 
-        <!-- 全名欄位 -->
         <div class="form-group">
           <label for="fullName">全名</label>
           <BaseInput
@@ -51,7 +49,6 @@
           />
         </div>
 
-        <!-- 手機號碼欄位 -->
         <div class="form-group">
           <label for="phoneNumber">手機號碼</label>
           <BaseInput
@@ -64,7 +61,6 @@
           />
         </div>
 
-        <!-- 地址欄位 -->
         <div class="form-group">
           <label for="address">地址</label>
           <BaseInput
@@ -77,7 +73,6 @@
           />
         </div>
 
-        <!-- 密碼欄位 -->
         <div class="form-group">
           <label for="password">密碼</label>
           <BaseInput
@@ -98,7 +93,6 @@
           </BaseInput>
         </div>
 
-        <!-- 確認密碼欄位 -->
         <div class="form-group">
           <label for="confirmPassword">確認密碼</label>
           <BaseInput
@@ -128,7 +122,6 @@
   </div>
 </template>
 
-
 <script>
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -148,7 +141,7 @@ export default {
     const showPassword = ref(false)
     const globalError = ref('')
     const countdown = ref(5)
-    const successMessage = ref('')  // 添加 successMessage
+    const successMessage = ref('')
     const validationErrors = reactive({})
 
     const formData = reactive({
@@ -269,7 +262,7 @@ export default {
         startCountdown()
 
       } catch (error) {
-        const errorMessage = error.response?.data || error.message
+        const errorMessage = error.response?.data?.message || error.message
 
         if (errorMessage.includes('用戶名已存在')) {
           validationErrors.username = '此用戶名已被使用'
@@ -292,7 +285,7 @@ export default {
       showPassword,
       globalError,
       countdown,
-      successMessage,  // 返回 successMessage
+      successMessage,
       isFormValid,
       handleRegister,
       validateField,
@@ -301,8 +294,6 @@ export default {
   }
 }
 </script>
-
-
 
 <style scoped>
 .register-view {
@@ -374,17 +365,6 @@ label {
   text-decoration: underline;
 }
 
-@media (max-width: 640px) {
-  .register-container {
-    margin: 1rem;
-    padding: 1.5rem;
-  }
-
-  .register-title {
-    font-size: 1.5rem;
-  }
-}
-
 .success-message {
   position: fixed;
   top: 20px;
@@ -405,4 +385,14 @@ label {
   opacity: 0.9;
 }
 
+@media (max-width: 640px) {
+  .register-container {
+    margin: 1rem;
+    padding: 1.5rem;
+  }
+
+  .register-title {
+    font-size: 1.5rem;
+  }
+}
 </style>

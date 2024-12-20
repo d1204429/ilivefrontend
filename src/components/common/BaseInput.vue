@@ -9,7 +9,13 @@
       <span v-if="required" class="required-mark">*</span>
     </label>
 
-    <div class="input-wrapper" :class="{ 'has-error': error }">
+    <div class="input-wrapper" :class="{ 'has-error': error, 'has-prefix': $slots.prefix || prefixIcon, 'has-suffix': $slots.append || suffixIcon }">
+      <slot name="prefix">
+        <span v-if="prefixIcon" class="prefix-icon">
+          <i :class="prefixIcon"></i>
+        </span>
+      </slot>
+
       <input
           v-bind="$attrs"
           :id="id"
@@ -21,18 +27,14 @@
           :class="[
             'form-control',
             size && `form-control-${size}`,
-            { 'is-invalid': error }
+            { 'is-invalid': error },
+            { 'has-prefix': $slots.prefix || prefixIcon },
+            { 'has-suffix': $slots.append || suffixIcon }
           ]"
           @input="updateValue"
           @blur="onBlur"
           @focus="onFocus"
       >
-
-      <slot name="prefix">
-        <span v-if="prefixIcon" class="prefix-icon">
-          <i :class="prefixIcon"></i>
-        </span>
-      </slot>
 
       <slot name="append">
         <span v-if="suffixIcon" class="suffix-icon">
@@ -104,7 +106,8 @@ const props = defineProps({
   },
   size: {
     type: String,
-    default: ''
+    validator: value => ['sm', 'md', 'lg'].includes(value),
+    default: 'md'
   },
   prefixIcon: {
     type: String,
@@ -119,8 +122,9 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'blur', 'focus', 'change'])
 
 const updateValue = (event) => {
-  emit('update:modelValue', event.target.value)
-  emit('change', event.target.value)
+  const value = event.target.value
+  emit('update:modelValue', value)
+  emit('change', value)
 }
 
 const onBlur = (event) => {
@@ -155,6 +159,10 @@ const onFocus = (event) => {
   align-items: center;
 }
 
+.input-wrapper.has-error .form-control {
+  border-color: #dc3545;
+}
+
 .form-control {
   display: block;
   width: 100%;
@@ -174,13 +182,29 @@ const onFocus = (event) => {
   outline: none;
 }
 
-.form-control.is-invalid {
-  border-color: #dc3545;
+.form-control.has-prefix {
+  padding-left: 2.5rem;
 }
 
-.form-control:disabled {
+.form-control.has-suffix {
+  padding-right: 2.5rem;
+}
+
+.form-control-sm {
+  padding: 0.375rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.form-control-lg {
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+}
+
+.form-control:disabled,
+.form-control[readonly] {
   background-color: #f8f9fa;
   cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .invalid-feedback {
@@ -202,15 +226,19 @@ const onFocus = (event) => {
   top: 50%;
   transform: translateY(-50%);
   color: #718096;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
   pointer-events: none;
 }
 
 .prefix-icon {
-  left: 0.75rem;
+  left: 0;
 }
 
 .suffix-icon {
-  right: 0.75rem;
+  right: 0;
 }
 
 input::-ms-reveal,

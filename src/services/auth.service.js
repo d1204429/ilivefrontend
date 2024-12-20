@@ -42,18 +42,18 @@ class AuthService {
 
     async login(username, password) {
         try {
-            const response = await api.post('/users/login', {
+            const response = await api.post('/api/v1/users/login', {
                 username,
                 password
             })
 
-            if (response.accessToken) {
+            if (response.data && response.data.accessToken) {
                 this.setAuthData({
-                    accessToken: response.accessToken,
-                    refreshToken: response.refreshToken,
-                    user: response.user
+                    accessToken: response.data.accessToken,
+                    refreshToken: response.data.refreshToken,
+                    user: response.data.user
                 })
-                return response
+                return response.data
             }
             throw new Error('登入失敗：未收到有效的認證Token')
         } catch (error) {
@@ -63,7 +63,7 @@ class AuthService {
 
     async register(userData) {
         try {
-            const response = await api.post('/users/register', {
+            const response = await api.post('/api/v1/users/register', {
                 username: userData.username,
                 password: userData.password,
                 email: userData.email,
@@ -72,9 +72,9 @@ class AuthService {
                 address: userData.address
             })
 
-            if (response) {
+            if (response.data) {
                 await this.login(userData.username, userData.password)
-                return response
+                return response.data
             }
             throw new Error('註冊失敗')
         } catch (error) {
@@ -82,12 +82,38 @@ class AuthService {
         }
     }
 
+    async refreshAccessToken() {
+        try {
+            const response = await api.post('/api/v1/users/refresh-token', {
+                refreshToken: this.refreshToken
+            })
+
+            if (response.data && response.data.accessToken) {
+                this.setAuthData({
+                    accessToken: response.data.accessToken,
+                    refreshToken: response.data.refreshToken
+                })
+                return response.data
+            }
+            throw new Error('Token更新失敗')
+        } catch (error) {
+            this.clearAuthData()
+            throw handleError(error)
+        }
+    }
+
     async getProfile() {
         try {
-            const response = await api.get('/users/profile')
-            const updatedUserData = { ...this.user, ...response }
-            this.setAuthData({ user: updatedUserData })
-            return response
+            const userId = this.user ? this.user.userId : null
+            if (!userId) throw new Error('用戶未登入')
+
+            const response = await api.get(`/api/v1/users/${userId}`)
+            if (response.data) {
+                const updatedUserData = { ...this.user, ...response.data }
+                this.setAuthData({ user: updatedUserData })
+                return response.data
+            }
+            throw new Error('獲取用戶資料失敗')
         } catch (error) {
             throw handleError(error)
         }
@@ -95,10 +121,16 @@ class AuthService {
 
     async updateProfile(profileData) {
         try {
-            const response = await api.put('/users/profile', profileData)
-            const updatedUserData = { ...this.user, ...response }
-            this.setAuthData({ user: updatedUserData })
-            return response
+            const userId = this.user ? this.user.userId : null
+            if (!userId) throw new Error('用戶未登入')
+
+            const response = await api.put(`/api/v1/users/${userId}`, profileData)
+            if (response.data) {
+                const updatedUserData = { ...this.user, ...response.data }
+                this.setAuthData({ user: updatedUserData })
+                return response.data
+            }
+            throw new Error('更新用戶資料失敗')
         } catch (error) {
             throw handleError(error)
         }
@@ -106,11 +138,14 @@ class AuthService {
 
     async changePassword(oldPassword, newPassword) {
         try {
-            const response = await api.put('/users/password', {
+            const userId = this.user ? this.user.userId : null
+            if (!userId) throw new Error('用戶未登入')
+
+            const response = await api.put(`/api/v1/users/${userId}/password`, {
                 oldPassword,
                 newPassword
             })
-            return response
+            return response.data
         } catch (error) {
             throw handleError(error)
         }
@@ -118,7 +153,9 @@ class AuthService {
 
     async logout() {
         try {
-            await api.post('/users/logout')
+            if (this.token) {
+                await api.post('/api/v1/users/logout')
+            }
         } catch (error) {
             console.error('登出時發生錯誤:', error)
         } finally {

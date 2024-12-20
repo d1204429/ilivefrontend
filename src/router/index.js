@@ -134,11 +134,29 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-    document.title = to.meta.title ? `${to.meta.title} - iLive商城` : 'iLive商城'
+    // 設置頁面標題
+    document.title = to.meta.title
+        ? `${to.meta.title} - ${import.meta.env.VITE_APP_NAME}`
+        : import.meta.env.VITE_APP_NAME
 
     try {
         const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+        const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
         const isAuthenticated = !!token && store.getters['auth/isAuthenticated']
+
+        // Token 過期處理
+        if (token && !isAuthenticated && refreshToken) {
+            try {
+                await store.dispatch('auth/refreshToken')
+            } catch (error) {
+                await store.dispatch('auth/logout')
+                next({
+                    path: '/login',
+                    query: { redirect: to.fullPath }
+                })
+                return
+            }
+        }
 
         // 需要認證的路由檢查
         if (to.matched.some(record => record.meta.requiresAuth)) {
