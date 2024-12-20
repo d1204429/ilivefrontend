@@ -59,7 +59,9 @@
 
         <div v-if="successMessage" class="success-message">
           {{ successMessage }}
+          <button @click="redirectToHome" class="home-link">立即回首頁</button>
         </div>
+
 
         <BaseButton
             type="submit"
@@ -83,7 +85,9 @@
   </div>
 </template>
 
-<script>import { ref, reactive, computed } from 'vue'
+<script>
+
+import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
@@ -103,6 +107,7 @@ export default {
     const validationErrors = reactive({})
     const countdown = ref(5)
     let countdownTimer = null
+    let successTimer = null
 
     const formData = reactive({
       username: '',
@@ -153,6 +158,21 @@ export default {
           Object.keys(validationErrors).length === 0
     })
 
+    const startSuccessCountdown = () => {
+      countdown.value = 10
+      successMessage.value = `登入成功！${countdown.value}秒後自動跳轉到首頁，或點擊立即回首頁`
+
+      successTimer = setInterval(() => {
+        countdown.value--
+        successMessage.value = `登入成功！${countdown.value}秒後自動跳轉到首頁，或點擊立即回首頁`
+
+        if (countdown.value <= 0) {
+          clearInterval(successTimer)
+          router.push('/')
+        }
+      }, 1000)
+    }
+
     const startRedirectCountdown = () => {
       countdown.value = 5
       globalError.value = `無此帳號請註冊帳號，${countdown.value}秒後自動跳轉到註冊頁面...`
@@ -168,12 +188,22 @@ export default {
       }, 1000)
     }
 
+    const redirectToHome = () => {
+      if (successTimer) {
+        clearInterval(successTimer)
+      }
+      router.push('/')
+    }
+
     const handleSubmit = async () => {
       try {
         if (!validateForm()) return
 
         if (countdownTimer) {
           clearInterval(countdownTimer)
+        }
+        if (successTimer) {
+          clearInterval(successTimer)
         }
 
         isLoading.value = true
@@ -185,17 +215,13 @@ export default {
           password: formData.password
         })
 
-        successMessage.value = '登入成功'
-
         if (formData.rememberMe) {
           localStorage.setItem('rememberedUsername', formData.username)
         } else {
           localStorage.removeItem('rememberedUsername')
         }
 
-        setTimeout(() => {
-          router.push(router.currentRoute.value.query.redirect || '/')
-        }, 1000)
+        startSuccessCountdown()
 
       } catch (error) {
         console.error('登入失敗:', error)
@@ -236,10 +262,12 @@ export default {
       isFormValid,
       handleSubmit,
       validateField,
-      togglePasswordVisibility
+      togglePasswordVisibility,
+      redirectToHome
     }
   }
 }
+
 
 </script>
 
@@ -382,4 +410,22 @@ h2 {
     gap: 1rem;
   }
 }
+
+.home-link {
+  margin-left: 1rem;
+  color: #1c1c1c;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: 0.3s ease;
+}
+
+.home-link:hover {
+  color: #e2e8f0;
+  background: #173e21;
+  transition: 0.4s ease;
+}
+
 </style>
