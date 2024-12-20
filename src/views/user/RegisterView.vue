@@ -148,6 +148,7 @@ export default {
     const showPassword = ref(false)
     const globalError = ref('')
     const countdown = ref(5)
+    const successMessage = ref('')  // 添加 successMessage
     const validationErrors = reactive({})
 
     const formData = reactive({
@@ -237,8 +238,10 @@ export default {
     }
 
     const startCountdown = () => {
+      successMessage.value = `註冊成功！${countdown.value}秒後自動跳轉到登入頁面...`
       const timer = setInterval(() => {
         countdown.value--
+        successMessage.value = `註冊成功！${countdown.value}秒後自動跳轉到登入頁面...`
         if (countdown.value <= 0) {
           clearInterval(timer)
           router.push('/login')
@@ -263,12 +266,6 @@ export default {
         }
 
         await authService.register(userData)
-
-        store.dispatch('app/setSuccess', {
-          message: `註冊成功！${countdown.value}秒後自動跳轉到登入頁面...`,
-          duration: 5000
-        })
-
         startCountdown()
 
       } catch (error) {
@@ -283,11 +280,6 @@ export default {
         } else {
           globalError.value = errorMessage || '註冊失敗，請稍後再試'
         }
-
-        store.dispatch('app/setError', {
-          message: globalError.value,
-          duration: 3000
-        })
       } finally {
         isLoading.value = false
       }
@@ -300,6 +292,7 @@ export default {
       showPassword,
       globalError,
       countdown,
+      successMessage,  // 返回 successMessage
       isFormValid,
       handleRegister,
       validateField,
@@ -308,6 +301,7 @@ export default {
   }
 }
 </script>
+
 
 
 <style scoped>

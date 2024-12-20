@@ -4,11 +4,9 @@ import cart from './modules/cart'
 import product from './modules/product'
 import user from './modules/user'
 import order from './modules/order'
-import app from './modules/app'
 
 export default createStore({
     modules: {
-        app,
         auth,
         cart,
         product,
@@ -19,6 +17,7 @@ export default createStore({
     state: {
         loading: false,
         error: null,
+        success: null,
         notification: null,
         systemStatus: {
             isOnline: navigator.onLine,
@@ -32,15 +31,22 @@ export default createStore({
             state.loading = status
         },
         SET_ERROR(state, error) {
-            state.error = error
+            state.error = typeof error === 'string' ? { message: error } : error
+        },
+        SET_SUCCESS(state, message) {
+            state.success = { message, timestamp: new Date().toISOString() }
         },
         CLEAR_ERROR(state) {
             state.error = null
         },
+        CLEAR_SUCCESS(state) {
+            state.success = null
+        },
         SET_NOTIFICATION(state, notification) {
             state.notification = {
                 ...notification,
-                id: Date.now()
+                id: Date.now(),
+                timestamp: new Date().toISOString()
             }
         },
         CLEAR_NOTIFICATION(state) {
@@ -58,19 +64,31 @@ export default createStore({
         setLoading({ commit }, status) {
             commit('SET_LOADING', status)
         },
+
         setError({ commit }, error) {
             commit('SET_ERROR', error)
             setTimeout(() => {
                 commit('CLEAR_ERROR')
             }, 3000)
         },
+
+        setSuccess({ commit }, message) {
+            commit('SET_SUCCESS', message)
+            setTimeout(() => {
+                commit('CLEAR_SUCCESS')
+            }, 3000)
+        },
+
         showNotification({ commit }, { message, type = 'info', duration = 3000 }) {
             commit('SET_NOTIFICATION', { message, type })
-            setTimeout(() => {
-                commit('CLEAR_NOTIFICATION')
-            }, duration)
+            if (duration > 0) {
+                setTimeout(() => {
+                    commit('CLEAR_NOTIFICATION')
+                }, duration)
+            }
         },
-        initializeApp({ commit, dispatch }) {
+
+        async initializeApp({ commit, dispatch }) {
             // 監聽網路狀態
             window.addEventListener('online', () => {
                 commit('SET_SYSTEM_STATUS', { isOnline: true })
@@ -88,20 +106,35 @@ export default createStore({
                 })
             })
 
-            // 初始化認證狀態
-            if (localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)) {
-                dispatch('auth/checkAuth')
+            // 檢查認證狀態
+            const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+            if (token) {
+                try {
+                    await dispatch('auth/checkAuth')
+                    await dispatch('cart/fetchCartItems')
+                } catch (error) {
+                    dispatch('auth/logout')
+                }
             }
 
-            // 初始化購物車
-            dispatch('cart/fetchCartItems')
+            // 檢查系統狀態
+            dispatch('checkSystemStatus')
         },
 
-        async checkSystemStatus({ commit }) {
+        async checkSystemStatus({ commit, dispatch }) {
             try {
-                const response = await fetch('/api/v1/system/status')
+                const response = await fetch('/api/v1/system/health')
                 const status = await response.json()
+
                 commit('SET_SYSTEM_STATUS', status)
+
+                if (!status.healthy) {
+                    dispatch('showNotification', {
+                        message: '系統維護中，部分功能可能無法使用',
+                        type: 'warning',
+                        duration: 0
+                    })
+                }
             } catch (error) {
                 console.error('系統狀態檢查失敗:', error)
             }
@@ -111,9 +144,13 @@ export default createStore({
     getters: {
         isLoading: state => state.loading,
         error: state => state.error,
+        success: state => state.success,
         notification: state => state.notification,
         isOnline: state => state.systemStatus.isOnline,
         isMaintenance: state => state.systemStatus.maintenance,
-        systemVersion: state => state.systemStatus.version
+        systemVersion: state => state.systemStatus.version,
+        hasError: state => !!state.error,
+        hasSuccess: state => !!state.success,
+        hasNotification: state => !!state.notification
     }
 })
