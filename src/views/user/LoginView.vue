@@ -44,7 +44,7 @@
             </BaseInput>
           </div>
           <small class="password-hint" v-if="formData.password">
-            密碼必須包含大小寫字母、數字，長度至少8個字元
+            密碼必須包含大小寫字母、數字和特殊符號，長度至少8個字元
           </small>
         </div>
 
@@ -62,33 +62,58 @@
 
         <!-- Error Message -->
         <div v-if="globalError" class="error-message" role="alert">
+          <i class="fas fa-exclamation-circle"></i>
           {{ globalError }}
+          <div v-if="isRedirecting" class="redirect-countdown">
+            {{ countdown }}秒後自動跳轉到註冊頁面...
+          </div>
         </div>
 
         <!-- Success Message -->
         <div v-if="successMessage" class="success-message" role="status">
+          <i class="fas fa-check-circle"></i>
           {{ successMessage }}
-          <button @click="redirectToHome" class="home-link">
-            立即回首頁
-          </button>
+          <div class="redirect-options">
+            <span class="countdown">{{ countdown }}秒後自動跳轉</span>
+            <button @click="redirectToHome" class="home-link">
+              立即回首頁
+            </button>
+          </div>
+        </div>
+
+        <!-- Login Attempts Warning -->
+        <div v-if="loginAttempts > 2" class="warning-message" role="alert">
+          <i class="fas fa-exclamation-triangle"></i>
+          還剩 {{ maxLoginAttempts - loginAttempts }} 次登入機會
         </div>
 
         <!-- Submit Button -->
         <BaseButton
             type="submit"
-            :disabled="!isFormValid || isLoading"
+            :disabled="!isFormValid || isLoading || isLocked"
             class="login-btn"
         >
-          <span v-if="isLoading" class="loading-spinner" aria-hidden="true"></span>
-          {{ isLoading ? '登入中...' : '登入' }}
+          <template v-if="isLoading">
+            <span class="loading-spinner" aria-hidden="true"></span>
+            登入中...
+          </template>
+          <template v-else-if="isLocked">
+            帳號已鎖定
+          </template>
+          <template v-else>
+            <i class="fas fa-sign-in-alt"></i>
+            登入
+          </template>
         </BaseButton>
 
         <!-- Additional Options -->
         <div class="additional-options">
           <router-link to="/forgot-password" class="forgot-password">
+            <i class="fas fa-key"></i>
             忘記密碼？
           </router-link>
           <router-link to="/register" class="register">
+            <i class="fas fa-user-plus"></i>
             註冊新帳號
           </router-link>
         </div>
@@ -98,7 +123,7 @@
 </template>
 
 <script>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
@@ -117,8 +142,13 @@ export default {
     const successMessage = ref('')
     const validationErrors = reactive({})
     const countdown = ref(5)
+    const loginAttempts = ref(0)
+    const maxLoginAttempts = 5
+    const isRedirecting = ref(false)
+    const isLocked = ref(false)
     let countdownTimer = null
     let successTimer = null
+    let lockTimer = null
 
     const formData = reactive({
       username: '',
@@ -172,9 +202,35 @@ export default {
           Object.keys(validationErrors).length === 0
     })
 
+    const handleLoginError = (error) => {
+      loginAttempts.value++
+      const remainingAttempts = maxLoginAttempts - loginAttempts.value
+      const errorMessage = error.response?.data?.message || ''
+
+      if (loginAttempts.value >= maxLoginAttempts) {
+        isLocked.value = true
+        globalError.value = '登入嘗試次數過多，帳號已被鎖定15分鐘'
+        lockTimer = setTimeout(() => {
+          isLocked.value = false
+          loginAttempts.value = 0
+          globalError.value = ''
+        }, 900000) // 15分鐘後解鎖
+        return
+      }
+
+      if (errorMessage.includes('用戶不存在') || errorMessage.includes('找不到用戶')) {
+        startRedirectCountdown('register')
+      } else if (errorMessage.includes('密碼錯誤')) {
+        globalError.value = `密碼錯誤，還剩${remainingAttempts}次嘗試機會`
+      } else {
+        globalError.value = errorMessage || '登入失敗，請檢查帳號密碼是否正確'
+      }
+    }
+
     const startSuccessCountdown = () => {
       countdown.value = 5
-      successMessage.value = `登入成功！${countdown.value}秒後自動跳轉到首頁，或點擊立即回首頁`
+      successMessage.value = '登入成功！'
+      isRedirecting.value = true
 
       if (successTimer) {
         clearInterval(successTimer)
@@ -182,7 +238,7 @@ export default {
 
       successTimer = setInterval(() => {
         countdown.value--
-        successMessage.value = `登入成功！${countdown.value}秒後自動跳轉到首頁，或點擊立即回首頁`
+        successMessage.value = `登入成功！${countdown.value}秒後自動跳轉到首頁`
 
         if (countdown.value <= 0) {
           clearInterval(successTimer)
@@ -191,9 +247,10 @@ export default {
       }, 1000)
     }
 
-    const startRedirectCountdown = () => {
+    const startRedirectCountdown = (path) => {
       countdown.value = 5
-      globalError.value = `無此帳號請註冊帳號，${countdown.value}秒後自動跳轉到註冊頁面...`
+      isRedirecting.value = true
+      globalError.value = '無此帳號，請註冊新帳號'
 
       if (countdownTimer) {
         clearInterval(countdownTimer)
@@ -201,33 +258,30 @@ export default {
 
       countdownTimer = setInterval(() => {
         countdown.value--
-        globalError.value = `無此帳號請註冊帳號，${countdown.value}秒後自動跳轉到註冊頁面...`
-
         if (countdown.value <= 0) {
           clearInterval(countdownTimer)
-          router.push('/register')
+          router.push(`/${path}`)
         }
       }, 1000)
     }
 
     const redirectToHome = () => {
-      if (successTimer) {
-        clearInterval(successTimer)
-      }
+      clearAllTimers()
       router.push('/')
+    }
+
+    const clearAllTimers = () => {
+      if (countdownTimer) clearInterval(countdownTimer)
+      if (successTimer) clearInterval(successTimer)
+      if (lockTimer) clearTimeout(lockTimer)
     }
 
     const handleSubmit = async () => {
       try {
         if (!validateForm()) return
+        if (isLocked.value) return
 
-        if (countdownTimer) {
-          clearInterval(countdownTimer)
-        }
-        if (successTimer) {
-          clearInterval(successTimer)
-        }
-
+        clearAllTimers()
         isLoading.value = true
         globalError.value = ''
         successMessage.value = ''
@@ -237,6 +291,8 @@ export default {
           password: formData.password
         })
 
+        loginAttempts.value = 0
+
         if (formData.rememberMe) {
           localStorage.setItem('rememberedUsername', formData.username)
         } else {
@@ -244,18 +300,9 @@ export default {
         }
 
         startSuccessCountdown()
-
       } catch (error) {
         console.error('登入失敗:', error)
-        const errorMessage = error.response?.data?.message || ''
-
-        if (errorMessage.includes('用戶不存在') || errorMessage.includes('找不到用戶')) {
-          startRedirectCountdown()
-        } else if (errorMessage.includes('密碼錯誤')) {
-          globalError.value = '密碼錯誤，請重新輸入'
-        } else {
-          globalError.value = errorMessage || '登入失敗，請檢查帳號密碼是否正確'
-        }
+        handleLoginError(error)
       } finally {
         isLoading.value = false
       }
@@ -273,7 +320,13 @@ export default {
       }
     }
 
+    // 初始化表單
     initializeForm()
+
+    // 組件銷毀時清理
+    onBeforeUnmount(() => {
+      clearAllTimers()
+    })
 
     return {
       formData,
@@ -283,6 +336,10 @@ export default {
       globalError,
       successMessage,
       countdown,
+      isRedirecting,
+      isLocked,
+      loginAttempts,
+      maxLoginAttempts,
       isFormValid,
       handleSubmit,
       validateField,
@@ -291,8 +348,8 @@ export default {
     }
   }
 }
-
 </script>
+
 <style scoped>
 .login-view {
   display: flex;
@@ -476,12 +533,53 @@ h2 {
   h2 {
     font-size: 1.5rem;
   }
-
   .additional-options {
     flex-direction: column;
     align-items: center;
     gap: 1rem;
   }
 }
-</style>
 
+
+.success-message {
+  background-color: #f0fff4;
+  border: 1px solid #9ae6b4;
+  color: #2f855a;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.home-link {
+  margin-left: 1rem;
+  color: #1c1c1c;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.3s ease;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.home-link:hover {
+  color: #e2e8f0;
+  background: #173e21;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+</style>
