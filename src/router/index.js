@@ -134,7 +134,6 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-    // 設置頁面標題
     document.title = to.meta.title
         ? `${to.meta.title} - ${import.meta.env.VITE_APP_NAME}`
         : import.meta.env.VITE_APP_NAME
@@ -143,6 +142,12 @@ router.beforeEach(async (to, from, next) => {
         const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
         const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
         const isAuthenticated = !!token && store.getters['auth/isAuthenticated']
+
+        // 公開路由直接通過
+        if (to.matched.some(record => !record.meta.requiresAuth)) {
+            next()
+            return
+        }
 
         // Token 過期處理
         if (token && !isAuthenticated && refreshToken) {
@@ -185,7 +190,8 @@ router.beforeEach(async (to, from, next) => {
         console.error('路由守衛錯誤:', error)
         store.dispatch('app/setError', {
             message: '路由錯誤，請重新登入',
-            type: 'error'
+            type: 'error',
+            duration: 3000
         })
         next('/login')
     }
@@ -195,7 +201,8 @@ router.onError((error) => {
     console.error('路由錯誤:', error)
     store.dispatch('app/setError', {
         message: '頁面載入失敗',
-        type: 'error'
+        type: 'error',
+        duration: 3000
     })
     router.push('/500')
 })

@@ -9,7 +9,8 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
-    }
+    },
+    withCredentials: true
 })
 
 // 請求攔截器
@@ -37,24 +38,30 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     response => response.data,
     async error => {
-        if (error.response?.status === 401) {
-            // 嘗試刷新 Token
+        const originalRequest = error.config
+
+        if (error.response?.status === 401 && !originalRequest._retry) {
+            originalRequest._retry = true
+
             try {
                 const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
                 if (refreshToken) {
                     const response = await api.post('/users/refresh-token', { refreshToken })
-                    if (response.data?.accessToken) {
-                        localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.data.accessToken)
-                        localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, response.data.refreshToken)
+                    if (response.accessToken) {
+                        localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.accessToken)
+                        localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, response.refreshToken)
 
-                        // 重試原始請求
-                        error.config.headers['Authorization'] = `Bearer ${response.data.accessToken}`
-                        return api(error.config)
+                        originalRequest.headers['Authorization'] = `Bearer ${response.accessToken}`
+                        return api(originalRequest)
                     }
                 }
+                throw new Error('刷新Token失敗')
             } catch (refreshError) {
                 store.dispatch('auth/logout')
-                router.push('/login')
+                router.push({
+                    path: '/login',
+                    query: { redirect: router.currentRoute.value.fullPath }
+                })
                 return Promise.reject(refreshError)
             }
         }
@@ -67,6 +74,7 @@ api.interceptors.response.use(
 // 錯誤處理
 const handleApiError = (error) => {
     let errorMessage = '發生未知錯誤'
+    let errorType = 'error'
 
     if (error.response) {
         const { status, data } = error.response
@@ -74,29 +82,40 @@ const handleApiError = (error) => {
         switch (status) {
             case 400:
                 errorMessage = data.message || '請求參數錯誤'
+                errorType = 'warning'
+                break
+            case 401:
+                errorMessage = '身份驗證已過期，請重新登入'
+                errorType = 'warning'
                 break
             case 403:
                 errorMessage = '無權限訪問'
                 router.push('/403')
+                errorType = 'error'
                 break
             case 404:
                 errorMessage = '請求的資源不存在'
                 router.push('/404')
+                errorType = 'error'
                 break
             case 500:
                 errorMessage = '伺服器錯誤'
                 router.push('/500')
+                errorType = 'error'
                 break
             default:
                 errorMessage = data.message || `錯誤代碼：${status}`
+                errorType = 'error'
         }
     } else if (error.request) {
         errorMessage = '網路連接失敗，請檢查網路設定'
+        errorType = 'warning'
     }
 
     store.dispatch('app/setError', {
         message: errorMessage,
-        type: 'error'
+        type: errorType,
+        duration: 3000
     })
 }
 
