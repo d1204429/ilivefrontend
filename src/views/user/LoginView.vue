@@ -83,8 +83,7 @@
   </div>
 </template>
 
-<script>
-import { ref, reactive, computed } from 'vue'
+<script>import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
@@ -102,6 +101,8 @@ export default {
     const globalError = ref('')
     const successMessage = ref('')
     const validationErrors = reactive({})
+    const countdown = ref(5)
+    let countdownTimer = null
 
     const formData = reactive({
       username: '',
@@ -152,9 +153,28 @@ export default {
           Object.keys(validationErrors).length === 0
     })
 
+    const startRedirectCountdown = () => {
+      countdown.value = 5
+      globalError.value = `無此帳號請註冊帳號，${countdown.value}秒後自動跳轉到註冊頁面...`
+
+      countdownTimer = setInterval(() => {
+        countdown.value--
+        globalError.value = `無此帳號請註冊帳號，${countdown.value}秒後自動跳轉到註冊頁面...`
+
+        if (countdown.value <= 0) {
+          clearInterval(countdownTimer)
+          router.push('/register')
+        }
+      }, 1000)
+    }
+
     const handleSubmit = async () => {
       try {
         if (!validateForm()) return
+
+        if (countdownTimer) {
+          clearInterval(countdownTimer)
+        }
 
         isLoading.value = true
         globalError.value = ''
@@ -179,7 +199,13 @@ export default {
 
       } catch (error) {
         console.error('登入失敗:', error)
-        globalError.value = error.response?.data?.message || '登入失敗，請檢查帳號密碼是否正確'
+        const errorMessage = error.response?.data?.message || ''
+
+        if (errorMessage.includes('用戶不存在') || errorMessage.includes('找不到用戶')) {
+          startRedirectCountdown()
+        } else {
+          globalError.value = errorMessage || '登入失敗，請檢查帳號密碼是否正確'
+        }
       } finally {
         isLoading.value = false
       }
@@ -206,6 +232,7 @@ export default {
       showPassword,
       globalError,
       successMessage,
+      countdown,
       isFormValid,
       handleSubmit,
       validateField,
@@ -213,6 +240,7 @@ export default {
     }
   }
 }
+
 </script>
 
 <style scoped>
