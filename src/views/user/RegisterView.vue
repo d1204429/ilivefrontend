@@ -13,77 +13,18 @@
       </div>
 
       <form class="register-form" @submit.prevent="handleRegister">
-        <div class="form-group">
-          <label for="username">用戶名</label>
+        <!-- Form fields remain the same -->
+        <div class="form-group" v-for="field in formFields" :key="field.id">
+          <label :for="field.id">{{ field.label }}</label>
           <BaseInput
-              id="username"
-              v-model="formData.username"
-              type="text"
-              placeholder="請輸入用戶名"
-              :error="validationErrors.username"
-              @blur="validateField('username')"
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="email">電子郵件</label>
-          <BaseInput
-              id="email"
-              v-model="formData.email"
-              type="email"
-              placeholder="請輸入電子郵件"
-              :error="validationErrors.email"
-              @blur="validateField('email')"
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="fullName">全名</label>
-          <BaseInput
-              id="fullName"
-              v-model="formData.fullName"
-              type="text"
-              placeholder="請輸入全名"
-              :error="validationErrors.fullName"
-              @blur="validateField('fullName')"
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="phoneNumber">手機號碼</label>
-          <BaseInput
-              id="phoneNumber"
-              v-model="formData.phoneNumber"
-              type="tel"
-              placeholder="請輸入手機號碼"
-              :error="validationErrors.phoneNumber"
-              @blur="validateField('phoneNumber')"
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="address">地址</label>
-          <BaseInput
-              id="address"
-              v-model="formData.address"
-              type="text"
-              placeholder="請輸入地址"
-              :error="validationErrors.address"
-              @blur="validateField('address')"
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="password">密碼</label>
-          <BaseInput
-              id="password"
-              v-model="formData.password"
-              :type="showPassword ? 'text' : 'password'"
-              placeholder="請輸入密碼"
-              :error="validationErrors.password"
-              @blur="validateField('password')"
+              :id="field.id"
+              v-model="formData[field.id]"
+              :type="field.type || 'text'"
+              :placeholder="field.placeholder"
+              :error="validationErrors[field.id]"
+              @blur="validateField(field.id)"
           >
-            <template #append>
+            <template #append v-if="field.id === 'password' || field.id === 'confirmPassword'">
               <i
                   class="password-toggle"
                   :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"
@@ -91,18 +32,6 @@
               ></i>
             </template>
           </BaseInput>
-        </div>
-
-        <div class="form-group">
-          <label for="confirmPassword">確認密碼</label>
-          <BaseInput
-              id="confirmPassword"
-              v-model="formData.confirmPassword"
-              :type="showPassword ? 'text' : 'password'"
-              placeholder="請再次輸入密碼"
-              :error="validationErrors.confirmPassword"
-              @blur="validateField('confirmPassword')"
-          />
         </div>
 
         <BaseButton
@@ -124,16 +53,15 @@
 </template>
 
 <script>
-import {ref, reactive, computed} from 'vue'
-import {useRouter} from 'vue-router'
-import {useStore} from 'vuex'
+import { ref, reactive, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
-import authService from '@/services/auth.service'
 
 export default {
   name: 'RegisterView',
-  components: {BaseInput, BaseButton},
+  components: { BaseInput, BaseButton },
 
   setup() {
     const router = useRouter()
@@ -144,6 +72,16 @@ export default {
     const countdown = ref(5)
     const successMessage = ref('')
     const validationErrors = reactive({})
+
+    const formFields = [
+      { id: 'username', label: '用戶名', placeholder: '請輸入用戶名' },
+      { id: 'email', label: '電子郵件', type: 'email', placeholder: '請輸入電子郵件' },
+      { id: 'fullName', label: '全名', placeholder: '請輸入全名' },
+      { id: 'phoneNumber', label: '手機號碼', type: 'tel', placeholder: '請輸入手機號碼' },
+      { id: 'address', label: '地址', placeholder: '請輸入地址' },
+      { id: 'password', label: '密碼', type: 'password', placeholder: '請輸入密碼' },
+      { id: 'confirmPassword', label: '確認密碼', type: 'password', placeholder: '請再次輸入密碼' }
+    ]
 
     const formData = reactive({
       username: '',
@@ -243,6 +181,26 @@ export default {
       }, 1000)
     }
 
+    const handleRegistrationError = (error) => {
+      const errorMessage = error.response?.data?.message || error.message
+      console.error('註冊失敗:', error)
+
+      const errorMap = {
+        'username': '此用戶名已被使用',
+        'email': '此電子郵件已被註冊',
+        'phoneNumber': '此手機號碼已被註冊'
+      }
+
+      for (const [field, message] of Object.entries(errorMap)) {
+        if (errorMessage.includes(field)) {
+          validationErrors[field] = message
+          return
+        }
+      }
+
+      globalError.value = errorMessage || '註冊失敗，請稍後再試'
+    }
+
     const handleRegister = async () => {
       if (!validateForm()) return
 
@@ -259,28 +217,18 @@ export default {
           address: formData.address.trim()
         }
 
-        await authService.register(userData)
+        await store.dispatch('auth/register', userData)
         startCountdown()
 
       } catch (error) {
-        const errorMessage = error.response?.data?.message || error.message
-        console.error('註冊失敗:', error)
-
-        if (errorMessage.includes('用戶名已存在')) {
-          validationErrors.username = '此用戶名已被使用'
-        } else if (errorMessage.includes('電子郵件已存在')) {
-          validationErrors.email = '此電子郵件已被註冊'
-        } else if (errorMessage.includes('手機號碼已存在')) {
-          validationErrors.phoneNumber = '此手機號碼已被註冊'
-        } else {
-          globalError.value = errorMessage || '註冊失敗，請稍後再試'
-        }
+        handleRegistrationError(error)
       } finally {
         isLoading.value = false
       }
     }
 
     return {
+      formFields,
       formData,
       validationErrors,
       isLoading,
@@ -295,6 +243,7 @@ export default {
     }
   }
 }
+
 </script>
 
 <style scoped>
