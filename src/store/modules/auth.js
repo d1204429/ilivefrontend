@@ -3,7 +3,7 @@ import router from '@/router'
 import store from '@/store'
 
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988',
     timeout: 5000,
     headers: {
         'Content-Type': 'application/json',
@@ -45,7 +45,7 @@ api.interceptors.response.use(
                     throw new Error('No refresh token')
                 }
 
-                const response = await api.post('/users/refresh-token', { refreshToken })
+                const response = await api.post('/api/v1/users/refresh-token', { refreshToken })
                 if (!response.accessToken) {
                     throw new Error('Invalid refresh token response')
                 }
@@ -115,52 +115,52 @@ const handleApiError = (error) => {
 }
 
 export const authApi = {
-    login: (data) => api.post('/users/login', data),
-    register: (data) => api.post('/users/register', data),
-    logout: () => api.post('/users/logout'),
-    refreshToken: (refreshToken) => api.post('/users/refresh-token', { refreshToken }),
-    verifyEmail: (token) => api.post('/users/verify-email', { token })
+    login: (data) => api.post('/api/v1/users/login', data),
+    register: (data) => api.post('/api/v1/users/register', data),
+    logout: () => api.post('/api/v1/users/logout'),
+    refreshToken: (refreshToken) => api.post('/api/v1/users/refresh-token', { refreshToken }),
+    verifyEmail: (token) => api.post('/api/v1/users/verify-email', { token })
 }
 
 export const userApi = {
-    getProfile: (userId) => api.get(`/users/${userId}`),
-    updateProfile: (userId, data) => api.put(`/users/${userId}`, data),
-    changePassword: (userId, data) => api.put(`/users/${userId}/password`, data),
-    uploadAvatar: (userId, formData) => api.post(`/users/${userId}/avatar`, formData, {
+    getProfile: (userId) => api.get(`/api/v1/users/${userId}`),
+    updateProfile: (userId, data) => api.put(`/api/v1/users/${userId}`, data),
+    changePassword: (userId, data) => api.put(`/api/v1/users/${userId}/password`, data),
+    uploadAvatar: (userId, formData) => api.post(`/api/v1/users/${userId}/avatar`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
     })
 }
 
 export const productApi = {
-    getList: (params) => api.get('/products', { params }),
-    getById: (id) => api.get(`/products/${id}`),
-    getCategories: () => api.get('/products/categories'),
-    search: (params) => api.get('/products/search', { params }),
-    getNewArrivals: () => api.get('/products/new-arrivals'),
-    getRecommended: () => api.get('/products/recommended'),
-    getReviews: (productId) => api.get(`/products/${productId}/reviews`)
+    getList: (params) => api.get('/api/v1/products', { params }),
+    getById: (id) => api.get(`/api/v1/products/${id}`),
+    getCategories: () => api.get('/api/v1/categories'),
+    search: (params) => api.get('/api/v1/products/search', { params }),
+    getNewArrivals: () => api.get('/api/v1/products/new-arrivals'),
+    getRecommended: () => api.get('/api/v1/products/recommended'),
+    getReviews: (productId) => api.get(`/api/v1/products/${productId}/reviews`)
 }
 
 export const cartApi = {
-    getItems: () => api.get('/cart/items'),
-    addItem: (data) => api.post('/cart/items', data),
-    updateItem: (id, data) => api.put(`/cart/items/${id}`, data),
-    removeItem: (id) => api.delete(`/cart/items/${id}`),
-    clear: () => api.delete('/cart'),
-    applyCoupon: (code) => api.post('/cart/coupon', { code }),
-    removeCoupon: () => api.delete('/cart/coupon'),
-    getShippingMethods: () => api.get('/cart/shipping-methods'),
-    setShippingMethod: (methodId) => api.put('/cart/shipping-method', { methodId })
+    getItems: () => api.get('/api/v1/cart/items'),
+    addItem: (data) => api.post('/api/v1/cart/items', data),
+    updateItem: (id, data) => api.put(`/api/v1/cart/items/${id}`, data),
+    removeItem: (id) => api.delete(`/api/v1/cart/items/${id}`),
+    clear: () => api.delete('/api/v1/cart'),
+    applyCoupon: (code) => api.post('/api/v1/cart/coupon', { code }),
+    removeCoupon: () => api.delete('/api/v1/cart/coupon'),
+    getShippingMethods: () => api.get('/api/v1/cart/shipping-methods'),
+    setShippingMethod: (methodId) => api.put('/api/v1/cart/shipping-method', { methodId })
 }
 
 export const orderApi = {
-    create: (data) => api.post('/orders', data),
-    getList: (params) => api.get('/orders', { params }),
-    getById: (id) => api.get(`/orders/${id}`),
-    cancel: (id) => api.put(`/orders/${id}/cancel`),
-    pay: (id, data) => api.post(`/orders/${id}/payment`, data),
-    getPaymentMethods: () => api.get('/orders/payment-methods'),
-    confirmReceipt: (id) => api.put(`/orders/${id}/confirm-receipt`)
+    create: (data) => api.post('/api/v1/orders', data),
+    getList: (params) => api.get('/api/v1/orders', { params }),
+    getById: (id) => api.get(`/api/v1/orders/${id}`),
+    cancel: (id) => api.put(`/api/v1/orders/${id}/cancel`),
+    pay: (id, data) => api.post(`/api/v1/orders/${id}/payment`, data),
+    getPaymentMethods: () => api.get('/api/v1/orders/payment-methods'),
+    confirmReceipt: (id) => api.put(`/api/v1/orders/${id}/confirm-receipt`)
 }
 
 export default api

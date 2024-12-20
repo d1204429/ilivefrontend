@@ -13,6 +13,7 @@
       </div>
 
       <form class="register-form" @submit.prevent="handleRegister">
+        <!-- Form fields remain the same -->
         <div class="form-group">
           <label for="username">用戶名</label>
           <BaseInput
@@ -22,6 +23,7 @@
               placeholder="請輸入用戶名"
               :error="validationErrors.username"
               @blur="validateField('username')"
+              autocomplete="username"
           />
         </div>
 
@@ -34,6 +36,7 @@
               placeholder="請輸入電子郵件"
               :error="validationErrors.email"
               @blur="validateField('email')"
+              autocomplete="email"
           />
         </div>
 
@@ -46,6 +49,7 @@
               placeholder="請輸入全名"
               :error="validationErrors.fullName"
               @blur="validateField('fullName')"
+              autocomplete="name"
           />
         </div>
 
@@ -58,6 +62,7 @@
               placeholder="請輸入手機號碼"
               :error="validationErrors.phoneNumber"
               @blur="validateField('phoneNumber')"
+              autocomplete="tel"
           />
         </div>
 
@@ -70,6 +75,7 @@
               placeholder="請輸入地址"
               :error="validationErrors.address"
               @blur="validateField('address')"
+              autocomplete="street-address"
           />
         </div>
 
@@ -82,13 +88,16 @@
               placeholder="請輸入密碼"
               :error="validationErrors.password"
               @blur="validateField('password')"
+              autocomplete="new-password"
           >
             <template #append>
-              <i
+              <button
+                  type="button"
                   class="password-toggle"
-                  :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"
                   @click="togglePasswordVisibility"
-              ></i>
+              >
+                <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+              </button>
             </template>
           </BaseInput>
         </div>
@@ -102,6 +111,7 @@
               placeholder="請再次輸入密碼"
               :error="validationErrors.confirmPassword"
               @blur="validateField('confirmPassword')"
+              autocomplete="new-password"
           />
         </div>
 
@@ -110,6 +120,7 @@
             :disabled="!isFormValid || isLoading"
             class="register-button"
         >
+          <span v-if="isLoading" class="loading-spinner"></span>
           {{ isLoading ? '註冊中...' : '註冊' }}
         </BaseButton>
 
@@ -122,8 +133,7 @@
   </div>
 </template>
 
-<script>
-import { ref, reactive, computed } from 'vue'
+<script>import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
@@ -186,8 +196,8 @@ export default {
         v => !!v || '請輸入密碼',
         v => v.length >= 8 || '密碼長度至少需要8個字元',
         v => v.length <= 20 || '密碼長度不能超過20個字元',
-        v => /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)[\w!@#$%^&*()-+=]{8,}$/.test(v) ||
-            '密碼必須包含大小寫字母和數字'
+        v => /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])[A-Za-z\d!@#$%^&*(),.?":{}|<>]{8,}$/.test(v) ||
+            '密碼必須包含大小寫字母、數字和特殊符號'
       ],
       confirmPassword: [
         v => !!v || '請確認密碼',
@@ -263,6 +273,7 @@ export default {
 
       } catch (error) {
         const errorMessage = error.response?.data?.message || error.message
+        console.error('註冊失敗:', error)
 
         if (errorMessage.includes('用戶名已存在')) {
           validationErrors.username = '此用戶名已被使用'
@@ -293,6 +304,7 @@ export default {
     }
   }
 }
+
 </script>
 
 <style scoped>
@@ -393,6 +405,21 @@ label {
 
   .register-title {
     font-size: 1.5rem;
+  }
+}.loading-spinner {
+   display: inline-block;
+   width: 1rem;
+   height: 1rem;
+   border: 2px solid #fff;
+   border-radius: 50%;
+   border-top-color: transparent;
+   animation: spin 1s linear infinite;
+   margin-right: 0.5rem;
+ }
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>

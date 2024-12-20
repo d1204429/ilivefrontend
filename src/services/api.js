@@ -5,12 +5,13 @@ import { handleError } from '@/utils/errorHandler'
 
 // API 基礎配置
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1',
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
     timeout: 5000,
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
-    }
+    },
+    withCredentials: true
 })
 
 // 請求攔截器
@@ -38,6 +39,19 @@ api.interceptors.response.use(
     response => response.data,
     async error => {
         if (error.response?.status === 401) {
+            try {
+                const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+                if (refreshToken) {
+                    const response = await authApi.refreshToken(refreshToken)
+                    if (response.accessToken) {
+                        localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.accessToken)
+                        error.config.headers['Authorization'] = `Bearer ${response.accessToken}`
+                        return api(error.config)
+                    }
+                }
+            } catch (refreshError) {
+                console.error('Token refresh failed:', refreshError)
+            }
             store.dispatch('auth/logout')
             router.push('/login')
         }
@@ -61,14 +75,15 @@ export const userApi = {
 export const authApi = {
     login: (credentials) => api.post('/users/login', credentials),
     register: (userData) => api.post('/users/register', userData),
-    logout: () => api.post('/users/logout')
+    logout: () => api.post('/users/logout'),
+    refreshToken: (refreshToken) => api.post('/users/refresh-token', { refreshToken })
 }
 
 // 商品相關 API
 export const productApi = {
     getList: (params) => api.get('/products', { params }),
     getById: (id) => api.get(`/products/${id}`),
-    getCategories: () => api.get('/products/categories'),
+    getCategories: () => api.get('/categories'),
     search: (params) => api.get('/products/search', { params }),
     getByCategory: (categoryId) => api.get(`/products/category/${categoryId}`)
 }

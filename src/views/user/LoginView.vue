@@ -13,6 +13,7 @@
               placeholder="請輸入帳號"
               :error="validationErrors.username"
               @blur="validateField('username')"
+              autocomplete="username"
           />
         </div>
 
@@ -26,6 +27,7 @@
                 placeholder="請輸入密碼"
                 :error="validationErrors.password"
                 @blur="validateField('password')"
+                autocomplete="current-password"
             >
               <template #append>
                 <button
@@ -155,7 +157,10 @@ export default {
         isLoading.value = true
         globalError.value = ''
 
-        const response = await authService.login(formData.username, formData.password)
+        const response = await authService.login({
+          username: formData.username,
+          password: formData.password
+        })
 
         if (response.accessToken) {
           if (formData.rememberMe) {
@@ -165,11 +170,12 @@ export default {
           }
 
           await store.dispatch('auth/login', response)
-          router.push(router.currentRoute.value.query.redirect || '/')
+          const redirect = router.currentRoute.value.query.redirect || '/'
+          router.push(redirect)
         }
       } catch (error) {
         console.error('登入失敗:', error)
-        globalError.value = error.message || '登入失敗，請檢查帳號密碼是否正確'
+        globalError.value = error.response?.data?.message || '登入失敗，請檢查帳號密碼是否正確'
       } finally {
         isLoading.value = false
       }
