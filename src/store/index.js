@@ -22,7 +22,8 @@ export default createStore({
         systemStatus: {
             isOnline: navigator.onLine,
             maintenance: false,
-            version: import.meta.env.VITE_APP_VERSION || '1.0.0'
+            version: import.meta.env.VITE_APP_VERSION || '1.0.0',
+            lastChecked: null
         }
     },
 
@@ -60,7 +61,7 @@ export default createStore({
             state.systemStatus = {
                 ...state.systemStatus,
                 ...status,
-                lastUpdated: new Date().toISOString()
+                lastChecked: new Date().toISOString()
             }
         }
     },
@@ -101,13 +102,13 @@ export default createStore({
             commit('SET_LOADING', true)
 
             try {
-                // 監聽網路狀態
                 window.addEventListener('online', () => {
                     commit('SET_SYSTEM_STATUS', { isOnline: true })
                     dispatch('showNotification', {
                         message: '網路連接已恢復',
                         type: 'success'
                     })
+                    dispatch('checkSystemStatus')
                 })
 
                 window.addEventListener('offline', () => {
@@ -118,7 +119,6 @@ export default createStore({
                     })
                 })
 
-                // 檢查認證狀態
                 const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
                 const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
 
@@ -132,7 +132,6 @@ export default createStore({
                     }
                 }
 
-                // 檢查系統狀態
                 await dispatch('checkSystemStatus')
 
             } catch (error) {
@@ -149,10 +148,14 @@ export default createStore({
 
         async checkSystemStatus({ commit, dispatch }) {
             try {
-                const response = await fetch('/api/v1/system/health')
+                const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/system/health`)
                 const status = await response.json()
 
-                commit('SET_SYSTEM_STATUS', status)
+                commit('SET_SYSTEM_STATUS', {
+                    ...status,
+                    isOnline: true,
+                    lastChecked: new Date().toISOString()
+                })
 
                 if (status.maintenance) {
                     dispatch('showNotification', {
@@ -165,7 +168,8 @@ export default createStore({
                 console.error('系統狀態檢查失敗:', error)
                 commit('SET_SYSTEM_STATUS', {
                     healthy: false,
-                    error: error.message
+                    error: error.message,
+                    lastChecked: new Date().toISOString()
                 })
             }
         }
@@ -182,6 +186,7 @@ export default createStore({
         hasError: state => !!state.error,
         hasSuccess: state => !!state.success,
         hasNotification: state => !!state.notification,
-        systemStatus: state => state.systemStatus
+        systemStatus: state => state.systemStatus,
+        lastChecked: state => state.systemStatus.lastChecked
     }
 })

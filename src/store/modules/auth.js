@@ -1,251 +1,166 @@
-import api from '@/utils/axios'
+import axios from 'axios'
 import router from '@/router'
+import store from '@/store'
 
-const TOKEN_KEY = import.meta.env.VITE_JWT_TOKEN_KEY
-const REFRESH_TOKEN_KEY = import.meta.env.VITE_JWT_REFRESH_KEY
+const api = axios.create({
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
+    timeout: 5000,
+    headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    },
+    withCredentials: true
+})
 
-const state = {
-    user: JSON.parse(localStorage.getItem('user')) || null,
-    token: localStorage.getItem(TOKEN_KEY) || null,
-    refreshToken: localStorage.getItem(REFRESH_TOKEN_KEY) || null,
-    loading: false,
-    error: null,
-    successMessage: null,
-    authStatus: null
-}
+api.interceptors.request.use(
+    config => {
+        const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+        if (token) {
+            config.headers['Authorization'] = `Bearer ${token}`
+        }
 
-const getters = {
-    isAuthenticated: state => !!state.token && !!state.user,
-    currentUser: state => state.user,
-    isAdmin: state => state.user?.role === 'ADMIN',
-    isLoading: state => state.loading,
-    error: state => state.error,
-    successMessage: state => state.successMessage,
-    authStatus: state => state.authStatus
-}
-
-const actions = {
-    async login({ commit, dispatch }, credentials) {
-        commit('SET_LOADING', true)
-        commit('CLEAR_ERROR')
-        commit('SET_AUTH_STATUS', 'logging-in')
-
-        try {
-            const response = await api.post('/users/login', credentials)
-            const { accessToken, refreshToken, user } = response
-
-            if (!accessToken || !refreshToken || !user) {
-                throw new Error('登入回應格式錯誤')
+        if (config.method?.toLowerCase() === 'get') {
+            config.params = {
+                ...config.params,
+                _t: Date.now()
             }
-
-            localStorage.setItem(TOKEN_KEY, accessToken)
-            localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
-            localStorage.setItem('user', JSON.stringify(user))
-
-            commit('AUTH_SUCCESS', { token: accessToken, refreshToken, user })
-            commit('SET_AUTH_STATUS', 'authenticated')
-            await dispatch('initializeUserData')
-
-            return response
-        } catch (error) {
-            commit('AUTH_ERROR', error.message || '登入失敗')
-            commit('SET_AUTH_STATUS', 'error')
-            throw error
-        } finally {
-            commit('SET_LOADING', false)
         }
+
+        return config
     },
+    error => Promise.reject(error)
+)
 
-    async register({ commit }, userData) {
-        commit('SET_LOADING', true)
-        commit('CLEAR_ERROR')
+api.interceptors.response.use(
+    response => response.data,
+    async error => {
+        const originalRequest = error.config
 
-        try {
-            const response = await api.post('/users/register', userData)
-            commit('SET_SUCCESS_MESSAGE', '註冊成功，請登入')
-            return response
-        } catch (error) {
-            commit('AUTH_ERROR', error.message || '註冊失敗')
-            throw error
-        } finally {
-            commit('SET_LOADING', false)
-        }
-    },
+        if (error.response?.status === 401 && !originalRequest._retry) {
+            originalRequest._retry = true
 
-    async refreshToken({ commit, state }) {
-        if (!state.refreshToken) {
-            throw new Error('No refresh token available')
-        }
+            try {
+                const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+                if (!refreshToken) {
+                    throw new Error('No refresh token')
+                }
 
-        try {
-            const response = await api.post('/users/refresh-token', {
-                refreshToken: state.refreshToken
-            })
+                const response = await api.post('/users/refresh-token', { refreshToken })
+                if (!response.accessToken) {
+                    throw new Error('Invalid refresh token response')
+                }
 
-            const { accessToken, refreshToken } = response
-            localStorage.setItem(TOKEN_KEY, accessToken)
-            localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
+                localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.accessToken)
+                localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, response.refreshToken)
 
-            commit('UPDATE_TOKENS', { accessToken, refreshToken })
-            return response
-        } catch (error) {
-            commit('CLEAR_AUTH')
-            throw error
-        }
-    },
-
-    async logout({ commit }) {
-        try {
-            if (state.token) {
-                await api.post('/users/logout')
+                originalRequest.headers['Authorization'] = `Bearer ${response.accessToken}`
+                return api(originalRequest)
+            } catch (refreshError) {
+                store.dispatch('auth/logout')
+                router.push({
+                    path: '/login',
+                    query: { redirect: router.currentRoute.value.fullPath }
+                })
+                return Promise.reject(refreshError)
             }
-        } catch (error) {
-            console.error('登出錯誤:', error)
-        } finally {
-            commit('CLEAR_AUTH')
-            commit('SET_AUTH_STATUS', null)
-            router.push('/login')
         }
-    },
 
-    async fetchUserProfile({ commit, state }) {
-        try {
-            const userId = state.user?.userId
-            if (!userId) throw new Error('用戶未登入')
-
-            const response = await api.get(`/users/${userId}`)
-            commit('UPDATE_USER', response)
-            return response
-        } catch (error) {
-            commit('AUTH_ERROR', error.message)
-            throw error
-        }
-    },
-
-    async updateProfile({ commit, state }, profileData) {
-        commit('SET_LOADING', true)
-        commit('CLEAR_ERROR')
-
-        try {
-            const userId = state.user?.userId
-            if (!userId) throw new Error('用戶未登入')
-
-            const response = await api.put(`/users/${userId}`, profileData)
-            commit('UPDATE_USER', response)
-            commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
-            return response
-        } catch (error) {
-            commit('AUTH_ERROR', error.message)
-            throw error
-        } finally {
-            commit('SET_LOADING', false)
-        }
-    },
-
-    async changePassword({ commit, state }, passwordData) {
-        commit('SET_LOADING', true)
-        commit('CLEAR_ERROR')
-
-        try {
-            const userId = state.user?.userId
-            if (!userId) throw new Error('用戶未登入')
-
-            await api.put(`/users/${userId}/password`, passwordData)
-            commit('SET_SUCCESS_MESSAGE', '密碼修改成功')
-        } catch (error) {
-            commit('AUTH_ERROR', error.message)
-            throw error
-        } finally {
-            commit('SET_LOADING', false)
-        }
-    },
-
-    async initializeUserData({ dispatch }) {
-        try {
-            await Promise.all([
-                dispatch('cart/fetchCart', null, { root: true }),
-                dispatch('fetchUserProfile')
-            ])
-        } catch (error) {
-            console.error('初始化用戶數據失敗:', error)
-        }
-    },
-
-    checkAuth({ commit, dispatch }) {
-        const token = localStorage.getItem(TOKEN_KEY)
-        const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
-        const user = JSON.parse(localStorage.getItem('user'))
-
-        if (token && refreshToken && user) {
-            commit('AUTH_SUCCESS', { token, refreshToken, user })
-            commit('SET_AUTH_STATUS', 'authenticated')
-            dispatch('initializeUserData')
-        } else {
-            commit('SET_AUTH_STATUS', null)
-        }
+        handleApiError(error)
+        return Promise.reject(error)
     }
-}
+)
 
-const mutations = {
-    SET_LOADING(state, status) {
-        state.loading = status
-    },
+const handleApiError = (error) => {
+    let errorMessage = '發生未知錯誤'
+    let errorType = 'error'
 
-    AUTH_SUCCESS(state, { token, refreshToken, user }) {
-        state.token = token
-        state.refreshToken = refreshToken
-        state.user = user
-        state.error = null
-    },
+    if (error.response) {
+        const { status, data } = error.response
 
-    UPDATE_TOKENS(state, { accessToken, refreshToken }) {
-        state.token = accessToken
-        state.refreshToken = refreshToken
-    },
-
-    AUTH_ERROR(state, error) {
-        state.error = error
-        state.authStatus = 'error'
-    },
-
-    UPDATE_USER(state, user) {
-        state.user = { ...state.user, ...user }
-        localStorage.setItem('user', JSON.stringify(state.user))
-    },
-
-    CLEAR_AUTH(state) {
-        state.token = null
-        state.refreshToken = null
-        state.user = null
-        state.error = null
-        state.successMessage = null
-        state.authStatus = null
-        localStorage.removeItem(TOKEN_KEY)
-        localStorage.removeItem(REFRESH_TOKEN_KEY)
-        localStorage.removeItem('user')
-    },
-
-    CLEAR_ERROR(state) {
-        state.error = null
-    },
-
-    SET_SUCCESS_MESSAGE(state, message) {
-        state.successMessage = message
-    },
-
-    CLEAR_SUCCESS_MESSAGE(state) {
-        state.successMessage = null
-    },
-
-    SET_AUTH_STATUS(state, status) {
-        state.authStatus = status
+        switch (status) {
+            case 400:
+                errorMessage = data.message || '請求參數錯誤'
+                errorType = 'warning'
+                break
+            case 401:
+                errorMessage = '身份驗證已過期，請重新登入'
+                errorType = 'warning'
+                break
+            case 403:
+                errorMessage = '無權限訪問此資源'
+                errorType = 'error'
+                break
+            case 404:
+                errorMessage = '請求的資源不存在'
+                errorType = 'error'
+                break
+            case 500:
+                errorMessage = '伺服器錯誤，請稍後再試'
+                errorType = 'error'
+                break
+            default:
+                errorMessage = data.message || `錯誤代碼：${status}`
+                errorType = 'error'
+        }
+    } else if (error.request) {
+        errorMessage = '網路連接失敗，請檢查網路設定'
+        errorType = 'warning'
     }
+
+    store.dispatch('app/setError', {
+        message: errorMessage,
+        type: errorType,
+        duration: 3000
+    })
 }
 
-export default {
-    namespaced: true,
-    state,
-    getters,
-    actions,
-    mutations
+export const authApi = {
+    login: (data) => api.post('/users/login', data),
+    register: (data) => api.post('/users/register', data),
+    logout: () => api.post('/users/logout'),
+    refreshToken: (refreshToken) => api.post('/users/refresh-token', { refreshToken }),
+    verifyEmail: (token) => api.post('/users/verify-email', { token })
 }
+
+export const userApi = {
+    getProfile: (userId) => api.get(`/users/${userId}`),
+    updateProfile: (userId, data) => api.put(`/users/${userId}`, data),
+    changePassword: (userId, data) => api.put(`/users/${userId}/password`, data),
+    uploadAvatar: (userId, formData) => api.post(`/users/${userId}/avatar`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    })
+}
+
+export const productApi = {
+    getList: (params) => api.get('/products', { params }),
+    getById: (id) => api.get(`/products/${id}`),
+    getCategories: () => api.get('/products/categories'),
+    search: (params) => api.get('/products/search', { params }),
+    getNewArrivals: () => api.get('/products/new-arrivals'),
+    getRecommended: () => api.get('/products/recommended'),
+    getReviews: (productId) => api.get(`/products/${productId}/reviews`)
+}
+
+export const cartApi = {
+    getItems: () => api.get('/cart/items'),
+    addItem: (data) => api.post('/cart/items', data),
+    updateItem: (id, data) => api.put(`/cart/items/${id}`, data),
+    removeItem: (id) => api.delete(`/cart/items/${id}`),
+    clear: () => api.delete('/cart'),
+    applyCoupon: (code) => api.post('/cart/coupon', { code }),
+    removeCoupon: () => api.delete('/cart/coupon'),
+    getShippingMethods: () => api.get('/cart/shipping-methods'),
+    setShippingMethod: (methodId) => api.put('/cart/shipping-method', { methodId })
+}
+
+export const orderApi = {
+    create: (data) => api.post('/orders', data),
+    getList: (params) => api.get('/orders', { params }),
+    getById: (id) => api.get(`/orders/${id}`),
+    cancel: (id) => api.put(`/orders/${id}/cancel`),
+    pay: (id, data) => api.post(`/orders/${id}/payment`, data),
+    getPaymentMethods: () => api.get('/orders/payment-methods'),
+    confirmReceipt: (id) => api.put(`/orders/${id}/confirm-receipt`)
+}
+
+export default api

@@ -73,10 +73,11 @@
         <router-link to="/cart" class="cart-link">
           <i class="fas fa-shopping-cart"></i>
           <span v-if="cartItemCount > 0" class="cart-count">
-            {{ cartItemCount }}
-          </span>
+      {{ cartItemCount }}
+    </span>
         </router-link>
       </nav>
+
     </div>
   </header>
 </template>
@@ -436,4 +437,43 @@ export default {
 .user-dropdown .dropdown-item:hover {
   background-color: #f5f5f5;
 }
+.user-info {
+  position: relative;
+}
+
+.user-info:hover .user-dropdown {
+  display: block;
+}
+
+.username {
+  margin-left: 0.5rem;
+  font-weight: 500;
+}
+
+.user-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 0.5rem 0;
+  min-width: 150px;
+  z-index: 1000;
+}
+
+.user-dropdown .dropdown-item {
+  display: block;
+  padding: 0.5rem 1rem;
+  color: #333;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.user-dropdown .dropdown-item:hover {
+  background-color: #f5f5f5;
+}
+
 </style>
