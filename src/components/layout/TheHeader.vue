@@ -1,5 +1,6 @@
 <template>
   <header class="header">
+    <!-- 保持原有模板內容不變 -->
     <div class="header-container">
       <!-- 漢堡選單按鈕 -->
       <div class="burger-menu"
@@ -21,13 +22,15 @@
               <i :class="['fas', isCategoryOpen ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
             </div>
             <div class="dropdown-content" :class="{ 'show': isCategoryOpen }">
-              <router-link to="/category/1" class="dropdown-item" @click="toggleMenu">生活家電</router-link>
-              <router-link to="/category/2" class="dropdown-item" @click="toggleMenu">視聽娛樂</router-link>
-              <router-link to="/category/3" class="dropdown-item" @click="toggleMenu">冰箱</router-link>
-              <router-link to="/category/4" class="dropdown-item" @click="toggleMenu">洗衣機/乾衣機</router-link>
-              <router-link to="/category/5" class="dropdown-item" @click="toggleMenu">烤箱/微波爐/電鍋</router-link>
-              <router-link to="/category/6" class="dropdown-item" @click="toggleMenu">季節家電</router-link>
-              <router-link to="/category/7" class="dropdown-item" @click="toggleMenu">吸塵器</router-link>
+              <router-link
+                  v-for="category in categories"
+                  :key="category.id"
+                  :to="`/category/${category.id}`"
+                  class="dropdown-item"
+                  @click="toggleMenu"
+              >
+                {{ category.name }}
+              </router-link>
             </div>
           </div>
           <router-link to="/about" class="menu-item" @click="toggleMenu">關於我們</router-link>
@@ -51,11 +54,17 @@
       <!-- 用戶操作區 -->
       <nav class="user-nav">
         <template v-if="isLoggedIn">
-          <router-link to="/profile" class="nav-link">
-            <i class="fas fa-user"></i>
-          </router-link>
-          <router-link to="/orders" class="nav-link">訂單</router-link>
-          <a href="#" class="nav-link" @click.prevent="handleLogout">登出</a>
+          <div class="user-info">
+            <router-link to="/profile" class="nav-link">
+              <i class="fas fa-user"></i>
+              <span class="username">{{ currentUser?.username }}</span>
+            </router-link>
+            <div class="user-dropdown">
+              <router-link to="/profile" class="dropdown-item">個人資料</router-link>
+              <router-link to="/orders" class="dropdown-item">訂單記錄</router-link>
+              <a href="#" class="dropdown-item" @click.prevent="handleLogout">登出</a>
+            </div>
+          </div>
         </template>
         <template v-else>
           <router-link to="/login" class="nav-link">登入</router-link>
@@ -73,7 +82,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 
@@ -87,9 +96,21 @@ export default {
     const isMenuOpen = ref(false)
     const isCategoryOpen = ref(false)
     const searchKeyword = ref('')
+    const categories = ref([])
 
     const isLoggedIn = computed(() => store.getters['auth/isAuthenticated'])
+    const currentUser = computed(() => store.getters['auth/currentUser'])
     const cartItemCount = computed(() => store.getters['cart/itemCount'])
+
+    // 監聽登入狀態變化
+    watch(isLoggedIn, (newValue) => {
+      if (newValue) {
+        initializeHeader()
+      } else {
+        // 登出時清理相關數據
+        store.commit('cart/CLEAR_CART')
+      }
+    })
 
     const toggleMenu = () => {
       isMenuOpen.value = !isMenuOpen.value
@@ -125,12 +146,23 @@ export default {
         router.push('/login')
       } catch (error) {
         console.error('登出失敗:', error)
+        store.dispatch('app/setError', {
+          message: '登出失敗，請稍後再試',
+          type: 'error'
+        })
       }
     }
 
     const initializeHeader = async () => {
-      if (isLoggedIn.value) {
-        await store.dispatch('cart/fetchCartItems')
+      try {
+        if (isLoggedIn.value) {
+          await Promise.all([
+            store.dispatch('cart/fetchCartItems'),
+            store.dispatch('auth/getProfile')
+          ])
+        }
+      } catch (error) {
+        console.error('初始化頁面失敗:', error)
       }
     }
 
@@ -154,7 +186,9 @@ export default {
       isMenuOpen,
       isCategoryOpen,
       searchKeyword,
+      categories,
       isLoggedIn,
+      currentUser,
       cartItemCount,
       toggleMenu,
       toggleCategory,
@@ -164,6 +198,8 @@ export default {
   }
 }
 </script>
+
+
 <style scoped>
 .header {
   background: #fff;
@@ -359,5 +395,45 @@ export default {
   .user-nav {
     order: 1;
   }
+}
+
+
+.user-info {
+  position: relative;
+}
+
+.user-info:hover .user-dropdown {
+  display: block;
+}
+
+.username {
+  margin-left: 0.5rem;
+  font-weight: 500;
+}
+
+.user-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 0.5rem 0;
+  min-width: 150px;
+  z-index: 1000;
+}
+
+.user-dropdown .dropdown-item {
+  display: block;
+  padding: 0.5rem 1rem;
+  color: #333;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.user-dropdown .dropdown-item:hover {
+  background-color: #f5f5f5;
 }
 </style>
