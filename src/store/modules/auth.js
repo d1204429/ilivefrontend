@@ -10,7 +10,8 @@ const state = {
     refreshToken: localStorage.getItem(REFRESH_TOKEN_KEY) || null,
     loading: false,
     error: null,
-    successMessage: null
+    successMessage: null,
+    authStatus: null
 }
 
 const getters = {
@@ -19,28 +20,36 @@ const getters = {
     isAdmin: state => state.user?.role === 'ADMIN',
     isLoading: state => state.loading,
     error: state => state.error,
-    successMessage: state => state.successMessage
+    successMessage: state => state.successMessage,
+    authStatus: state => state.authStatus
 }
 
 const actions = {
     async login({ commit, dispatch }, credentials) {
         commit('SET_LOADING', true)
         commit('CLEAR_ERROR')
+        commit('SET_AUTH_STATUS', 'logging-in')
 
         try {
-            const response = await api.post('/api/v1/users/login', credentials)
-            const { accessToken, refreshToken, user } = response.data
+            const response = await api.post('/users/login', credentials)
+            const { accessToken, refreshToken, user } = response
+
+            if (!accessToken || !refreshToken || !user) {
+                throw new Error('登入回應格式錯誤')
+            }
 
             localStorage.setItem(TOKEN_KEY, accessToken)
             localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
             localStorage.setItem('user', JSON.stringify(user))
 
             commit('AUTH_SUCCESS', { token: accessToken, refreshToken, user })
+            commit('SET_AUTH_STATUS', 'authenticated')
             await dispatch('initializeUserData')
 
-            return response.data
+            return response
         } catch (error) {
-            commit('AUTH_ERROR', error.message)
+            commit('AUTH_ERROR', error.message || '登入失敗')
+            commit('SET_AUTH_STATUS', 'error')
             throw error
         } finally {
             commit('SET_LOADING', false)
@@ -52,11 +61,11 @@ const actions = {
         commit('CLEAR_ERROR')
 
         try {
-            const response = await api.post('/api/v1/users/register', userData)
+            const response = await api.post('/users/register', userData)
             commit('SET_SUCCESS_MESSAGE', '註冊成功，請登入')
-            return response.data
+            return response
         } catch (error) {
-            commit('AUTH_ERROR', error.message)
+            commit('AUTH_ERROR', error.message || '註冊失敗')
             throw error
         } finally {
             commit('SET_LOADING', false)
@@ -64,17 +73,21 @@ const actions = {
     },
 
     async refreshToken({ commit, state }) {
+        if (!state.refreshToken) {
+            throw new Error('No refresh token available')
+        }
+
         try {
-            const response = await api.post('/api/v1/users/refresh-token', {
+            const response = await api.post('/users/refresh-token', {
                 refreshToken: state.refreshToken
             })
 
-            const { accessToken, refreshToken } = response.data
+            const { accessToken, refreshToken } = response
             localStorage.setItem(TOKEN_KEY, accessToken)
             localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
 
             commit('UPDATE_TOKENS', { accessToken, refreshToken })
-            return response.data
+            return response
         } catch (error) {
             commit('CLEAR_AUTH')
             throw error
@@ -83,11 +96,14 @@ const actions = {
 
     async logout({ commit }) {
         try {
-            await api.post('/api/v1/users/logout')
+            if (state.token) {
+                await api.post('/users/logout')
+            }
         } catch (error) {
             console.error('登出錯誤:', error)
         } finally {
             commit('CLEAR_AUTH')
+            commit('SET_AUTH_STATUS', null)
             router.push('/login')
         }
     },
@@ -97,9 +113,9 @@ const actions = {
             const userId = state.user?.userId
             if (!userId) throw new Error('用戶未登入')
 
-            const response = await api.get(`/api/v1/users/${userId}`)
-            commit('UPDATE_USER', response.data)
-            return response.data
+            const response = await api.get(`/users/${userId}`)
+            commit('UPDATE_USER', response)
+            return response
         } catch (error) {
             commit('AUTH_ERROR', error.message)
             throw error
@@ -114,10 +130,10 @@ const actions = {
             const userId = state.user?.userId
             if (!userId) throw new Error('用戶未登入')
 
-            const response = await api.put(`/api/v1/users/${userId}`, profileData)
-            commit('UPDATE_USER', response.data)
+            const response = await api.put(`/users/${userId}`, profileData)
+            commit('UPDATE_USER', response)
             commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
-            return response.data
+            return response
         } catch (error) {
             commit('AUTH_ERROR', error.message)
             throw error
@@ -134,7 +150,7 @@ const actions = {
             const userId = state.user?.userId
             if (!userId) throw new Error('用戶未登入')
 
-            await api.put(`/api/v1/users/${userId}/password`, passwordData)
+            await api.put(`/users/${userId}/password`, passwordData)
             commit('SET_SUCCESS_MESSAGE', '密碼修改成功')
         } catch (error) {
             commit('AUTH_ERROR', error.message)
@@ -162,7 +178,10 @@ const actions = {
 
         if (token && refreshToken && user) {
             commit('AUTH_SUCCESS', { token, refreshToken, user })
+            commit('SET_AUTH_STATUS', 'authenticated')
             dispatch('initializeUserData')
+        } else {
+            commit('SET_AUTH_STATUS', null)
         }
     }
 }
@@ -186,6 +205,7 @@ const mutations = {
 
     AUTH_ERROR(state, error) {
         state.error = error
+        state.authStatus = 'error'
     },
 
     UPDATE_USER(state, user) {
@@ -199,6 +219,7 @@ const mutations = {
         state.user = null
         state.error = null
         state.successMessage = null
+        state.authStatus = null
         localStorage.removeItem(TOKEN_KEY)
         localStorage.removeItem(REFRESH_TOKEN_KEY)
         localStorage.removeItem('user')
@@ -214,6 +235,10 @@ const mutations = {
 
     CLEAR_SUCCESS_MESSAGE(state) {
         state.successMessage = null
+    },
+
+    SET_AUTH_STATUS(state, status) {
+        state.authStatus = status
     }
 }
 

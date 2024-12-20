@@ -3,9 +3,9 @@ import authService from '@/services/auth.service'
 
 const state = {
     userInfo: JSON.parse(localStorage.getItem('user')) || null,
-    isAuthenticated: !!localStorage.getItem('accessToken'),
-    accessToken: localStorage.getItem('accessToken') || null,
-    refreshToken: localStorage.getItem('refreshToken') || null,
+    isAuthenticated: !!localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY),
+    accessToken: localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY) || null,
+    refreshToken: localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY) || null,
     loading: false,
     error: null,
     lastLoginTime: localStorage.getItem('lastLoginTime') || null
@@ -39,11 +39,11 @@ const mutations = {
         state.accessToken = accessToken
         state.refreshToken = refreshToken
         if (accessToken) {
-            localStorage.setItem('accessToken', accessToken)
-            localStorage.setItem('refreshToken', refreshToken)
+            localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, accessToken)
+            localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, refreshToken)
         } else {
-            localStorage.removeItem('accessToken')
-            localStorage.removeItem('refreshToken')
+            localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+            localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
         }
     },
     CLEAR_USER_STATE(state) {
@@ -53,21 +53,25 @@ const mutations = {
         state.refreshToken = null
         state.error = null
         state.lastLoginTime = null
-        localStorage.clear()
+        localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+        localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+        localStorage.removeItem('user')
+        localStorage.removeItem('lastLoginTime')
     }
 }
 
 const actions = {
-    async login({ commit, dispatch }, { username, password }) {
+    async login({ commit, dispatch }, credentials) {
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
         try {
-            const response = await authService.login(username, password)
-            const { accessToken, refreshToken, user } = response
-            commit('SET_TOKENS', { accessToken, refreshToken })
-            commit('SET_USER_INFO', user)
+            const response = await authService.login(credentials.username, credentials.password)
+            commit('SET_TOKENS', {
+                accessToken: response.accessToken,
+                refreshToken: response.refreshToken
+            })
+            commit('SET_USER_INFO', response.user)
             commit('SET_AUTH_STATUS', true)
-            await dispatch('fetchUserInfo')
             return response
         } catch (error) {
             commit('SET_ERROR', error.message || '登入失敗')
@@ -81,11 +85,7 @@ const actions = {
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
         try {
-            const response = await authService.register({
-                ...userData,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            })
+            const response = await authService.register(userData)
             return response
         } catch (error) {
             commit('SET_ERROR', error.message || '註冊失敗')
@@ -99,44 +99,38 @@ const actions = {
         try {
             await authService.logout()
         } catch (error) {
-            console.error('登出時發生錯誤:', error)
+            console.error('登出錯誤:', error)
         } finally {
             commit('CLEAR_USER_STATE')
         }
     },
 
     async fetchUserInfo({ commit, state }) {
-        if (!state.accessToken) return
+        if (!state.userInfo?.userId) return
 
         commit('SET_LOADING', true)
-        commit('SET_ERROR', null)
         try {
-            const userInfo = await userApi.getUserInfo()
-            commit('SET_USER_INFO', {
-                ...userInfo,
-                updatedAt: new Date().toISOString()
-            })
+            const userInfo = await userApi.getProfile(state.userInfo.userId)
+            commit('SET_USER_INFO', userInfo)
             return userInfo
         } catch (error) {
-            commit('SET_ERROR', error.message || '獲取用戶資訊失敗')
+            commit('SET_ERROR', error.message)
             throw error
         } finally {
             commit('SET_LOADING', false)
         }
     },
 
-    async updateUserInfo({ commit }, userData) {
+    async updateUserInfo({ commit, state }, userData) {
+        if (!state.userInfo?.userId) return
+
         commit('SET_LOADING', true)
-        commit('SET_ERROR', null)
         try {
-            const response = await userApi.updateUserInfo({
-                ...userData,
-                updatedAt: new Date().toISOString()
-            })
+            const response = await userApi.updateProfile(state.userInfo.userId, userData)
             commit('SET_USER_INFO', response)
             return response
         } catch (error) {
-            commit('SET_ERROR', error.message || '更新用戶資訊失敗')
+            commit('SET_ERROR', error.message)
             throw error
         } finally {
             commit('SET_LOADING', false)
@@ -144,16 +138,16 @@ const actions = {
     },
 
     async changePassword({ commit, state }, { oldPassword, newPassword }) {
+        if (!state.userInfo?.userId) return
+
         commit('SET_LOADING', true)
-        commit('SET_ERROR', null)
         try {
-            await userApi.changePassword({
-                userId: state.userInfo.userId,
+            await userApi.changePassword(state.userInfo.userId, {
                 oldPassword,
                 newPassword
             })
         } catch (error) {
-            commit('SET_ERROR', error.message || '修改密碼失敗')
+            commit('SET_ERROR', error.message)
             throw error
         } finally {
             commit('SET_LOADING', false)
@@ -174,12 +168,27 @@ const actions = {
             commit('CLEAR_USER_STATE')
             throw error
         }
+    },
+
+    checkAuth({ commit, dispatch }) {
+        const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+        const user = JSON.parse(localStorage.getItem('user'))
+
+        if (token && user) {
+            commit('SET_TOKENS', {
+                accessToken: token,
+                refreshToken: localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+            })
+            commit('SET_USER_INFO', user)
+            commit('SET_AUTH_STATUS', true)
+            dispatch('fetchUserInfo')
+        }
     }
 }
 
 const getters = {
     isAuthenticated: state => state.isAuthenticated,
-    userInfo: state => state.userInfo,
+    currentUser: state => state.userInfo,
     accessToken: state => state.accessToken,
     refreshToken: state => state.refreshToken,
     loading: state => state.loading,
