@@ -57,6 +57,10 @@
           {{ globalError }}
         </div>
 
+        <div v-if="successMessage" class="success-message">
+          {{ successMessage }}
+        </div>
+
         <BaseButton
             type="submit"
             :disabled="!isFormValid || isLoading"
@@ -85,7 +89,6 @@ import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
-import authService from '@/services/auth.service'
 
 export default {
   name: 'LoginView',
@@ -97,6 +100,7 @@ export default {
     const isLoading = ref(false)
     const showPassword = ref(false)
     const globalError = ref('')
+    const successMessage = ref('')
     const validationErrors = reactive({})
 
     const formData = reactive({
@@ -108,13 +112,11 @@ export default {
     const validationRules = {
       username: [
         v => !!v || '請輸入帳號',
-        v => v.length >= 3 || '帳號長度至少需要3個字元',
-        v => /^[a-zA-Z0-9_]+$/.test(v) || '帳號只能包含字母、數字和底線'
+        v => v.length >= 3 || '帳號長度至少需要3個字元'
       ],
       password: [
         v => !!v || '請輸入密碼',
-        v => v.length >= 6 || '密碼長度至少需要6個字元',
-        v => /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/.test(v) || '密碼必須包含至少一個字母和一個數字'
+        v => v.length >= 6 || '密碼長度至少需要6個字元'
       ]
     }
 
@@ -156,23 +158,25 @@ export default {
 
         isLoading.value = true
         globalError.value = ''
+        successMessage.value = ''
 
-        const response = await authService.login({
+        await store.dispatch('auth/login', {
           username: formData.username,
           password: formData.password
         })
 
-        if (response.accessToken) {
-          if (formData.rememberMe) {
-            localStorage.setItem('rememberedUsername', formData.username)
-          } else {
-            localStorage.removeItem('rememberedUsername')
-          }
+        successMessage.value = '登入成功'
 
-          await store.dispatch('auth/login', response)
-          const redirect = router.currentRoute.value.query.redirect || '/'
-          router.push(redirect)
+        if (formData.rememberMe) {
+          localStorage.setItem('rememberedUsername', formData.username)
+        } else {
+          localStorage.removeItem('rememberedUsername')
         }
+
+        setTimeout(() => {
+          router.push(router.currentRoute.value.query.redirect || '/')
+        }, 1000)
+
       } catch (error) {
         console.error('登入失敗:', error)
         globalError.value = error.response?.data?.message || '登入失敗，請檢查帳號密碼是否正確'
@@ -201,6 +205,7 @@ export default {
       isLoading,
       showPassword,
       globalError,
+      successMessage,
       isFormValid,
       handleSubmit,
       validateField,
@@ -260,6 +265,17 @@ h2 {
   background-color: #fff5f5;
   border: 1px solid #feb2b2;
   color: #c53030;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+}
+
+.success-message {
+  background-color: #f0fff4;
+  border: 1px solid #9ae6b4;
+  color: #2f855a;
   padding: 0.75rem;
   border-radius: 8px;
   margin-bottom: 1rem;

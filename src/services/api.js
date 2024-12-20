@@ -3,9 +3,8 @@ import router from '@/router'
 import store from '@/store'
 import { handleError } from '@/utils/errorHandler'
 
-// API 基礎配置
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
+    baseURL: 'http://localhost:1988/api/v1',
     timeout: 5000,
     headers: {
         'Content-Type': 'application/json',
@@ -14,7 +13,6 @@ const api = axios.create({
     withCredentials: true
 })
 
-// 請求攔截器
 api.interceptors.request.use(
     config => {
         const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
@@ -22,7 +20,7 @@ api.interceptors.request.use(
             config.headers['Authorization'] = `Bearer ${token}`
         }
 
-        if (config.method === 'get') {
+        if (config.method?.toLowerCase() === 'get') {
             config.params = {
                 ...config.params,
                 _t: Date.now()
@@ -34,44 +32,45 @@ api.interceptors.request.use(
     error => Promise.reject(error)
 )
 
-// 響應攔截器
 api.interceptors.response.use(
     response => response.data,
     async error => {
-        if (error.response?.status === 401) {
+        const originalRequest = error.config
+
+        if (error.response?.status === 401 && !originalRequest._retry) {
+            originalRequest._retry = true
+
             try {
                 const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
-                if (refreshToken) {
-                    const response = await authApi.refreshToken(refreshToken)
-                    if (response.accessToken) {
-                        localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.accessToken)
-                        error.config.headers['Authorization'] = `Bearer ${response.accessToken}`
-                        return api(error.config)
-                    }
+                if (!refreshToken) {
+                    throw new Error('No refresh token')
                 }
+
+                const response = await api.post('/users/refresh-token', { refreshToken })
+                if (!response.accessToken) {
+                    throw new Error('Invalid refresh token response')
+                }
+
+                localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.accessToken)
+                localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, response.refreshToken)
+
+                originalRequest.headers['Authorization'] = `Bearer ${response.accessToken}`
+                return api(originalRequest)
             } catch (refreshError) {
-                console.error('Token refresh failed:', refreshError)
+                store.dispatch('auth/logout')
+                router.push({
+                    path: '/login',
+                    query: { redirect: router.currentRoute.value.fullPath }
+                })
+                return Promise.reject(refreshError)
             }
-            store.dispatch('auth/logout')
-            router.push('/login')
         }
+
         handleError(error)
         return Promise.reject(error)
     }
 )
 
-// 用戶相關 API
-export const userApi = {
-    getProfile: () => api.get('/users/profile'),
-    updateProfile: (data) => api.put('/users/profile', data),
-    changePassword: (data) => api.put('/users/password', data),
-    getOrders: () => api.get('/users/orders'),
-    getFavorites: () => api.get('/users/favorites'),
-    addFavorite: (productId) => api.post(`/users/favorites/${productId}`),
-    removeFavorite: (productId) => api.delete(`/users/favorites/${productId}`)
-}
-
-// 認證相關 API
 export const authApi = {
     login: (credentials) => api.post('/users/login', credentials),
     register: (userData) => api.post('/users/register', userData),
@@ -79,45 +78,45 @@ export const authApi = {
     refreshToken: (refreshToken) => api.post('/users/refresh-token', { refreshToken })
 }
 
-// 商品相關 API
+export const userApi = {
+    getProfile: (userId) => api.get(`/users/${userId}`),
+    updateProfile: (userId, data) => api.put(`/users/${userId}`, data),
+    changePassword: (userId, data) => api.put(`/users/${userId}/password`, data),
+    uploadAvatar: (userId, formData) => api.post(`/users/${userId}/avatar`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    })
+}
+
 export const productApi = {
     getList: (params) => api.get('/products', { params }),
     getById: (id) => api.get(`/products/${id}`),
     getCategories: () => api.get('/categories'),
     search: (params) => api.get('/products/search', { params }),
-    getByCategory: (categoryId) => api.get(`/products/category/${categoryId}`)
+    getNewArrivals: () => api.get('/products/new-arrivals'),
+    getRecommended: () => api.get('/products/recommended'),
+    getReviews: (productId) => api.get(`/products/${productId}/reviews`)
 }
 
-// 購物車相關 API
 export const cartApi = {
-    getItems: () => api.get('/cart'),
+    getItems: () => api.get('/cart/items'),
     addItem: (data) => api.post('/cart/items', data),
     updateItem: (id, data) => api.put(`/cart/items/${id}`, data),
     removeItem: (id) => api.delete(`/cart/items/${id}`),
-    clear: () => api.delete('/cart')
+    clear: () => api.delete('/cart'),
+    applyCoupon: (code) => api.post('/cart/coupon', { code }),
+    removeCoupon: () => api.delete('/cart/coupon'),
+    getShippingMethods: () => api.get('/cart/shipping-methods'),
+    setShippingMethod: (methodId) => api.put('/cart/shipping-method', { methodId })
 }
 
-// 訂單相關 API
 export const orderApi = {
     create: (data) => api.post('/orders', data),
     getList: (params) => api.get('/orders', { params }),
-    getDetail: (id) => api.get(`/orders/${id}`),
+    getById: (id) => api.get(`/orders/${id}`),
     cancel: (id) => api.put(`/orders/${id}/cancel`),
-    pay: (id, data) => api.post(`/orders/${id}/payment`, data)
+    pay: (id, data) => api.post(`/orders/${id}/payment`, data),
+    getPaymentMethods: () => api.get('/orders/payment-methods'),
+    confirmReceipt: (id) => api.put(`/orders/${id}/confirm-receipt`)
 }
 
-// 管理員 API
-export const adminApi = {
-    createProduct: (data) => api.post('/admin/products', data),
-    updateProduct: (id, data) => api.put(`/admin/products/${id}`, data),
-    deleteProduct: (id) => api.delete(`/admin/products/${id}`)
-}
-
-export default {
-    auth: authApi,
-    user: userApi,
-    product: productApi,
-    cart: cartApi,
-    order: orderApi,
-    admin: adminApi
-}
+export default api

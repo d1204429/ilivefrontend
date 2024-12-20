@@ -13,7 +13,6 @@
       </div>
 
       <form class="register-form" @submit.prevent="handleRegister">
-        <!-- Form fields remain the same -->
         <div class="form-group">
           <label for="username">用戶名</label>
           <BaseInput
@@ -23,7 +22,6 @@
               placeholder="請輸入用戶名"
               :error="validationErrors.username"
               @blur="validateField('username')"
-              autocomplete="username"
           />
         </div>
 
@@ -36,7 +34,6 @@
               placeholder="請輸入電子郵件"
               :error="validationErrors.email"
               @blur="validateField('email')"
-              autocomplete="email"
           />
         </div>
 
@@ -49,7 +46,6 @@
               placeholder="請輸入全名"
               :error="validationErrors.fullName"
               @blur="validateField('fullName')"
-              autocomplete="name"
           />
         </div>
 
@@ -62,7 +58,6 @@
               placeholder="請輸入手機號碼"
               :error="validationErrors.phoneNumber"
               @blur="validateField('phoneNumber')"
-              autocomplete="tel"
           />
         </div>
 
@@ -75,7 +70,6 @@
               placeholder="請輸入地址"
               :error="validationErrors.address"
               @blur="validateField('address')"
-              autocomplete="street-address"
           />
         </div>
 
@@ -88,16 +82,13 @@
               placeholder="請輸入密碼"
               :error="validationErrors.password"
               @blur="validateField('password')"
-              autocomplete="new-password"
           >
             <template #append>
-              <button
-                  type="button"
+              <i
                   class="password-toggle"
+                  :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"
                   @click="togglePasswordVisibility"
-              >
-                <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
-              </button>
+              ></i>
             </template>
           </BaseInput>
         </div>
@@ -111,7 +102,6 @@
               placeholder="請再次輸入密碼"
               :error="validationErrors.confirmPassword"
               @blur="validateField('confirmPassword')"
-              autocomplete="new-password"
           />
         </div>
 
@@ -133,16 +123,17 @@
   </div>
 </template>
 
-<script>import { ref, reactive, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { useStore } from 'vuex'
+<script>
+import {ref, reactive, computed} from 'vue'
+import {useRouter} from 'vue-router'
+import {useStore} from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import authService from '@/services/auth.service'
 
 export default {
   name: 'RegisterView',
-  components: { BaseInput, BaseButton },
+  components: {BaseInput, BaseButton},
 
   setup() {
     const router = useRouter()
@@ -304,7 +295,6 @@ export default {
     }
   }
 }
-
 </script>
 
 <style scoped>
@@ -360,6 +350,17 @@ label {
   margin-top: 1rem;
 }
 
+.loading-spinner {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spin 1s linear infinite;
+  margin-right: 0.5rem;
+}
+
 .login-link {
   text-align: center;
   margin-top: 1.5rem;
@@ -397,6 +398,12 @@ label {
   opacity: 0.9;
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 640px) {
   .register-container {
     margin: 1rem;
@@ -405,21 +412,6 @@ label {
 
   .register-title {
     font-size: 1.5rem;
-  }
-}.loading-spinner {
-   display: inline-block;
-   width: 1rem;
-   height: 1rem;
-   border: 2px solid #fff;
-   border-radius: 50%;
-   border-top-color: transparent;
-   animation: spin 1s linear infinite;
-   margin-right: 0.5rem;
- }
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
   }
 }
 </style>

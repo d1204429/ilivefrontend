@@ -1,166 +1,149 @@
-import axios from 'axios'
-import router from '@/router'
-import store from '@/store'
+import { authApi } from '@/services/api'
 
-const api = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988',
-    timeout: 5000,
-    headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
+const state = {
+    user: JSON.parse(localStorage.getItem('user')) || null,
+    token: localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY) || null,
+    refreshToken: localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY) || null,
+    loading: false,
+    error: null,
+    authStatus: null,
+    successMessage: null
+}
+
+const mutations = {
+    SET_LOADING(state, status) {
+        state.loading = status
     },
-    withCredentials: true
-})
+    SET_ERROR(state, error) {
+        state.error = error
+    },
+    SET_SUCCESS_MESSAGE(state, message) {
+        state.successMessage = message
+    },
+    SET_USER(state, user) {
+        state.user = user
+        if (user) {
+            localStorage.setItem('user', JSON.stringify(user))
+        } else {
+            localStorage.removeItem('user')
+        }
+    },
+    SET_AUTH_STATUS(state, status) {
+        state.authStatus = status
+    },
+    SET_TOKENS(state, { accessToken, refreshToken }) {
+        state.token = accessToken
+        state.refreshToken = refreshToken
+        if (accessToken) {
+            localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, accessToken)
+            localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, refreshToken)
+        } else {
+            localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+            localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+        }
+    },
+    CLEAR_AUTH(state) {
+        state.user = null
+        state.token = null
+        state.refreshToken = null
+        state.error = null
+        state.authStatus = null
+        state.successMessage = null
+        localStorage.removeItem('user')
+        localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+        localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+    }
+}
 
-api.interceptors.request.use(
-    config => {
+const actions = {
+    async login({ commit }, credentials) {
+        commit('SET_LOADING', true)
+        commit('SET_ERROR', null)
+        try {
+            const response = await authApi.login(credentials)
+            commit('SET_TOKENS', {
+                accessToken: response.accessToken,
+                refreshToken: response.refreshToken
+            })
+            commit('SET_USER', response.user)
+            commit('SET_AUTH_STATUS', 'authenticated')
+            commit('SET_SUCCESS_MESSAGE', '登入成功')
+            return response
+        } catch (error) {
+            commit('SET_ERROR', error.response?.data?.message || '登入失敗')
+            throw error
+        } finally {
+            commit('SET_LOADING', false)
+        }
+    },
+
+    async register({ commit }, userData) {
+        commit('SET_LOADING', true)
+        commit('SET_ERROR', null)
+        try {
+            const response = await authApi.register(userData)
+            commit('SET_SUCCESS_MESSAGE', '註冊成功')
+            return response
+        } catch (error) {
+            commit('SET_ERROR', error.response?.data?.message || '註冊失敗')
+            throw error
+        } finally {
+            commit('SET_LOADING', false)
+        }
+    },
+
+    async logout({ commit }) {
+        try {
+            await authApi.logout()
+        } catch (error) {
+            console.error('登出錯誤:', error)
+        } finally {
+            commit('CLEAR_AUTH')
+        }
+    },
+
+    async refreshToken({ commit, state }) {
+        try {
+            const response = await authApi.refreshToken(state.refreshToken)
+            commit('SET_TOKENS', {
+                accessToken: response.accessToken,
+                refreshToken: response.refreshToken
+            })
+            return response
+        } catch (error) {
+            commit('CLEAR_AUTH')
+            throw error
+        }
+    },
+
+    checkAuth({ commit }) {
         const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
-        if (token) {
-            config.headers['Authorization'] = `Bearer ${token}`
+        const user = JSON.parse(localStorage.getItem('user'))
+
+        if (token && user) {
+            commit('SET_TOKENS', {
+                accessToken: token,
+                refreshToken: localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+            })
+            commit('SET_USER', user)
+            commit('SET_AUTH_STATUS', 'authenticated')
         }
-
-        if (config.method?.toLowerCase() === 'get') {
-            config.params = {
-                ...config.params,
-                _t: Date.now()
-            }
-        }
-
-        return config
-    },
-    error => Promise.reject(error)
-)
-
-api.interceptors.response.use(
-    response => response.data,
-    async error => {
-        const originalRequest = error.config
-
-        if (error.response?.status === 401 && !originalRequest._retry) {
-            originalRequest._retry = true
-
-            try {
-                const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
-                if (!refreshToken) {
-                    throw new Error('No refresh token')
-                }
-
-                const response = await api.post('/api/v1/users/refresh-token', { refreshToken })
-                if (!response.accessToken) {
-                    throw new Error('Invalid refresh token response')
-                }
-
-                localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.accessToken)
-                localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, response.refreshToken)
-
-                originalRequest.headers['Authorization'] = `Bearer ${response.accessToken}`
-                return api(originalRequest)
-            } catch (refreshError) {
-                store.dispatch('auth/logout')
-                router.push({
-                    path: '/login',
-                    query: { redirect: router.currentRoute.value.fullPath }
-                })
-                return Promise.reject(refreshError)
-            }
-        }
-
-        handleApiError(error)
-        return Promise.reject(error)
     }
-)
-
-const handleApiError = (error) => {
-    let errorMessage = '發生未知錯誤'
-    let errorType = 'error'
-
-    if (error.response) {
-        const { status, data } = error.response
-
-        switch (status) {
-            case 400:
-                errorMessage = data.message || '請求參數錯誤'
-                errorType = 'warning'
-                break
-            case 401:
-                errorMessage = '身份驗證已過期，請重新登入'
-                errorType = 'warning'
-                break
-            case 403:
-                errorMessage = '無權限訪問此資源'
-                errorType = 'error'
-                break
-            case 404:
-                errorMessage = '請求的資源不存在'
-                errorType = 'error'
-                break
-            case 500:
-                errorMessage = '伺服器錯誤，請稍後再試'
-                errorType = 'error'
-                break
-            default:
-                errorMessage = data.message || `錯誤代碼：${status}`
-                errorType = 'error'
-        }
-    } else if (error.request) {
-        errorMessage = '網路連接失敗，請檢查網路設定'
-        errorType = 'warning'
-    }
-
-    store.dispatch('app/setError', {
-        message: errorMessage,
-        type: errorType,
-        duration: 3000
-    })
 }
 
-export const authApi = {
-    login: (data) => api.post('/api/v1/users/login', data),
-    register: (data) => api.post('/api/v1/users/register', data),
-    logout: () => api.post('/api/v1/users/logout'),
-    refreshToken: (refreshToken) => api.post('/api/v1/users/refresh-token', { refreshToken }),
-    verifyEmail: (token) => api.post('/api/v1/users/verify-email', { token })
+const getters = {
+    isAuthenticated: state => !!state.token && !!state.user,
+    currentUser: state => state.user,
+    isLoading: state => state.loading,
+    error: state => state.error,
+    successMessage: state => state.successMessage,
+    authStatus: state => state.authStatus
 }
 
-export const userApi = {
-    getProfile: (userId) => api.get(`/api/v1/users/${userId}`),
-    updateProfile: (userId, data) => api.put(`/api/v1/users/${userId}`, data),
-    changePassword: (userId, data) => api.put(`/api/v1/users/${userId}/password`, data),
-    uploadAvatar: (userId, formData) => api.post(`/api/v1/users/${userId}/avatar`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-    })
+export default {
+    namespaced: true,
+    state,
+    mutations,
+    actions,
+    getters
 }
-
-export const productApi = {
-    getList: (params) => api.get('/api/v1/products', { params }),
-    getById: (id) => api.get(`/api/v1/products/${id}`),
-    getCategories: () => api.get('/api/v1/categories'),
-    search: (params) => api.get('/api/v1/products/search', { params }),
-    getNewArrivals: () => api.get('/api/v1/products/new-arrivals'),
-    getRecommended: () => api.get('/api/v1/products/recommended'),
-    getReviews: (productId) => api.get(`/api/v1/products/${productId}/reviews`)
-}
-
-export const cartApi = {
-    getItems: () => api.get('/api/v1/cart/items'),
-    addItem: (data) => api.post('/api/v1/cart/items', data),
-    updateItem: (id, data) => api.put(`/api/v1/cart/items/${id}`, data),
-    removeItem: (id) => api.delete(`/api/v1/cart/items/${id}`),
-    clear: () => api.delete('/api/v1/cart'),
-    applyCoupon: (code) => api.post('/api/v1/cart/coupon', { code }),
-    removeCoupon: () => api.delete('/api/v1/cart/coupon'),
-    getShippingMethods: () => api.get('/api/v1/cart/shipping-methods'),
-    setShippingMethod: (methodId) => api.put('/api/v1/cart/shipping-method', { methodId })
-}
-
-export const orderApi = {
-    create: (data) => api.post('/api/v1/orders', data),
-    getList: (params) => api.get('/api/v1/orders', { params }),
-    getById: (id) => api.get(`/api/v1/orders/${id}`),
-    cancel: (id) => api.put(`/api/v1/orders/${id}/cancel`),
-    pay: (id, data) => api.post(`/api/v1/orders/${id}/payment`, data),
-    getPaymentMethods: () => api.get('/api/v1/orders/payment-methods'),
-    confirmReceipt: (id) => api.put(`/api/v1/orders/${id}/confirm-receipt`)
-}
-
-export default api
