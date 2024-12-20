@@ -118,11 +118,13 @@ export default {
     const validationRules = {
       username: [
         v => !!v || '請輸入帳號',
-        v => v.length >= 3 || '帳號長度至少需要3個字元'
+        v => v.length >= 3 || '帳號長度至少需要3個字元',
+        v => /^[a-zA-Z0-9_]+$/.test(v) || '帳號只能包含字母、數字和底線'
       ],
       password: [
         v => !!v || '請輸入密碼',
-        v => v.length >= 6 || '密碼長度至少需要6個字元'
+        v => v.length >= 6 || '密碼長度至少需要6個字元',
+        v => /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/.test(v) || '密碼必須包含字母和數字'
       ]
     }
 
@@ -159,8 +161,12 @@ export default {
     })
 
     const startSuccessCountdown = () => {
-      countdown.value = 10
+      countdown.value = 5
       successMessage.value = `登入成功！${countdown.value}秒後自動跳轉到首頁，或點擊立即回首頁`
+
+      if (successTimer) {
+        clearInterval(successTimer)
+      }
 
       successTimer = setInterval(() => {
         countdown.value--
@@ -176,6 +182,10 @@ export default {
     const startRedirectCountdown = () => {
       countdown.value = 5
       globalError.value = `無此帳號請註冊帳號，${countdown.value}秒後自動跳轉到註冊頁面...`
+
+      if (countdownTimer) {
+        clearInterval(countdownTimer)
+      }
 
       countdownTimer = setInterval(() => {
         countdown.value--
@@ -211,7 +221,7 @@ export default {
         successMessage.value = ''
 
         await store.dispatch('auth/login', {
-          username: formData.username,
+          username: formData.username.trim(),
           password: formData.password
         })
 
@@ -229,6 +239,8 @@ export default {
 
         if (errorMessage.includes('用戶不存在') || errorMessage.includes('找不到用戶')) {
           startRedirectCountdown()
+        } else if (errorMessage.includes('密碼錯誤')) {
+          globalError.value = '密碼錯誤，請重新輸入'
         } else {
           globalError.value = errorMessage || '登入失敗，請檢查帳號密碼是否正確'
         }
