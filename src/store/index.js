@@ -23,8 +23,16 @@ export default createStore({
             isOnline: navigator.onLine,
             maintenance: false,
             version: import.meta.env.VITE_APP_VERSION || '1.0.0',
-            lastChecked: null
-        }
+            lastChecked: null,
+            healthy: true,
+            services: {
+                api: true,
+                database: true,
+                cache: true
+            }
+        },
+        theme: localStorage.getItem('theme') || 'light',
+        language: localStorage.getItem('language') || 'zh-TW'
     },
 
     mutations: {
@@ -32,7 +40,14 @@ export default createStore({
             state.loading = status
         },
         SET_ERROR(state, error) {
-            state.error = typeof error === 'string' ? { message: error, type: 'error' } : error
+            state.error = typeof error === 'string' ? {
+                message: error,
+                type: 'error',
+                timestamp: new Date().toISOString()
+            } : {
+                ...error,
+                timestamp: new Date().toISOString()
+            }
         },
         SET_SUCCESS(state, message) {
             state.success = {
@@ -63,6 +78,16 @@ export default createStore({
                 ...status,
                 lastChecked: new Date().toISOString()
             }
+        },
+        SET_THEME(state, theme) {
+            state.theme = theme
+            localStorage.setItem('theme', theme)
+            document.documentElement.setAttribute('data-theme', theme)
+        },
+        SET_LANGUAGE(state, language) {
+            state.language = language
+            localStorage.setItem('language', language)
+            document.documentElement.setAttribute('lang', language)
         }
     },
 
@@ -71,12 +96,16 @@ export default createStore({
             commit('SET_LOADING', status)
         },
 
-        setError({ commit }, { message, type = 'error', duration = 3000 }) {
+        setError({ commit, dispatch }, { message, type = 'error', duration = 3000 }) {
             commit('SET_ERROR', { message, type })
             if (duration > 0) {
                 setTimeout(() => {
                     commit('CLEAR_ERROR')
                 }, duration)
+            }
+            // 記錄錯誤
+            if (type === 'error') {
+                console.error('Error:', message)
             }
         },
 
@@ -98,10 +127,11 @@ export default createStore({
             }
         },
 
-        async initializeApp({ commit, dispatch }) {
+        async initializeApp({ commit, dispatch, state }) {
             commit('SET_LOADING', true)
 
             try {
+                // 網路狀態監聽
                 window.addEventListener('online', () => {
                     commit('SET_SYSTEM_STATUS', { isOnline: true })
                     dispatch('showNotification', {
@@ -119,13 +149,21 @@ export default createStore({
                     })
                 })
 
+                // 主題初始化
+                document.documentElement.setAttribute('data-theme', state.theme)
+                document.documentElement.setAttribute('lang', state.language)
+
+                // 認證檢查
                 const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
                 const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
 
                 if (token && refreshToken) {
                     try {
                         await dispatch('auth/checkAuth')
-                        await dispatch('cart/fetchCartItems')
+                        await Promise.all([
+                            dispatch('cart/fetchCartItems'),
+                            dispatch('user/fetchProfile')
+                        ])
                     } catch (error) {
                         console.error('認證檢查失敗:', error)
                         await dispatch('auth/logout')
@@ -164,6 +202,15 @@ export default createStore({
                         duration: 0
                     })
                 }
+
+                // 檢查服務狀態
+                if (!status.services.api || !status.services.database) {
+                    dispatch('setError', {
+                        message: '系統服務異常，請稍後再試',
+                        type: 'error',
+                        duration: 0
+                    })
+                }
             } catch (error) {
                 console.error('系統狀態檢查失敗:', error)
                 commit('SET_SYSTEM_STATUS', {
@@ -172,6 +219,14 @@ export default createStore({
                     lastChecked: new Date().toISOString()
                 })
             }
+        },
+
+        setTheme({ commit }, theme) {
+            commit('SET_THEME', theme)
+        },
+
+        setLanguage({ commit }, language) {
+            commit('SET_LANGUAGE', language)
         }
     },
 
@@ -187,6 +242,11 @@ export default createStore({
         hasSuccess: state => !!state.success,
         hasNotification: state => !!state.notification,
         systemStatus: state => state.systemStatus,
-        lastChecked: state => state.systemStatus.lastChecked
+        lastChecked: state => state.systemStatus.lastChecked,
+        currentTheme: state => state.theme,
+        currentLanguage: state => state.language,
+        isSystemHealthy: state => state.systemStatus.healthy &&
+            state.systemStatus.services.api &&
+            state.systemStatus.services.database
     }
 })

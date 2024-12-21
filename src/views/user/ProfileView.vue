@@ -6,36 +6,63 @@
         編輯資料
       </button>
       <div v-else class="action-buttons">
-        <button @click="saveProfile" class="save-btn">儲存</button>
-        <button @click="cancelEditing" class="cancel-btn">取消</button>
+        <button @click="saveProfile" class="save-btn" :disabled="loading">儲存</button>
+        <button @click="cancelEditing" class="cancel-btn" :disabled="loading">取消</button>
       </div>
     </div>
 
     <div class="profile-content">
-      <div class="profile-info">
+      <div v-if="loading" class="loading-spinner">
+        載入中...
+      </div>
+      <div v-else class="profile-info">
         <div class="info-group">
           <label>使用者名稱</label>
-          <input v-if="isEditing" v-model="editedProfile.username" type="text" />
+          <input
+              v-if="isEditing"
+              v-model="editedProfile.username"
+              type="text"
+              :disabled="loading"
+          />
           <span v-else>{{ userProfile.username }}</span>
         </div>
         <div class="info-group">
           <label>電子信箱</label>
-          <input v-if="isEditing" v-model="editedProfile.email" type="email" />
+          <input
+              v-if="isEditing"
+              v-model="editedProfile.email"
+              type="email"
+              :disabled="loading"
+          />
           <span v-else>{{ userProfile.email }}</span>
         </div>
         <div class="info-group">
           <label>全名</label>
-          <input v-if="isEditing" v-model="editedProfile.fullName" type="text" />
+          <input
+              v-if="isEditing"
+              v-model="editedProfile.fullName"
+              type="text"
+              :disabled="loading"
+          />
           <span v-else>{{ userProfile.fullName }}</span>
         </div>
         <div class="info-group">
           <label>電話號碼</label>
-          <input v-if="isEditing" v-model="editedProfile.phoneNumber" type="tel" />
+          <input
+              v-if="isEditing"
+              v-model="editedProfile.phoneNumber"
+              type="tel"
+              :disabled="loading"
+          />
           <span v-else>{{ userProfile.phoneNumber }}</span>
         </div>
         <div class="info-group">
           <label>地址</label>
-          <textarea v-if="isEditing" v-model="editedProfile.address"></textarea>
+          <textarea
+              v-if="isEditing"
+              v-model="editedProfile.address"
+              :disabled="loading"
+          ></textarea>
           <span v-else>{{ userProfile.address }}</span>
         </div>
       </div>
@@ -44,64 +71,82 @@
 </template>
 
 <script>
-import axios from 'axios';
+import { ref, computed, onMounted } from 'vue'
+import { useStore } from 'vuex'
+import { useRouter } from 'vue-router'
 
 export default {
   name: 'ProfileView',
-  data() {
+
+  setup() {
+    const store = useStore()
+    const router = useRouter()
+
+    const isEditing = ref(false)
+    const loading = ref(false)
+    const editedProfile = ref({})
+
+    const userProfile = computed(() => store.getters['user/profile'])
+
+    const fetchUserProfile = async () => {
+      try {
+        loading.value = true
+        await store.dispatch('user/fetchProfile')
+      } catch (error) {
+        store.dispatch('app/setError', {
+          message: '獲取用戶資料失敗',
+          type: 'error'
+        })
+        router.push('/login')
+      } finally {
+        loading.value = false
+      }
+    }
+
+    const startEditing = () => {
+      editedProfile.value = { ...userProfile.value }
+      isEditing.value = true
+    }
+
+    const saveProfile = async () => {
+      try {
+        loading.value = true
+        await store.dispatch('user/updateProfile', editedProfile.value)
+        isEditing.value = false
+        store.dispatch('app/setSuccess', {
+          message: '個人資料更新成功',
+          duration: 2000
+        })
+      } catch (error) {
+        store.dispatch('app/setError', {
+          message: '更新個人資料失敗，請稍後再試',
+          type: 'error'
+        })
+      } finally {
+        loading.value = false
+      }
+    }
+
+    const cancelEditing = () => {
+      isEditing.value = false
+      editedProfile.value = {}
+    }
+
+    onMounted(() => {
+      fetchUserProfile()
+    })
+
     return {
-      isEditing: false,
-      userProfile: {
-        username: '',
-        email: '',
-        fullName: '',
-        phoneNumber: '',
-        address: ''
-      },
-      editedProfile: {}
-    };
-  },
-  created() {
-    this.fetchUserProfile();
-  },
-  methods: {
-    async fetchUserProfile() {
-      try {
-        const response = await axios.get('/api/user/profile', {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('accessToken')}`
-          }
-        });
-        this.userProfile = response.data;
-      } catch (error) {
-        console.error('獲取用戶資料失敗:', error);
-      }
-    },
-    startEditing() {
-      this.editedProfile = {...this.userProfile};
-      this.isEditing = true;
-    },
-    async saveProfile() {
-      try {
-        const response = await axios.put('/api/user/profile', this.editedProfile, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('accessToken')}`
-          }
-        });
-        this.userProfile = response.data;
-        this.isEditing = false;
-        this.$message.success('個人資料更新成功');
-      } catch (error) {
-        console.error('更新個人資料失敗:', error);
-        this.$message.error('更新失敗，請稍後再試');
-      }
-    },
-    cancelEditing() {
-      this.isEditing = false;
-      this.editedProfile = {};
+      isEditing,
+      loading,
+      userProfile,
+      editedProfile,
+      startEditing,
+      saveProfile,
+      cancelEditing
     }
   }
-};
+}
 </script>
 
 <style scoped>
@@ -144,6 +189,12 @@ export default {
   border-radius: 4px;
 }
 
+.info-group input:disabled,
+.info-group textarea:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
 .action-buttons {
   display: flex;
   gap: 10px;
@@ -156,6 +207,14 @@ export default {
   border-radius: 4px;
   border: none;
   cursor: pointer;
+  transition: opacity 0.3s;
+}
+
+.edit-btn:disabled,
+.save-btn:disabled,
+.cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .edit-btn {
@@ -171,5 +230,11 @@ export default {
 .cancel-btn {
   background: #f44336;
   color: white;
+}
+
+.loading-spinner {
+  text-align: center;
+  padding: 20px;
+  color: #666;
 }
 </style>

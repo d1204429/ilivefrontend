@@ -83,6 +83,7 @@
 </template>
 
 <script>
+
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
@@ -112,6 +113,20 @@ export default {
         store.commit('cart/CLEAR_CART')
       }
     })
+
+    // 獲取商品分類
+    const fetchCategories = async () => {
+      try {
+        const response = await store.dispatch('product/getCategories')
+        categories.value = response
+      } catch (error) {
+        console.error('獲取分類失敗:', error)
+        store.dispatch('app/setError', {
+          message: '獲取分類失敗，請重新整理頁面',
+          type: 'error'
+        })
+      }
+    }
 
     const toggleMenu = () => {
       isMenuOpen.value = !isMenuOpen.value
@@ -145,6 +160,10 @@ export default {
       try {
         await store.dispatch('auth/logout')
         router.push('/login')
+        store.dispatch('app/setSuccess', {
+          message: '已成功登出',
+          duration: 2000
+        })
       } catch (error) {
         console.error('登出失敗:', error)
         store.dispatch('app/setError', {
@@ -159,8 +178,11 @@ export default {
         if (isLoggedIn.value) {
           await Promise.all([
             store.dispatch('cart/fetchCartItems'),
-            store.dispatch('auth/getProfile')
+            store.dispatch('auth/getProfile'),
+            fetchCategories()
           ])
+        } else {
+          await fetchCategories()
         }
       } catch (error) {
         console.error('初始化頁面失敗:', error)
@@ -174,6 +196,13 @@ export default {
       }
     }
 
+    // 監聽路由變化
+    watch(() => router.currentRoute.value.path, () => {
+      if (isMenuOpen.value) {
+        toggleMenu()
+      }
+    })
+
     onMounted(() => {
       initializeHeader()
       window.addEventListener('resize', handleResize)
@@ -181,6 +210,7 @@ export default {
 
     onUnmounted(() => {
       window.removeEventListener('resize', handleResize)
+      document.body.style.overflow = ''
     })
 
     return {
@@ -198,6 +228,8 @@ export default {
     }
   }
 }
+
+
 </script>
 
 
