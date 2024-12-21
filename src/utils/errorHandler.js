@@ -12,7 +12,7 @@ export const ErrorTypes = {
     BUSINESS: 'BUSINESS_ERROR'
 }
 
-export const handleError = (error) => {
+export const handleError = async (error) => {
     let errorMessage = ''
     let errorType = ErrorTypes.UNKNOWN
     let shouldRedirect = false
@@ -30,19 +30,7 @@ export const handleError = (error) => {
             case 401:
                 errorType = ErrorTypes.AUTH
                 errorMessage = '身份驗證已過期，請重新登入'
-                // 嘗試刷新 Token
-                if (store.getters['auth/refreshToken']) {
-                    store.dispatch('auth/refreshToken')
-                        .catch(() => {
-                            store.dispatch('auth/logout')
-                            shouldRedirect = true
-                            redirectPath = '/login'
-                        })
-                } else {
-                    store.dispatch('auth/logout')
-                    shouldRedirect = true
-                    redirectPath = '/login'
-                }
+                await handleAuthError()
                 break
 
             case 403:
@@ -93,34 +81,60 @@ export const handleError = (error) => {
         errorMessage = error.message || '發生未知錯誤'
     }
 
-    // 記錄錯誤
     logError({
         type: errorType,
         message: errorMessage,
         error
     })
 
-    // 顯示錯誤訊息
-    if (errorType !== ErrorTypes.AUTH || status !== 401) {
-        store.dispatch('app/setError', {
-            message: errorMessage,
-            type: errorType,
-            duration: import.meta.env.VITE_ERROR_SHOW_DURATION
-        })
+    if (errorType !== ErrorTypes.AUTH || error.response?.status !== 401) {
+        showErrorMessage(errorMessage, errorType)
     }
 
-    // 處理重定向
-    if (shouldRedirect && router.currentRoute.value.path !== redirectPath) {
-        router.push({
-            path: redirectPath,
-            query: redirectPath === '/login' ? { redirect: router.currentRoute.value.fullPath } : {}
-        })
+    if (shouldRedirect) {
+        await handleRedirect(redirectPath)
     }
 
     return {
         type: errorType,
         message: errorMessage
     }
+}
+
+const handleAuthError = async () => {
+    const refreshToken = store.getters['auth/refreshToken']
+    if (refreshToken) {
+        try {
+            await store.dispatch('auth/refreshToken')
+        } catch (refreshError) {
+            await store.dispatch('auth/logout')
+            await handleRedirect('/login')
+        }
+    } else {
+        await store.dispatch('auth/logout')
+        await handleRedirect('/login')
+    }
+}
+
+const handleRedirect = async (path) => {
+    if (router.currentRoute.value.path !== path) {
+        try {
+            await router.push({
+                path,
+                query: path === '/login' ? { redirect: router.currentRoute.value.fullPath } : {}
+            })
+        } catch (navigationError) {
+            console.error('Navigation error:', navigationError)
+        }
+    }
+}
+
+const showErrorMessage = (message, type) => {
+    store.dispatch('app/setError', {
+        message,
+        type,
+        duration: import.meta.env.VITE_ERROR_SHOW_DURATION
+    })
 }
 
 const formatValidationErrors = (errors) => {
@@ -166,7 +180,7 @@ export const logError = (errorInfo) => {
     }
 
     if (import.meta.env.PROD) {
-        // 可以在這裡添加錯誤上報邏輯
+        // TODO: 實現錯誤上報邏輯
         // sendErrorToServer(logData)
     }
 }

@@ -114,17 +114,16 @@ export default {
   },
 
   setup() {
-    // Store & Router
     const store = useStore()
     const router = useRouter()
 
-    // Reactive References
+    // Reactive State
     const isEditing = ref(false)
     const loading = ref(false)
     const editedProfile = ref({})
     const errors = ref({})
     const originalProfile = ref({})
-    const validationFields = ['email', 'fullName', 'phoneNumber', 'address']
+    const validationFields = ['username', 'email', 'fullName', 'phoneNumber', 'address']
 
     // Computed Properties
     const currentUser = computed(() => store.getters['auth/currentUser'])
@@ -141,41 +140,44 @@ export default {
     })
 
     // Validation Functions
-    const getValidationError = (field, value) => {
-      const validationMap = {
-        email: () => email(value) === true ? null : '請輸入有效的電子郵件',
-        fullName: () => fullName(value) === true ? null : '請輸入有效的全名',
-        phoneNumber: () => phoneNumber(value) === true ? null : '請輸入有效的電話號碼',
-        address: () => address(value) === true ? null : '請輸入有效的地址'
-      }
-      return validationMap[field] ? validationMap[field]() : null
-    }
-
-    const validateField = (field) => {
-      if (!field || !editedProfile.value[field]) return
-
-      const error = getValidationError(field, editedProfile.value[field])
-      if (error) {
-        errors.value = { ...errors.value, [field]: error }
-      } else {
-        const { [field]: removed, ...rest } = errors.value
-        errors.value = rest
-      }
-    }
-
-    const validateForm = () => {
-      const newErrors = {}
-      validationFields.forEach(field => {
-        if (editedProfile.value[field]) {
-          const error = getValidationError(field, editedProfile.value[field])
-          if (error) newErrors[field] = error
+    const validation = {
+      getValidationError: (field, value) => {
+        const validationMap = {
+          username: () => value?.length >= 3 ? null : '使用者名稱至少需要3個字元',
+          email: () => email(value) === true ? null : '請輸入有效的電子郵件',
+          fullName: () => fullName(value) === true ? null : '請輸入有效的全名',
+          phoneNumber: () => phoneNumber(value) === true ? null : '請輸入有效的電話號碼',
+          address: () => address(value) === true ? null : '請輸入有效的地址'
         }
-      })
-      errors.value = newErrors
-      return Object.keys(newErrors).length === 0
+        return validationMap[field] ? validationMap[field]() : null
+      },
+
+      validateField: (field) => {
+        if (!field || !editedProfile.value[field]) return
+
+        const error = validation.getValidationError(field, editedProfile.value[field])
+        if (error) {
+          errors.value = { ...errors.value, [field]: error }
+        } else {
+          const { [field]: removed, ...rest } = errors.value
+          errors.value = rest
+        }
+      },
+
+      validateForm: () => {
+        const newErrors = {}
+        validationFields.forEach(field => {
+          if (editedProfile.value[field]) {
+            const error = validation.getValidationError(field, editedProfile.value[field])
+            if (error) newErrors[field] = error
+          }
+        })
+        errors.value = newErrors
+        return Object.keys(newErrors).length === 0
+      }
     }
 
-    // Data Management Functions
+    // Data Management
     const fetchUserProfile = async () => {
       if (!isAuthenticated.value) {
         router.push('/login')
@@ -186,6 +188,7 @@ export default {
         loading.value = true
         await store.dispatch('auth/fetchUserInfo')
         originalProfile.value = { ...currentUser.value }
+        editedProfile.value = { ...currentUser.value }
       } catch (error) {
         handleError('獲取用戶資料失敗，請稍後再試')
       } finally {
@@ -210,7 +213,7 @@ export default {
     }
 
     const saveProfile = async () => {
-      if (!validateForm() || !hasChanges.value) return
+      if (!validation.validateForm() || !hasChanges.value) return
 
       try {
         loading.value = true
@@ -230,9 +233,11 @@ export default {
     }
 
     const cancelEditing = () => {
-      if (hasChanges.value && confirm('確定要取消編輯？未儲存的變更將會遺失。')) {
-        resetForm()
-      } else if (!hasChanges.value) {
+      if (hasChanges.value) {
+        if (confirm('確定要取消編輯？未儲存的變更將會遺失。')) {
+          resetForm()
+        }
+      } else {
         resetForm()
       }
     }
@@ -244,12 +249,12 @@ export default {
     }
 
     // Watchers
-    watch(editedProfile, (newValue) => {
+    watch(() => editedProfile.value, (newValue) => {
       if (isEditing.value) {
         const changedField = Object.keys(newValue).find(key =>
             newValue[key] !== originalProfile.value[key]
         )
-        if (changedField) validateField(changedField)
+        if (changedField) validation.validateField(changedField)
       }
     }, { deep: true })
 
@@ -263,7 +268,6 @@ export default {
     })
 
     return {
-      // State
       isEditing,
       loading,
       currentUser,
@@ -271,11 +275,10 @@ export default {
       errors,
       isFormValid,
       hasChanges,
-      // Methods
       startEditing,
       saveProfile,
       cancelEditing,
-      validateField
+      validateField: validation.validateField
     }
   }
 }
