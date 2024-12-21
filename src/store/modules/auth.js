@@ -52,6 +52,10 @@ const mutations = {
         localStorage.removeItem('user')
         localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
         localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+    },
+    UPDATE_USER(state, userData) {
+        state.user = { ...state.user, ...userData }
+        localStorage.setItem('user', JSON.stringify(state.user))
     }
 }
 
@@ -139,6 +143,28 @@ const actions = {
             commit('SET_USER', response.data)
         } catch (error) {
             console.error('獲取用戶資料失敗:', error)
+        }
+    },
+
+    async updateUserProfile({ commit }, userData) {
+        try {
+            const response = await authApi.updateUserProfile(userData)
+            commit('UPDATE_USER', response.data)
+            commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
+            return response.data
+        } catch (error) {
+            commit('SET_ERROR', error.response?.data?.message || '更新個人資料失敗')
+            throw error
+        }
+    },
+
+    async changePassword({ commit }, passwordData) {
+        try {
+            await authApi.changePassword(passwordData)
+            commit('SET_SUCCESS_MESSAGE', '密碼更改成功')
+        } catch (error) {
+            commit('SET_ERROR', error.response?.data?.message || '更改密碼失敗')
+            throw error
         }
     },
 
