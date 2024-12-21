@@ -1,147 +1,64 @@
 <template>
-  <div class="profile-view">
-    <!-- 個人資料卡片 -->
-    <div class="profile-card">
+  <div class="profile-container">
+    <div class="profile-header">
       <h2>個人資料</h2>
-      <div class="profile-form">
-        <!-- 基本資料 -->
-        <div class="form-group">
+      <button v-if="!isEditing" @click="startEditing" class="edit-btn">
+        編輯資料
+      </button>
+      <div v-else class="action-buttons">
+        <button @click="saveProfile" class="save-btn">儲存</button>
+        <button @click="cancelEditing" class="cancel-btn">取消</button>
+      </div>
+    </div>
+
+    <div class="profile-content">
+      <div class="profile-info">
+        <div class="info-group">
           <label>使用者名稱</label>
-          <input
-              type="text"
-              v-model="userInfo.username"
-              disabled
-          >
+          <input v-if="isEditing" v-model="editedProfile.username" type="text" />
+          <span v-else>{{ userProfile.username }}</span>
         </div>
-
-        <div class="form-group">
-          <label>電子郵件</label>
-          <input
-              type="email"
-              v-model="userInfo.email"
-              :disabled="!isEditing"
-          >
+        <div class="info-group">
+          <label>電子信箱</label>
+          <input v-if="isEditing" v-model="editedProfile.email" type="email" />
+          <span v-else>{{ userProfile.email }}</span>
         </div>
-
-        <div class="form-group">
-          <label>姓名</label>
-          <input
-              type="text"
-              v-model="userInfo.fullName"
-              :disabled="!isEditing"
-          >
+        <div class="info-group">
+          <label>全名</label>
+          <input v-if="isEditing" v-model="editedProfile.fullName" type="text" />
+          <span v-else>{{ userProfile.fullName }}</span>
         </div>
-
-        <div class="form-group">
-          <label>手機號碼</label>
-          <input
-              type="tel"
-              v-model="userInfo.phoneNumber"
-              :disabled="!isEditing"
-          >
+        <div class="info-group">
+          <label>電話號碼</label>
+          <input v-if="isEditing" v-model="editedProfile.phoneNumber" type="tel" />
+          <span v-else>{{ userProfile.phoneNumber }}</span>
         </div>
-
-        <div class="form-group">
+        <div class="info-group">
           <label>地址</label>
-          <input
-              type="text"
-              v-model="userInfo.address"
-              :disabled="!isEditing"
-          >
-        </div>
-
-        <!-- 操作按鈕 -->
-        <div class="action-buttons">
-          <button
-              v-if="!isEditing"
-              class="edit-btn"
-              @click="startEditing"
-          >
-            編輯資料
-          </button>
-          <template v-else>
-            <button
-                class="save-btn"
-                @click="saveChanges"
-            >
-              儲存變更
-            </button>
-            <button
-                class="cancel-btn"
-                @click="cancelEditing"
-            >
-              取消
-            </button>
-          </template>
+          <textarea v-if="isEditing" v-model="editedProfile.address"></textarea>
+          <span v-else>{{ userProfile.address }}</span>
         </div>
       </div>
     </div>
 
-    <!-- 修改密碼卡片 -->
-    <div class="password-card">
-      <h2>修改密碼</h2>
-      <div class="password-form">
-        <div class="form-group">
-          <label>目前密碼</label>
-          <input
-              type="password"
-              v-model="passwordForm.oldPassword"
-          >
+    <div class="orders-section">
+      <h3>訂單記錄</h3>
+      <div class="orders-list">
+        <div v-if="orders.length === 0" class="no-orders">
+          尚無訂單記錄
         </div>
-
-        <div class="form-group">
-          <label>新密碼</label>
-          <input
-              type="password"
-              v-model="passwordForm.newPassword"
-          >
-        </div>
-
-        <div class="form-group">
-          <label>確認新密碼</label>
-          <input
-              type="password"
-              v-model="passwordForm.confirmPassword"
-          >
-        </div>
-
-        <button
-            class="change-password-btn"
-            @click="changePassword"
-            :disabled="!canChangePassword"
-        >
-          修改密碼
-        </button>
-      </div>
-    </div>
-
-    <!-- 訂單歷史記錄 -->
-    <div class="order-history">
-      <h2>訂單記錄</h2>
-      <div class="order-list">
-        <div v-for="order in orders"
-             :key="order.orderId"
-             class="order-item">
+        <div v-else v-for="order in orders" :key="order.orderId" class="order-item">
           <div class="order-header">
-            <span class="order-id">訂單編號: {{ order.orderId }}</span>
-            <span class="order-date">{{ formatDate(order.orderDate) }}</span>
-            <span class="order-status">{{ order.status }}</span>
+            <span>訂單編號: {{ order.orderId }}</span>
+            <span>訂購日期: {{ formatDate(order.createdAt) }}</span>
           </div>
           <div class="order-details">
-            <div v-for="item in order.items"
-                 :key="item.productId"
-                 class="order-product">
-              <img :src="item.imageUrl" :alt="item.name">
-              <div class="product-info">
-                <h4>{{ item.name }}</h4>
-                <p>數量: {{ item.quantity }}</p>
-                <p>單價: ${{ formatPrice(item.price) }}</p>
-              </div>
-            </div>
+            <span>總金額: ${{ order.totalAmount }}</span>
+            <span>狀態: {{ getOrderStatus(order.status) }}</span>
           </div>
-          <div class="order-total">
-            總計: ${{ formatPrice(order.totalAmount) }}
-          </div>
+          <button @click="viewOrderDetail(order.orderId)" class="detail-btn">
+            查看詳情
+          </button>
         </div>
       </div>
     </div>
@@ -149,259 +66,197 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
-import { useStore } from 'vuex'
+import axios from 'axios';
 
 export default {
   name: 'ProfileView',
-
-  setup() {
-    const store = useStore()
-    const isEditing = ref(false)
-    const userInfo = ref({})
-    const originalUserInfo = ref({})
-    const orders = ref([])
-
-    const passwordForm = ref({
-      oldPassword: '',
-      newPassword: '',
-      confirmPassword: ''
-    })
-
-    // 獲取用戶資料
-    const fetchUserInfo = async () => {
-      try {
-        const response = await store.dispatch('user/getUserInfo')
-        userInfo.value = response.data
-        originalUserInfo.value = { ...response.data }
-      } catch (error) {
-        console.error('獲取用戶資料失敗:', error)
-      }
-    }
-
-    // 獲取訂單記錄
-    const fetchOrders = async () => {
-      try {
-        const response = await store.dispatch('order/getUserOrders')
-        orders.value = response.data
-      } catch (error) {
-        console.error('獲取訂單記錄失敗:', error)
-      }
-    }
-
-    // 開始編輯
-    const startEditing = () => {
-      isEditing.value = true
-    }
-
-    // 儲存變更
-    const saveChanges = async () => {
-      try {
-        await store.dispatch('user/updateUserInfo', userInfo.value)
-        isEditing.value = false
-        originalUserInfo.value = { ...userInfo.value }
-      } catch (error) {
-        console.error('更新用戶資料失敗:', error)
-      }
-    }
-
-    // 取消編輯
-    const cancelEditing = () => {
-      userInfo.value = { ...originalUserInfo.value }
-      isEditing.value = false
-    }
-
-    // 修改密碼
-    const changePassword = async () => {
-      try {
-        await store.dispatch('user/changePassword', {
-          oldPassword: passwordForm.value.oldPassword,
-          newPassword: passwordForm.value.newPassword
-        })
-        passwordForm.value = {
-          oldPassword: '',
-          newPassword: '',
-          confirmPassword: ''
-        }
-      } catch (error) {
-        console.error('修改密碼失敗:', error)
-      }
-    }
-
-    // 檢查是否可以修改密碼
-    const canChangePassword = computed(() => {
-      return passwordForm.value.oldPassword &&
-          passwordForm.value.newPassword &&
-          passwordForm.value.confirmPassword &&
-          passwordForm.value.newPassword === passwordForm.value.confirmPassword
-    })
-
-    // 格式化日期
-    const formatDate = (date) => {
-      return new Date(date).toLocaleDateString('zh-TW')
-    }
-
-    // 格式化價格
-    const formatPrice = (price) => {
-      return price.toLocaleString('zh-TW')
-    }
-
-    onMounted(() => {
-      fetchUserInfo()
-      fetchOrders()
-    })
-
+  data() {
     return {
-      isEditing,
-      userInfo,
-      passwordForm,
-      orders,
-      canChangePassword,
-      startEditing,
-      saveChanges,
-      cancelEditing,
-      changePassword,
-      formatDate,
-      formatPrice
+      isEditing: false,
+      userProfile: {
+        username: '',
+        email: '',
+        fullName: '',
+        phoneNumber: '',
+        address: ''
+      },
+      editedProfile: {},
+      orders: []
+    };
+  },
+  created() {
+    this.fetchUserProfile();
+    this.fetchOrders();
+  },
+  methods: {
+    async fetchUserProfile() {
+      try {
+        const response = await axios.get('/api/user/profile', {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('accessToken')}`
+          }
+        });
+        this.userProfile = response.data;
+      } catch (error) {
+        console.error('獲取用戶資料失敗:', error);
+      }
+    },
+    async fetchOrders() {
+      try {
+        const response = await axios.get('/api/orders/user', {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('accessToken')}`
+          }
+        });
+        this.orders = response.data;
+      } catch (error) {
+        console.error('獲取訂單記錄失敗:', error);
+      }
+    },
+    startEditing() {
+      this.editedProfile = { ...this.userProfile };
+      this.isEditing = true;
+    },
+    async saveProfile() {
+      try {
+        const response = await axios.put('/api/user/profile', this.editedProfile, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('accessToken')}`
+          }
+        });
+        this.userProfile = response.data;
+        this.isEditing = false;
+        this.$message.success('個人資料更新成功');
+      } catch (error) {
+        console.error('更新個人資料失敗:', error);
+        this.$message.error('更新失敗，請稍後再試');
+      }
+    },
+    cancelEditing() {
+      this.isEditing = false;
+      this.editedProfile = {};
+    },
+    formatDate(date) {
+      return new Date(date).toLocaleDateString('zh-TW');
+    },
+    getOrderStatus(status) {
+      const statusMap = {
+        'PENDING': '處理中',
+        'SHIPPED': '已出貨',
+        'DELIVERED': '已送達',
+        'CANCELLED': '已取消'
+      };
+      return statusMap[status] || status;
+    },
+    viewOrderDetail(orderId) {
+      this.$router.push(`/order/${orderId}`);
     }
   }
-}
+};
 </script>
 
 <style scoped>
-.profile-view {
-  max-width: 1200px;
+.profile-container {
+  max-width: 800px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 20px;
 }
 
-.profile-card,
-.password-card,
-.order-history {
-  background: white;
+.profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.profile-content {
+  background: #fff;
+  padding: 20px;
   border-radius: 8px;
-  padding: 2rem;
-  margin-bottom: 2rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-h2 {
-  color: var(--primary-color);
-  margin-bottom: 1.5rem;
+.info-group {
+  margin-bottom: 20px;
 }
 
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-group label {
+.info-group label {
   display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: #333;
 }
 
-.form-group input {
+.info-group input,
+.info-group textarea {
   width: 100%;
-  padding: 0.5rem;
+  padding: 8px;
   border: 1px solid #ddd;
   border-radius: 4px;
 }
 
-.form-group input:disabled {
-  background-color: #f5f5f5;
-}
-
 .action-buttons {
   display: flex;
-  gap: 1rem;
-  margin-top: 1.5rem;
+  gap: 10px;
 }
 
 .edit-btn,
 .save-btn,
 .cancel-btn,
-.change-password-btn {
-  padding: 0.75rem 1.5rem;
+.detail-btn {
+  padding: 8px 16px;
   border-radius: 4px;
+  border: none;
   cursor: pointer;
-  font-weight: 500;
 }
 
-.edit-btn,
-.save-btn {
-  background-color: var(--primary-color);
+.edit-btn {
+  background: #4CAF50;
   color: white;
-  border: none;
+}
+
+.save-btn {
+  background: #2196F3;
+  color: white;
 }
 
 .cancel-btn {
-  background-color: white;
-  border: 1px solid #ddd;
-}
-
-.change-password-btn {
-  width: 100%;
-  background-color: var(--primary-color);
+  background: #f44336;
   color: white;
-  border: none;
 }
 
-.change-password-btn:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-}
-
-.order-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.orders-section {
+  margin-top: 30px;
 }
 
 .order-item {
-  border: 1px solid #ddd;
+  background: #fff;
+  padding: 15px;
+  margin-bottom: 15px;
   border-radius: 4px;
-  padding: 1rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .order-header {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 1rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid #eee;
+  margin-bottom: 10px;
 }
 
-.order-product {
+.order-details {
   display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  justify-content: space-between;
+  margin-bottom: 10px;
 }
 
-.order-product img {
-  width: 80px;
-  height: 80px;
-  object-fit: cover;
-  border-radius: 4px;
+.detail-btn {
+  background: #607D8B;
+  color: white;
 }
 
-.order-total {
-  text-align: right;
-  font-weight: 600;
-  color: var(--primary-color);
-}
-
-@media (max-width: 768px) {
-  .profile-view {
-    padding: 1rem;
-  }
-
-  .action-buttons {
-    flex-direction: column;
-  }
-
-  .order-header {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
+.no-orders {
+  text-align: center;
+  padding: 20px;
+  color: #666;
 }
 </style>
