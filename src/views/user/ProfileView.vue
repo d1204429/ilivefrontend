@@ -1,147 +1,69 @@
 <template>
-  <div class="profile-view">
-    <!-- 個人資料卡片 -->
-    <div class="profile-card">
+  <div class="profile-container">
+    <div class="profile-header">
       <h2>個人資料</h2>
-      <div class="profile-form">
-        <!-- 基本資料 -->
-        <div class="form-group">
+      <button v-if="!isEditing" @click="startEditing" class="edit-btn">
+        編輯資料
+      </button>
+      <div v-else class="action-buttons">
+        <button @click="saveProfile" class="save-btn" :disabled="loading">儲存</button>
+        <button @click="cancelEditing" class="cancel-btn" :disabled="loading">取消</button>
+      </div>
+    </div>
+
+    <div class="profile-content">
+      <div v-if="loading" class="loading-spinner">
+        <BaseLoading message="載入中..." />
+      </div>
+      <div v-else class="profile-info">
+        <div class="info-group">
           <label>使用者名稱</label>
           <input
+              v-if="isEditing"
+              v-model="editedProfile.username"
               type="text"
-              v-model="userInfo.username"
-              disabled
-          >
+              :disabled="loading"
+          />
+          <span v-else>{{ userProfile?.username || '-' }}</span>
         </div>
-
-        <div class="form-group">
-          <label>電子郵件</label>
+        <div class="info-group">
+          <label>電子信箱</label>
           <input
+              v-if="isEditing"
+              v-model="editedProfile.email"
               type="email"
-              v-model="userInfo.email"
-              :disabled="!isEditing"
-          >
+              :disabled="loading"
+          />
+          <span v-else>{{ userProfile?.email || '-' }}</span>
         </div>
-
-        <div class="form-group">
-          <label>姓名</label>
+        <div class="info-group">
+          <label>全名</label>
           <input
+              v-if="isEditing"
+              v-model="editedProfile.fullName"
               type="text"
-              v-model="userInfo.fullName"
-              :disabled="!isEditing"
-          >
+              :disabled="loading"
+          />
+          <span v-else>{{ userProfile?.fullName || '-' }}</span>
         </div>
-
-        <div class="form-group">
-          <label>手機號碼</label>
+        <div class="info-group">
+          <label>電話號碼</label>
           <input
+              v-if="isEditing"
+              v-model="editedProfile.phoneNumber"
               type="tel"
-              v-model="userInfo.phoneNumber"
-              :disabled="!isEditing"
-          >
+              :disabled="loading"
+          />
+          <span v-else>{{ userProfile?.phoneNumber || '-' }}</span>
         </div>
-
-        <div class="form-group">
+        <div class="info-group">
           <label>地址</label>
-          <input
-              type="text"
-              v-model="userInfo.address"
-              :disabled="!isEditing"
-          >
-        </div>
-
-        <!-- 操作按鈕 -->
-        <div class="action-buttons">
-          <button
-              v-if="!isEditing"
-              class="edit-btn"
-              @click="startEditing"
-          >
-            編輯資料
-          </button>
-          <template v-else>
-            <button
-                class="save-btn"
-                @click="saveChanges"
-            >
-              儲存變更
-            </button>
-            <button
-                class="cancel-btn"
-                @click="cancelEditing"
-            >
-              取消
-            </button>
-          </template>
-        </div>
-      </div>
-    </div>
-
-    <!-- 修改密碼卡片 -->
-    <div class="password-card">
-      <h2>修改密碼</h2>
-      <div class="password-form">
-        <div class="form-group">
-          <label>目前密碼</label>
-          <input
-              type="password"
-              v-model="passwordForm.oldPassword"
-          >
-        </div>
-
-        <div class="form-group">
-          <label>新密碼</label>
-          <input
-              type="password"
-              v-model="passwordForm.newPassword"
-          >
-        </div>
-
-        <div class="form-group">
-          <label>確認新密碼</label>
-          <input
-              type="password"
-              v-model="passwordForm.confirmPassword"
-          >
-        </div>
-
-        <button
-            class="change-password-btn"
-            @click="changePassword"
-            :disabled="!canChangePassword"
-        >
-          修改密碼
-        </button>
-      </div>
-    </div>
-
-    <!-- 訂單歷史記錄 -->
-    <div class="order-history">
-      <h2>訂單記錄</h2>
-      <div class="order-list">
-        <div v-for="order in orders"
-             :key="order.orderId"
-             class="order-item">
-          <div class="order-header">
-            <span class="order-id">訂單編號: {{ order.orderId }}</span>
-            <span class="order-date">{{ formatDate(order.orderDate) }}</span>
-            <span class="order-status">{{ order.status }}</span>
-          </div>
-          <div class="order-details">
-            <div v-for="item in order.items"
-                 :key="item.productId"
-                 class="order-product">
-              <img :src="item.imageUrl" :alt="item.name">
-              <div class="product-info">
-                <h4>{{ item.name }}</h4>
-                <p>數量: {{ item.quantity }}</p>
-                <p>單價: ${{ formatPrice(item.price) }}</p>
-              </div>
-            </div>
-          </div>
-          <div class="order-total">
-            總計: ${{ formatPrice(order.totalAmount) }}
-          </div>
+          <textarea
+              v-if="isEditing"
+              v-model="editedProfile.address"
+              :disabled="loading"
+          ></textarea>
+          <span v-else>{{ userProfile?.address || '-' }}</span>
         </div>
       </div>
     </div>
@@ -151,257 +73,181 @@
 <script>
 import { ref, computed, onMounted } from 'vue'
 import { useStore } from 'vuex'
+import { useRouter } from 'vue-router'
+import BaseLoading from '@/components/common/BaseLoading.vue'
 
 export default {
   name: 'ProfileView',
 
+  components: {
+    BaseLoading
+  },
+
   setup() {
     const store = useStore()
+    const router = useRouter()
+
     const isEditing = ref(false)
-    const userInfo = ref({})
-    const originalUserInfo = ref({})
-    const orders = ref([])
+    const loading = ref(false)
+    const editedProfile = ref({})
 
-    const passwordForm = ref({
-      oldPassword: '',
-      newPassword: '',
-      confirmPassword: ''
-    })
+    // 從 store 獲取用戶資料
+    const userProfile = computed(() => store.state.user.userInfo)
+    const isAuthenticated = computed(() => store.getters['auth/isAuthenticated'])
 
-    // 獲取用戶資料
-    const fetchUserInfo = async () => {
+    const fetchUserProfile = async () => {
+      if (!isAuthenticated.value) {
+        router.push('/login')
+        return
+      }
+
       try {
-        const response = await store.dispatch('user/getUserInfo')
-        userInfo.value = response.data
-        originalUserInfo.value = { ...response.data }
+        loading.value = true
+        await store.dispatch('user/fetchProfile')
       } catch (error) {
         console.error('獲取用戶資料失敗:', error)
+        store.dispatch('app/setError', {
+          message: '獲取用戶資料失敗，請稍後再試',
+          type: 'error'
+        })
+      } finally {
+        loading.value = false
       }
     }
 
-    // 獲取訂單記錄
-    const fetchOrders = async () => {
-      try {
-        const response = await store.dispatch('order/getUserOrders')
-        orders.value = response.data
-      } catch (error) {
-        console.error('獲取訂單記錄失敗:', error)
-      }
-    }
-
-    // 開始編輯
     const startEditing = () => {
+      editedProfile.value = { ...userProfile.value }
       isEditing.value = true
     }
 
-    // 儲存變更
-    const saveChanges = async () => {
+    const saveProfile = async () => {
       try {
-        await store.dispatch('user/updateUserInfo', userInfo.value)
+        loading.value = true
+        await store.dispatch('user/updateProfile', editedProfile.value)
         isEditing.value = false
-        originalUserInfo.value = { ...userInfo.value }
-      } catch (error) {
-        console.error('更新用戶資料失敗:', error)
-      }
-    }
-
-    // 取消編輯
-    const cancelEditing = () => {
-      userInfo.value = { ...originalUserInfo.value }
-      isEditing.value = false
-    }
-
-    // 修改密碼
-    const changePassword = async () => {
-      try {
-        await store.dispatch('user/changePassword', {
-          oldPassword: passwordForm.value.oldPassword,
-          newPassword: passwordForm.value.newPassword
+        store.dispatch('app/setSuccess', {
+          message: '個人資料更新成功',
+          duration: 2000
         })
-        passwordForm.value = {
-          oldPassword: '',
-          newPassword: '',
-          confirmPassword: ''
-        }
       } catch (error) {
-        console.error('修改密碼失敗:', error)
+        console.error('更新個人資料失敗:', error)
+        store.dispatch('app/setError', {
+          message: '更新個人資料失敗，請稍後再試',
+          type: 'error'
+        })
+      } finally {
+        loading.value = false
       }
     }
 
-    // 檢查是否可以修改密碼
-    const canChangePassword = computed(() => {
-      return passwordForm.value.oldPassword &&
-          passwordForm.value.newPassword &&
-          passwordForm.value.confirmPassword &&
-          passwordForm.value.newPassword === passwordForm.value.confirmPassword
-    })
-
-    // 格式化日期
-    const formatDate = (date) => {
-      return new Date(date).toLocaleDateString('zh-TW')
-    }
-
-    // 格式化價格
-    const formatPrice = (price) => {
-      return price.toLocaleString('zh-TW')
+    const cancelEditing = () => {
+      isEditing.value = false
+      editedProfile.value = {}
     }
 
     onMounted(() => {
-      fetchUserInfo()
-      fetchOrders()
+      fetchUserProfile()
     })
 
     return {
       isEditing,
-      userInfo,
-      passwordForm,
-      orders,
-      canChangePassword,
+      loading,
+      userProfile,
+      editedProfile,
       startEditing,
-      saveChanges,
-      cancelEditing,
-      changePassword,
-      formatDate,
-      formatPrice
+      saveProfile,
+      cancelEditing
     }
   }
 }
 </script>
 
 <style scoped>
-.profile-view {
-  max-width: 1200px;
+.profile-container {
+  max-width: 800px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 20px;
 }
 
-.profile-card,
-.password-card,
-.order-history {
-  background: white;
+.profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.profile-content {
+  background: #fff;
+  padding: 20px;
   border-radius: 8px;
-  padding: 2rem;
-  margin-bottom: 2rem;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-h2 {
-  color: var(--primary-color);
-  margin-bottom: 1.5rem;
+.info-group {
+  margin-bottom: 20px;
 }
 
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-group label {
+.info-group label {
   display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: #333;
 }
 
-.form-group input {
+.info-group input,
+.info-group textarea {
   width: 100%;
-  padding: 0.5rem;
+  padding: 8px;
   border: 1px solid #ddd;
   border-radius: 4px;
 }
 
-.form-group input:disabled {
+.info-group input:disabled,
+.info-group textarea:disabled {
   background-color: #f5f5f5;
+  cursor: not-allowed;
 }
 
 .action-buttons {
   display: flex;
-  gap: 1rem;
-  margin-top: 1.5rem;
+  gap: 10px;
 }
 
 .edit-btn,
 .save-btn,
-.cancel-btn,
-.change-password-btn {
-  padding: 0.75rem 1.5rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.edit-btn,
-.save-btn {
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-}
-
 .cancel-btn {
-  background-color: white;
-  border: 1px solid #ddd;
-}
-
-.change-password-btn {
-  width: 100%;
-  background-color: var(--primary-color);
-  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
   border: none;
+  cursor: pointer;
+  transition: opacity 0.3s;
 }
 
-.change-password-btn:disabled {
-  background-color: #ccc;
+.edit-btn:disabled,
+.save-btn:disabled,
+.cancel-btn:disabled {
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
-.order-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.edit-btn {
+  background: #4CAF50;
+  color: white;
 }
 
-.order-item {
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 1rem;
+.save-btn {
+  background: #2196F3;
+  color: white;
 }
 
-.order-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 1rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid #eee;
+.cancel-btn {
+  background: #f44336;
+  color: white;
 }
 
-.order-product {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.order-product img {
-  width: 80px;
-  height: 80px;
-  object-fit: cover;
-  border-radius: 4px;
-}
-
-.order-total {
-  text-align: right;
-  font-weight: 600;
-  color: var(--primary-color);
-}
-
-@media (max-width: 768px) {
-  .profile-view {
-    padding: 1rem;
-  }
-
-  .action-buttons {
-    flex-direction: column;
-  }
-
-  .order-header {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
+.loading-spinner {
+  text-align: center;
+  padding: 20px;
+  color: #666;
 }
 </style>

@@ -12,6 +12,7 @@ const router = createRouter({
                 title: '首頁'
             }
         },
+        // 商品相關路由
         {
             path: '/products',
             name: 'Products',
@@ -30,6 +31,16 @@ const router = createRouter({
             }
         },
         {
+            path: '/category/:id',
+            name: 'Category',
+            component: () => import('@/views/product/ProductListView.vue'),
+            props: true,
+            meta: {
+                title: '商品分類'
+            }
+        },
+        // 購物車相關路由
+        {
             path: '/cart',
             name: 'Cart',
             component: () => import('@/views/cart/CartView.vue'),
@@ -47,6 +58,37 @@ const router = createRouter({
                 title: '結帳'
             }
         },
+        // 訂單相關路由
+        {
+            path: '/orders',
+            name: 'Orders',
+            component: () => import('@/views/order/OrderHistoryView.vue'),
+            meta: {
+                requiresAuth: true,
+                title: '訂單記錄'
+            }
+        },
+        {
+            path: '/order/:id',
+            name: 'OrderDetail',
+            component: () => import('@/views/order/OrderDetailView.vue'),
+            props: true,
+            meta: {
+                requiresAuth: true,
+                title: '訂單詳情'
+            }
+        },
+        {
+            path: '/order/payment/:id',
+            name: 'OrderPayment',
+            component: () => import('@/views/order/OrderPaymentView.vue'),
+            props: true,
+            meta: {
+                requiresAuth: true,
+                title: '訂單付款'
+            }
+        },
+        // 用戶相關路由
         {
             path: '/login',
             name: 'Login',
@@ -72,17 +114,29 @@ const router = createRouter({
             meta: {
                 requiresAuth: true,
                 title: '會員資料'
-            }
+            },
+            children: [
+                {
+                    path: 'orders',
+                    name: 'ProfileOrders',
+                    component: () => import('@/views/order/OrderHistoryView.vue'),
+                    meta: {
+                        requiresAuth: true,
+                        title: '我的訂單'
+                    }
+                },
+                {
+                    path: 'addresses',
+                    name: 'ProfileAddresses',
+                    component: () => import('@/views/user/AddressListView.vue'),
+                    meta: {
+                        requiresAuth: true,
+                        title: '收貨地址'
+                    }
+                }
+            ]
         },
-        {
-            path: '/category/:id',
-            name: 'Category',
-            component: () => import('@/views/product/ProductListView.vue'),
-            props: true,
-            meta: {
-                title: '商品分類'
-            }
-        },
+        // 其他頁面路由
         {
             path: '/about',
             name: 'About',
@@ -99,6 +153,7 @@ const router = createRouter({
                 title: '聯絡我們'
             }
         },
+        // 錯誤頁面路由
         {
             path: '/403',
             name: 'Forbidden',
@@ -130,10 +185,19 @@ const router = createRouter({
             path: '/:pathMatch(.*)*',
             redirect: '/404'
         }
-    ]
+    ],
+    scrollBehavior(to, from, savedPosition) {
+        if (savedPosition) {
+            return savedPosition
+        } else {
+            return { top: 0 }
+        }
+    }
 })
 
+// 路由守衛
 router.beforeEach(async (to, from, next) => {
+    // 設置頁面標題
     document.title = to.meta.title
         ? `${to.meta.title} - ${import.meta.env.VITE_APP_NAME}`
         : import.meta.env.VITE_APP_NAME
@@ -143,17 +207,12 @@ router.beforeEach(async (to, from, next) => {
         const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
         const isAuthenticated = !!token && store.getters['auth/isAuthenticated']
 
-        // 公開路由直接通過
-        if (to.matched.some(record => !record.meta.requiresAuth)) {
-            next()
-            return
-        }
-
-        // Token 過期處理
+        // 處理 Token 刷新
         if (token && !isAuthenticated && refreshToken) {
             try {
                 await store.dispatch('auth/refreshToken')
             } catch (error) {
+                console.error('Token 刷新失敗:', error)
                 await store.dispatch('auth/logout')
                 next({
                     path: '/login',
@@ -166,6 +225,11 @@ router.beforeEach(async (to, from, next) => {
         // 需要認證的路由檢查
         if (to.matched.some(record => record.meta.requiresAuth)) {
             if (!isAuthenticated) {
+                store.dispatch('app/setError', {
+                    message: '請先登入',
+                    type: 'warning',
+                    duration: 2000
+                })
                 next({
                     path: '/login',
                     query: { redirect: to.fullPath }
@@ -197,6 +261,7 @@ router.beforeEach(async (to, from, next) => {
     }
 })
 
+// 路由錯誤處理
 router.onError((error) => {
     console.error('路由錯誤:', error)
     store.dispatch('app/setError', {
