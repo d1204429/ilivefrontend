@@ -56,7 +56,7 @@ const mutations = {
 }
 
 const actions = {
-    async login({ commit }, credentials) {
+    async login({ commit, dispatch }, credentials) {
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
         try {
@@ -68,6 +68,7 @@ const actions = {
             commit('SET_USER', response.user)
             commit('SET_AUTH_STATUS', 'authenticated')
             commit('SET_SUCCESS_MESSAGE', '登入成功')
+            await dispatch('fetchUserProfile')
             return response
         } catch (error) {
             commit('SET_ERROR', error.response?.data?.message || '登入失敗')
@@ -82,7 +83,7 @@ const actions = {
         commit('SET_ERROR', null)
         try {
             const response = await authApi.register(userData)
-            commit('SET_SUCCESS_MESSAGE', '註冊成功')
+            commit('SET_SUCCESS_MESSAGE', '註冊成功，請登入')
             return response
         } catch (error) {
             commit('SET_ERROR', error.response?.data?.message || '註冊失敗')
@@ -92,9 +93,10 @@ const actions = {
         }
     },
 
-    async logout({ commit }) {
+    async logout({ commit, dispatch }) {
         try {
             await authApi.logout()
+            await dispatch('clearUserData')
         } catch (error) {
             console.error('登出錯誤:', error)
         } finally {
@@ -116,7 +118,7 @@ const actions = {
         }
     },
 
-    checkAuth({ commit }) {
+    async checkAuth({ commit, dispatch }) {
         const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
         const user = JSON.parse(localStorage.getItem('user'))
 
@@ -127,7 +129,37 @@ const actions = {
             })
             commit('SET_USER', user)
             commit('SET_AUTH_STATUS', 'authenticated')
+            await dispatch('fetchUserProfile')
         }
+    },
+
+    async fetchUserProfile({ commit }) {
+        try {
+            const response = await authApi.getUserProfile()
+            commit('SET_USER', response.data)
+        } catch (error) {
+            console.error('獲取用戶資料失敗:', error)
+        }
+    },
+
+    clearUserData({ commit }) {
+        commit('CLEAR_AUTH')
+    },
+
+    setError({ commit }, error) {
+        commit('SET_ERROR', error)
+    },
+
+    clearError({ commit }) {
+        commit('SET_ERROR', null)
+    },
+
+    setSuccessMessage({ commit }, message) {
+        commit('SET_SUCCESS_MESSAGE', message)
+    },
+
+    clearSuccessMessage({ commit }) {
+        commit('SET_SUCCESS_MESSAGE', null)
     }
 }
 
@@ -137,7 +169,8 @@ const getters = {
     isLoading: state => state.loading,
     error: state => state.error,
     successMessage: state => state.successMessage,
-    authStatus: state => state.authStatus
+    authStatus: state => state.authStatus,
+    token: state => state.token
 }
 
 export default {
