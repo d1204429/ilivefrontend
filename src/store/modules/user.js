@@ -1,11 +1,16 @@
 import { userApi } from '@/services/api'
 import authService from '@/services/auth.service'
 
+const TOKEN_KEY = import.meta.env.VITE_JWT_TOKEN_KEY
+const REFRESH_KEY = import.meta.env.VITE_JWT_REFRESH_KEY
+const MAX_LOGIN_ATTEMPTS = 5
+const LOCK_DURATION = 30 * 60 * 1000 // 30 minutes
+
 const state = {
     userInfo: JSON.parse(localStorage.getItem('user')) || null,
-    isAuthenticated: !!localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY),
-    accessToken: localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY) || null,
-    refreshToken: localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY) || null,
+    isAuthenticated: !!localStorage.getItem(TOKEN_KEY),
+    accessToken: localStorage.getItem(TOKEN_KEY) || null,
+    refreshToken: localStorage.getItem(REFRESH_KEY) || null,
     loading: false,
     error: null,
     lastLoginTime: localStorage.getItem('lastLoginTime') || null,
@@ -19,10 +24,7 @@ const mutations = {
         state.loading = status
     },
     SET_ERROR(state, error) {
-        state.error = error
-        if (!error) {
-            state.error = null
-        }
+        state.error = error || null
     },
     SET_USER_INFO(state, userInfo) {
         state.userInfo = userInfo
@@ -42,39 +44,45 @@ const mutations = {
         state.accessToken = accessToken
         state.refreshToken = refreshToken
         if (accessToken) {
-            localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, accessToken)
-            localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, refreshToken)
+            localStorage.setItem(TOKEN_KEY, accessToken)
+            localStorage.setItem(REFRESH_KEY, refreshToken)
         } else {
-            localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
-            localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+            localStorage.removeItem(TOKEN_KEY)
+            localStorage.removeItem(REFRESH_KEY)
         }
     },
     CLEAR_USER_STATE(state) {
-        state.userInfo = null
-        state.isAuthenticated = false
-        state.accessToken = null
-        state.refreshToken = null
-        state.error = null
-        state.lastLoginTime = null
-        state.loginAttempts = 0
-        state.isLocked = false
-        state.lockUntil = null
+        Object.assign(state, {
+            userInfo: null,
+            isAuthenticated: false,
+            accessToken: null,
+            refreshToken: null,
+            error: null,
+            lastLoginTime: null,
+            loginAttempts: 0,
+            isLocked: false,
+            lockUntil: null
+        })
         localStorage.removeItem('user')
-        localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
-        localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem(REFRESH_KEY)
         localStorage.removeItem('lastLoginTime')
     },
     INCREMENT_LOGIN_ATTEMPTS(state) {
         state.loginAttempts++
-        if (state.loginAttempts >= 5) {
+        if (state.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
             state.isLocked = true
-            state.lockUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+            state.lockUntil = new Date(Date.now() + LOCK_DURATION).toISOString()
         }
     },
     RESET_LOGIN_ATTEMPTS(state) {
         state.loginAttempts = 0
         state.isLocked = false
         state.lockUntil = null
+    },
+    SET_SUCCESS_MESSAGE(state, message) {
+        // 假設你有一個 successMessage 狀態
+        state.successMessage = message
     }
 }
 
@@ -196,13 +204,13 @@ const actions = {
     },
 
     async checkAuth({ commit, dispatch }) {
-        const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+        const token = localStorage.getItem(TOKEN_KEY)
         const user = JSON.parse(localStorage.getItem('user'))
 
         if (token && user) {
             commit('SET_TOKENS', {
                 accessToken: token,
-                refreshToken: localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+                refreshToken: localStorage.getItem(REFRESH_KEY)
             })
             commit('SET_USER_INFO', user)
             commit('SET_AUTH_STATUS', true)

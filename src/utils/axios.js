@@ -2,23 +2,40 @@ import axios from 'axios'
 import router from '@/router'
 import store from '@/store'
 
-const api = axios.create({
+// API 配置常量
+const API_CONFIG = {
     baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
-    timeout: 5000,
+    timeout: 15000,
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
     },
     withCredentials: true
-})
+}
 
+// API 路徑常量
+const API_PATHS = {
+    AUTH: '/auth',
+    USERS: '/users',
+    PRODUCTS: '/products',
+    CART: '/cart',
+    ORDERS: '/orders',
+    CATEGORIES: '/categories'
+}
+
+// 創建 axios 實例
+const api = axios.create(API_CONFIG)
+
+// 請求攔截器
 api.interceptors.request.use(
     config => {
+        // Token 處理
         const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
         if (token) {
             config.headers['Authorization'] = `Bearer ${token}`
         }
 
+        // GET 請求添加時間戳防止緩存
         if (config.method?.toLowerCase() === 'get') {
             config.params = {
                 ...config.params,
@@ -26,37 +43,51 @@ api.interceptors.request.use(
             }
         }
 
+        // 請求開始時顯示 loading
+        store.dispatch('app/setLoading', true)
+
         return config
     },
-    error => Promise.reject(error)
+    error => {
+        store.dispatch('app/setLoading', false)
+        return Promise.reject(error)
+    }
 )
 
+// 響應攔截器
 api.interceptors.response.use(
-    response => response.data,
+    response => {
+        store.dispatch('app/setLoading', false)
+        return response.data
+    },
     async error => {
+        store.dispatch('app/setLoading', false)
         const originalRequest = error.config
 
+        // Token 過期處理
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true
 
             try {
                 const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
                 if (!refreshToken) {
-                    throw new Error('No refresh token')
+                    throw new Error('無效的重新整理令牌')
                 }
 
-                const response = await api.post('/api/v1/users/refresh-token', { refreshToken })
+                const response = await api.post(`${API_PATHS.AUTH}/refresh-token`, { refreshToken })
                 if (!response.accessToken) {
-                    throw new Error('Invalid refresh token response')
+                    throw new Error('重新整理令牌響應無效')
                 }
 
+                // 更新 token
                 localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.accessToken)
                 localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, response.refreshToken)
 
+                // 重試原始請求
                 originalRequest.headers['Authorization'] = `Bearer ${response.accessToken}`
                 return api(originalRequest)
             } catch (refreshError) {
-                store.dispatch('auth/logout')
+                await store.dispatch('auth/logout')
                 router.push({
                     path: '/login',
                     query: { redirect: router.currentRoute.value.fullPath }
@@ -70,12 +101,15 @@ api.interceptors.response.use(
     }
 )
 
+// API 錯誤處理
 const handleApiError = (error) => {
-    let errorMessage = '發生未知錯誤'
+    let errorMessage = '系統錯誤，請稍後再試'
     let errorType = 'error'
+    let errorCode = null
 
     if (error.response) {
         const { status, data } = error.response
+        errorCode = status
 
         switch (status) {
             case 400:
@@ -87,19 +121,27 @@ const handleApiError = (error) => {
                 errorType = 'warning'
                 break
             case 403:
-                errorMessage = '無權限訪問此資源'
+                errorMessage = '無權限執行此操作'
                 errorType = 'error'
                 break
             case 404:
                 errorMessage = '請求的資源不存在'
                 errorType = 'error'
                 break
+            case 422:
+                errorMessage = data.message || '資料驗證失敗'
+                errorType = 'warning'
+                break
+            case 429:
+                errorMessage = '請求過於頻繁，請稍後再試'
+                errorType = 'warning'
+                break
             case 500:
                 errorMessage = '伺服器錯誤，請稍後再試'
                 errorType = 'error'
                 break
             default:
-                errorMessage = data.message || `錯誤代碼：${status}`
+                errorMessage = data.message || `未知錯誤 (${status})`
                 errorType = 'error'
         }
     } else if (error.request) {
@@ -110,57 +152,70 @@ const handleApiError = (error) => {
     store.dispatch('app/setError', {
         message: errorMessage,
         type: errorType,
+        code: errorCode,
         duration: 3000
     })
 }
 
+// 認證相關 API
 export const authApi = {
-    login: (data) => api.post('/api/v1/users/login', data),
-    register: (data) => api.post('/api/v1/users/register', data),
-    logout: () => api.post('/api/v1/users/logout'),
-    refreshToken: (refreshToken) => api.post('/api/v1/users/refresh-token', { refreshToken }),
-    verifyEmail: (token) => api.post('/api/v1/users/verify-email', { token })
+    login: (credentials) => api.post(`${API_PATHS.AUTH}/login`, credentials),
+    register: (userData) => api.post(`${API_PATHS.AUTH}/register`, userData),
+    logout: () => api.post(`${API_PATHS.AUTH}/logout`),
+    refreshToken: (refreshToken) => api.post(`${API_PATHS.AUTH}/refresh-token`, { refreshToken }),
+    verifyEmail: (token) => api.post(`${API_PATHS.AUTH}/verify-email`, { token }),
+    forgotPassword: (email) => api.post(`${API_PATHS.AUTH}/forgot-password`, { email }),
+    resetPassword: (token, password) => api.post(`${API_PATHS.AUTH}/reset-password`, { token, password })
 }
 
+// 用戶相關 API
 export const userApi = {
-    getProfile: (userId) => api.get(`/api/v1/users/${userId}`),
-    updateProfile: (userId, data) => api.put(`/api/v1/users/${userId}`, data),
-    changePassword: (userId, data) => api.put(`/api/v1/users/${userId}/password`, data),
-    uploadAvatar: (userId, formData) => api.post(`/api/v1/users/${userId}/avatar`, formData, {
+    getProfile: () => api.get(`${API_PATHS.USERS}/profile`),
+    updateProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data),
+    changePassword: (data) => api.put(`${API_PATHS.USERS}/password`, data),
+    uploadAvatar: (formData) => api.post(`${API_PATHS.USERS}/avatar`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
-    })
+    }),
+    getPreferences: () => api.get(`${API_PATHS.USERS}/preferences`),
+    updatePreferences: (data) => api.put(`${API_PATHS.USERS}/preferences`, data)
 }
 
+// 商品相關 API
 export const productApi = {
-    getList: (params) => api.get('/api/v1/products', { params }),
-    getById: (id) => api.get(`/api/v1/products/${id}`),
-    getCategories: () => api.get('/api/v1/categories'),
-    search: (params) => api.get('/api/v1/products/search', { params }),
-    getNewArrivals: () => api.get('/api/v1/products/new-arrivals'),
-    getRecommended: () => api.get('/api/v1/products/recommended'),
-    getReviews: (productId) => api.get(`/api/v1/products/${productId}/reviews`)
+    getList: (params) => api.get(API_PATHS.PRODUCTS, { params }),
+    getById: (id) => api.get(`${API_PATHS.PRODUCTS}/${id}`),
+    getCategories: () => api.get(API_PATHS.CATEGORIES),
+    search: (params) => api.get(`${API_PATHS.PRODUCTS}/search`, { params }),
+    getNewArrivals: () => api.get(`${API_PATHS.PRODUCTS}/new-arrivals`),
+    getRecommended: () => api.get(`${API_PATHS.PRODUCTS}/recommended`),
+    getReviews: (productId) => api.get(`${API_PATHS.PRODUCTS}/${productId}/reviews`),
+    addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS}/${productId}/reviews`, data)
 }
 
+// 購物車相關 API
 export const cartApi = {
-    getItems: () => api.get('/api/v1/cart/items'),
-    addItem: (data) => api.post('/api/v1/cart/items', data),
-    updateItem: (id, data) => api.put(`/api/v1/cart/items/${id}`, data),
-    removeItem: (id) => api.delete(`/api/v1/cart/items/${id}`),
-    clear: () => api.delete('/api/v1/cart'),
-    applyCoupon: (code) => api.post('/api/v1/cart/coupon', { code }),
-    removeCoupon: () => api.delete('/api/v1/cart/coupon'),
-    getShippingMethods: () => api.get('/api/v1/cart/shipping-methods'),
-    setShippingMethod: (methodId) => api.put('/api/v1/cart/shipping-method', { methodId })
+    getItems: () => api.get(`${API_PATHS.CART}/items`),
+    addItem: (data) => api.post(`${API_PATHS.CART}/items`, data),
+    updateItem: (id, data) => api.put(`${API_PATHS.CART}/items/${id}`, data),
+    removeItem: (id) => api.delete(`${API_PATHS.CART}/items/${id}`),
+    clear: () => api.delete(API_PATHS.CART),
+    applyCoupon: (code) => api.post(`${API_PATHS.CART}/coupon`, { code }),
+    removeCoupon: () => api.delete(`${API_PATHS.CART}/coupon`),
+    getShippingMethods: () => api.get(`${API_PATHS.CART}/shipping-methods`),
+    setShippingMethod: (methodId) => api.put(`${API_PATHS.CART}/shipping-method`, { methodId }),
+    checkout: (data) => api.post(`${API_PATHS.CART}/checkout`, data)
 }
 
+// 訂單相關 API
 export const orderApi = {
-    create: (data) => api.post('/api/v1/orders', data),
-    getList: (params) => api.get('/api/v1/orders', { params }),
-    getById: (id) => api.get(`/api/v1/orders/${id}`),
-    cancel: (id) => api.put(`/api/v1/orders/${id}/cancel`),
-    pay: (id, data) => api.post(`/api/v1/orders/${id}/payment`, data),
-    getPaymentMethods: () => api.get('/api/v1/orders/payment-methods'),
-    confirmReceipt: (id) => api.put(`/api/v1/orders/${id}/confirm-receipt`)
+    create: (data) => api.post(API_PATHS.ORDERS, data),
+    getList: (params) => api.get(API_PATHS.ORDERS, { params }),
+    getById: (id) => api.get(`${API_PATHS.ORDERS}/${id}`),
+    cancel: (id) => api.put(`${API_PATHS.ORDERS}/${id}/cancel`),
+    pay: (id, data) => api.post(`${API_PATHS.ORDERS}/${id}/payment`, data),
+    getPaymentMethods: () => api.get(`${API_PATHS.ORDERS}/payment-methods`),
+    confirmReceipt: (id) => api.put(`${API_PATHS.ORDERS}/${id}/confirm-receipt`),
+    getShipmentTracking: (id) => api.get(`${API_PATHS.ORDERS}/${id}/tracking`)
 }
 
 export default api

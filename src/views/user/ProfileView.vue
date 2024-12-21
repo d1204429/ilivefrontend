@@ -99,7 +99,9 @@
   </div>
 </template>
 
-<script>import { ref, computed, onMounted, watch } from 'vue'
+<script>
+
+import { ref, computed, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import BaseLoading from '@/components/common/BaseLoading.vue'
@@ -112,58 +114,47 @@ export default {
   },
 
   setup() {
+    // Store & Router
     const store = useStore()
     const router = useRouter()
+
+    // Reactive References
     const isEditing = ref(false)
     const loading = ref(false)
     const editedProfile = ref({})
     const errors = ref({})
     const originalProfile = ref({})
+    const validationFields = ['email', 'fullName', 'phoneNumber', 'address']
 
+    // Computed Properties
     const currentUser = computed(() => store.getters['auth/currentUser'])
     const isAuthenticated = computed(() => store.getters['auth/isAuthenticated'])
     const isFormValid = computed(() => {
-      return Object.keys(errors.value).length === 0 &&
+      return !Object.keys(errors.value).length &&
           Object.keys(editedProfile.value).length > 0 &&
           hasChanges.value
     })
-
-    // 檢查是否有變更
     const hasChanges = computed(() => {
       return Object.keys(editedProfile.value).some(key =>
           editedProfile.value[key] !== originalProfile.value[key]
       )
     })
 
-    // 即時驗證
-    watch(editedProfile, (newValue) => {
-      if (isEditing.value) {
-        validateField(Object.keys(newValue).find(key =>
-            newValue[key] !== originalProfile.value[key]
-        ))
+    // Validation Functions
+    const getValidationError = (field, value) => {
+      const validationMap = {
+        email: () => email(value) === true ? null : '請輸入有效的電子郵件',
+        fullName: () => fullName(value) === true ? null : '請輸入有效的全名',
+        phoneNumber: () => phoneNumber(value) === true ? null : '請輸入有效的電話號碼',
+        address: () => address(value) === true ? null : '請輸入有效的地址'
       }
-    }, { deep: true })
+      return validationMap[field] ? validationMap[field]() : null
+    }
 
-    // 單一欄位驗證
     const validateField = (field) => {
-      const value = editedProfile.value[field]
-      let error = null
+      if (!field || !editedProfile.value[field]) return
 
-      switch (field) {
-        case 'email':
-          error = email(value) === true ? null : '請輸入有效的電子郵件'
-          break
-        case 'fullName':
-          error = fullName(value) === true ? null : '請輸入有效的全名'
-          break
-        case 'phoneNumber':
-          error = phoneNumber(value) === true ? null : '請輸入有效的電話號碼'
-          break
-        case 'address':
-          error = address(value) === true ? null : '請輸入有效的地址'
-          break
-      }
-
+      const error = getValidationError(field, editedProfile.value[field])
       if (error) {
         errors.value = { ...errors.value, [field]: error }
       } else {
@@ -172,25 +163,19 @@ export default {
       }
     }
 
-    // 表單整體驗證
     const validateForm = () => {
       const newErrors = {}
-      const fields = ['email', 'fullName', 'phoneNumber', 'address']
-
-      fields.forEach(field => {
+      validationFields.forEach(field => {
         if (editedProfile.value[field]) {
-          validateField(field)
-          if (errors.value[field]) {
-            newErrors[field] = errors.value[field]
-          }
+          const error = getValidationError(field, editedProfile.value[field])
+          if (error) newErrors[field] = error
         }
       })
-
       errors.value = newErrors
       return Object.keys(newErrors).length === 0
     }
 
-    // 獲取用戶資料
+    // Data Management Functions
     const fetchUserProfile = async () => {
       if (!isAuthenticated.value) {
         router.push('/login')
@@ -202,16 +187,21 @@ export default {
         await store.dispatch('auth/fetchUserInfo')
         originalProfile.value = { ...currentUser.value }
       } catch (error) {
-        store.dispatch('app/setError', {
-          message: '獲取用戶資料失敗，請稍後再試',
-          type: 'error'
-        })
+        handleError('獲取用戶資料失敗，請稍後再試')
       } finally {
         loading.value = false
       }
     }
 
-    // 開始編輯
+    const handleError = (message) => {
+      store.dispatch('app/setError', {
+        message,
+        type: 'error',
+        duration: 3000
+      })
+    }
+
+    // Form Actions
     const startEditing = () => {
       editedProfile.value = { ...currentUser.value }
       originalProfile.value = { ...currentUser.value }
@@ -219,14 +209,13 @@ export default {
       errors.value = {}
     }
 
-    // 儲存資料
     const saveProfile = async () => {
       if (!validateForm() || !hasChanges.value) return
 
       try {
         loading.value = true
         await store.dispatch('auth/updateUserProfile', editedProfile.value)
-        await fetchUserProfile() // 重新獲取最新資料
+        await fetchUserProfile()
         isEditing.value = false
         store.dispatch('app/setSuccess', {
           message: '個人資料更新成功',
@@ -234,33 +223,37 @@ export default {
         })
       } catch (error) {
         const errorMessage = error.response?.data?.message || '更新個人資料失敗，請稍後再試'
-        store.dispatch('app/setError', {
-          message: errorMessage,
-          type: 'error'
-        })
+        handleError(errorMessage)
       } finally {
         loading.value = false
       }
     }
 
-    // 取消編輯
     const cancelEditing = () => {
-      if (hasChanges.value) {
-        if (confirm('確定要取消編輯？未儲存的變更將會遺失。')) {
-          resetForm()
-        }
-      } else {
+      if (hasChanges.value && confirm('確定要取消編輯？未儲存的變更將會遺失。')) {
+        resetForm()
+      } else if (!hasChanges.value) {
         resetForm()
       }
     }
 
-    // 重置表單
     const resetForm = () => {
       isEditing.value = false
       editedProfile.value = { ...originalProfile.value }
       errors.value = {}
     }
 
+    // Watchers
+    watch(editedProfile, (newValue) => {
+      if (isEditing.value) {
+        const changedField = Object.keys(newValue).find(key =>
+            newValue[key] !== originalProfile.value[key]
+        )
+        if (changedField) validateField(changedField)
+      }
+    }, { deep: true })
+
+    // Lifecycle Hooks
     onMounted(async () => {
       if (isAuthenticated.value) {
         await fetchUserProfile()
@@ -270,6 +263,7 @@ export default {
     })
 
     return {
+      // State
       isEditing,
       loading,
       currentUser,
@@ -277,6 +271,7 @@ export default {
       errors,
       isFormValid,
       hasChanges,
+      // Methods
       startEditing,
       saveProfile,
       cancelEditing,
@@ -284,6 +279,7 @@ export default {
     }
   }
 }
+
 
 </script>
 
