@@ -6,6 +6,29 @@ import user from './modules/user'
 import order from './modules/order'
 import app from './modules/app'
 
+// Constants
+const INITIAL_STATE = {
+    loading: false,
+    error: null,
+    success: null,
+    notification: null,
+    systemStatus: {
+        isOnline: navigator.onLine,
+        maintenance: false,
+        version: import.meta.env.VITE_APP_VERSION || '1.0.0',
+        lastChecked: null,
+        healthy: true,
+        services: {
+            api: true,
+            database: true,
+            cache: true
+        }
+    },
+    theme: localStorage.getItem('theme') || 'light',
+    language: localStorage.getItem('language') || 'zh-TW'
+}
+
+// Store Configuration
 export default createStore({
     modules: {
         auth,
@@ -16,63 +39,34 @@ export default createStore({
         app
     },
 
-    state: {
-        loading: false,
-        error: null,
-        success: null,
-        notification: null,
-        systemStatus: {
-            isOnline: navigator.onLine,
-            maintenance: false,
-            version: import.meta.env.VITE_APP_VERSION || '1.0.0',
-            lastChecked: null,
-            healthy: true,
-            services: {
-                api: true,
-                database: true,
-                cache: true
-            }
-        },
-        theme: localStorage.getItem('theme') || 'light',
-        language: localStorage.getItem('language') || 'zh-TW'
-    },
+    state: { ...INITIAL_STATE },
 
     mutations: {
         SET_LOADING(state, status) {
             state.loading = status
         },
         SET_ERROR(state, error) {
-            state.error = typeof error === 'string' ? {
-                message: error,
-                type: 'error',
-                timestamp: new Date().toISOString()
-            } : {
-                ...error,
-                timestamp: new Date().toISOString()
-            }
+            state.error = error ? {
+                message: typeof error === 'string' ? error : error.message || '發生錯誤',
+                type: error.type || 'error',
+                timestamp: new Date().toISOString(),
+                code: error.code,
+                details: error.details
+            } : null
         },
         SET_SUCCESS(state, message) {
-            state.success = {
+            state.success = message ? {
                 message,
                 type: 'success',
                 timestamp: new Date().toISOString()
-            }
-        },
-        CLEAR_ERROR(state) {
-            state.error = null
-        },
-        CLEAR_SUCCESS(state) {
-            state.success = null
+            } : null
         },
         SET_NOTIFICATION(state, notification) {
-            state.notification = {
+            state.notification = notification ? {
                 ...notification,
                 id: Date.now(),
                 timestamp: new Date().toISOString()
-            }
-        },
-        CLEAR_NOTIFICATION(state) {
-            state.notification = null
+            } : null
         },
         SET_SYSTEM_STATUS(state, status) {
             state.systemStatus = {
@@ -92,71 +86,36 @@ export default createStore({
             document.documentElement.setAttribute('lang', language)
         },
         RESET_STATE(state) {
-            Object.assign(state, {
-                loading: false,
-                error: null,
-                success: null,
-                notification: null,
-                systemStatus: {
-                    isOnline: navigator.onLine,
-                    maintenance: false,
-                    version: import.meta.env.VITE_APP_VERSION || '1.0.0',
-                    lastChecked: null,
-                    healthy: true,
-                    services: {
-                        api: true,
-                        database: true,
-                        cache: true
-                    }
-                }
-            })
+            Object.assign(state, { ...INITIAL_STATE })
         }
     },
 
     actions: {
         async initializeApp({ commit, dispatch }) {
             commit('SET_LOADING', true)
+
             try {
                 await Promise.all([
                     dispatch('auth/checkAuth'),
-                    dispatch('checkSystemStatus')
+                    dispatch('checkSystemStatus'),
+                    dispatch('product/fetchCategories'),
+                    dispatch('cart/fetchCartItems')
                 ])
 
-                window.addEventListener('online', () => {
-                    dispatch('handleOnline')
-                })
-
-                window.addEventListener('offline', () => {
-                    dispatch('handleOffline')
-                })
+                window.addEventListener('online', () => dispatch('handleOnline'))
+                window.addEventListener('offline', () => dispatch('handleOffline'))
 
                 return true
             } catch (error) {
                 dispatch('setError', {
                     message: '系統初始化失敗',
-                    type: 'error'
+                    type: 'error',
+                    details: error.message
                 })
                 return false
             } finally {
                 commit('SET_LOADING', false)
             }
-        },
-
-        handleOnline({ commit, dispatch }) {
-            commit('SET_SYSTEM_STATUS', { isOnline: true })
-            dispatch('showNotification', {
-                message: '網路連接已恢復',
-                type: 'success'
-            })
-            dispatch('checkSystemStatus')
-        },
-
-        handleOffline({ commit, dispatch }) {
-            commit('SET_SYSTEM_STATUS', { isOnline: false })
-            dispatch('showNotification', {
-                message: '網路連接已斷開',
-                type: 'warning'
-            })
         },
 
         async checkSystemStatus({ commit, dispatch }) {
@@ -171,7 +130,7 @@ export default createStore({
 
                 if (status.maintenance) {
                     dispatch('showNotification', {
-                        message: '系統維護中',
+                        message: '系統維護中，部分功能可能無法使用',
                         type: 'warning',
                         duration: 0
                     })
@@ -185,32 +144,48 @@ export default createStore({
             }
         },
 
+        handleOnline({ commit, dispatch }) {
+            commit('SET_SYSTEM_STATUS', { isOnline: true })
+            dispatch('showNotification', {
+                message: '網路連接已恢復',
+                type: 'success',
+                duration: 3000
+            })
+            dispatch('checkSystemStatus')
+        },
+
+        handleOffline({ commit, dispatch }) {
+            commit('SET_SYSTEM_STATUS', { isOnline: false })
+            dispatch('showNotification', {
+                message: '網路連接已斷開',
+                type: 'warning',
+                duration: 0
+            })
+        },
+
         setLoading({ commit }, status) {
             commit('SET_LOADING', status)
         },
 
         setError({ commit }, error) {
             commit('SET_ERROR', error)
+            if (error) {
+                setTimeout(() => commit('SET_ERROR', null), 3000)
+            }
         },
 
         setSuccess({ commit }, message) {
             commit('SET_SUCCESS', message)
+            if (message) {
+                setTimeout(() => commit('SET_SUCCESS', null), 3000)
+            }
         },
 
         showNotification({ commit }, notification) {
             commit('SET_NOTIFICATION', notification)
-        },
-
-        clearError({ commit }) {
-            commit('CLEAR_ERROR')
-        },
-
-        clearSuccess({ commit }) {
-            commit('CLEAR_SUCCESS')
-        },
-
-        clearNotification({ commit }) {
-            commit('CLEAR_NOTIFICATION')
+            if (notification?.duration !== 0) {
+                setTimeout(() => commit('SET_NOTIFICATION', null), notification?.duration || 3000)
+            }
         },
 
         setTheme({ commit }, theme) {
@@ -237,6 +212,9 @@ export default createStore({
         isHealthy: state => state.systemStatus.healthy,
         currentTheme: state => state.theme,
         currentLanguage: state => state.language,
-        appVersion: state => state.systemStatus.version
+        appVersion: state => state.systemStatus.version,
+        hasError: state => !!state.error,
+        hasSuccess: state => !!state.success,
+        hasNotification: state => !!state.notification
     }
 })
