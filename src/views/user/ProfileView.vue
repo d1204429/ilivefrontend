@@ -99,8 +99,7 @@
   </div>
 </template>
 
-<script>
-import { ref, computed, onMounted } from 'vue'
+<script>import { ref, computed, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import BaseLoading from '@/components/common/BaseLoading.vue'
@@ -119,34 +118,79 @@ export default {
     const loading = ref(false)
     const editedProfile = ref({})
     const errors = ref({})
+    const originalProfile = ref({})
 
     const currentUser = computed(() => store.getters['auth/currentUser'])
     const isAuthenticated = computed(() => store.getters['auth/isAuthenticated'])
     const isFormValid = computed(() => {
       return Object.keys(errors.value).length === 0 &&
-          Object.keys(editedProfile.value).length > 0
+          Object.keys(editedProfile.value).length > 0 &&
+          hasChanges.value
     })
 
+    // 檢查是否有變更
+    const hasChanges = computed(() => {
+      return Object.keys(editedProfile.value).some(key =>
+          editedProfile.value[key] !== originalProfile.value[key]
+      )
+    })
+
+    // 即時驗證
+    watch(editedProfile, (newValue) => {
+      if (isEditing.value) {
+        validateField(Object.keys(newValue).find(key =>
+            newValue[key] !== originalProfile.value[key]
+        ))
+      }
+    }, { deep: true })
+
+    // 單一欄位驗證
+    const validateField = (field) => {
+      const value = editedProfile.value[field]
+      let error = null
+
+      switch (field) {
+        case 'email':
+          error = email(value) === true ? null : '請輸入有效的電子郵件'
+          break
+        case 'fullName':
+          error = fullName(value) === true ? null : '請輸入有效的全名'
+          break
+        case 'phoneNumber':
+          error = phoneNumber(value) === true ? null : '請輸入有效的電話號碼'
+          break
+        case 'address':
+          error = address(value) === true ? null : '請輸入有效的地址'
+          break
+      }
+
+      if (error) {
+        errors.value = { ...errors.value, [field]: error }
+      } else {
+        const { [field]: removed, ...rest } = errors.value
+        errors.value = rest
+      }
+    }
+
+    // 表單整體驗證
     const validateForm = () => {
       const newErrors = {}
+      const fields = ['email', 'fullName', 'phoneNumber', 'address']
 
-      if (editedProfile.value.email && !email(editedProfile.value.email)) {
-        newErrors.email = '請輸入有效的電子郵件'
-      }
-      if (editedProfile.value.fullName && !fullName(editedProfile.value.fullName)) {
-        newErrors.fullName = '請輸入有效的全名'
-      }
-      if (editedProfile.value.phoneNumber && !phoneNumber(editedProfile.value.phoneNumber)) {
-        newErrors.phoneNumber = '請輸入有效的電話號碼'
-      }
-      if (editedProfile.value.address && !address(editedProfile.value.address)) {
-        newErrors.address = '請輸入有效的地址'
-      }
+      fields.forEach(field => {
+        if (editedProfile.value[field]) {
+          validateField(field)
+          if (errors.value[field]) {
+            newErrors[field] = errors.value[field]
+          }
+        }
+      })
 
       errors.value = newErrors
       return Object.keys(newErrors).length === 0
     }
 
+    // 獲取用戶資料
     const fetchUserProfile = async () => {
       if (!isAuthenticated.value) {
         router.push('/login')
@@ -156,6 +200,7 @@ export default {
       try {
         loading.value = true
         await store.dispatch('auth/fetchUserInfo')
+        originalProfile.value = { ...currentUser.value }
       } catch (error) {
         store.dispatch('app/setError', {
           message: '獲取用戶資料失敗，請稍後再試',
@@ -166,27 +211,31 @@ export default {
       }
     }
 
+    // 開始編輯
     const startEditing = () => {
       editedProfile.value = { ...currentUser.value }
+      originalProfile.value = { ...currentUser.value }
       isEditing.value = true
       errors.value = {}
     }
 
+    // 儲存資料
     const saveProfile = async () => {
-      if (!validateForm()) return
+      if (!validateForm() || !hasChanges.value) return
 
       try {
         loading.value = true
         await store.dispatch('auth/updateUserProfile', editedProfile.value)
-        await store.dispatch('auth/fetchUserInfo')
+        await fetchUserProfile() // 重新獲取最新資料
         isEditing.value = false
         store.dispatch('app/setSuccess', {
           message: '個人資料更新成功',
           duration: 2000
         })
       } catch (error) {
+        const errorMessage = error.response?.data?.message || '更新個人資料失敗，請稍後再試'
         store.dispatch('app/setError', {
-          message: '更新個人資料失敗，請稍後再試',
+          message: errorMessage,
           type: 'error'
         })
       } finally {
@@ -194,9 +243,21 @@ export default {
       }
     }
 
+    // 取消編輯
     const cancelEditing = () => {
+      if (hasChanges.value) {
+        if (confirm('確定要取消編輯？未儲存的變更將會遺失。')) {
+          resetForm()
+        }
+      } else {
+        resetForm()
+      }
+    }
+
+    // 重置表單
+    const resetForm = () => {
       isEditing.value = false
-      editedProfile.value = {}
+      editedProfile.value = { ...originalProfile.value }
       errors.value = {}
     }
 
@@ -215,12 +276,15 @@ export default {
       editedProfile,
       errors,
       isFormValid,
+      hasChanges,
       startEditing,
       saveProfile,
-      cancelEditing
+      cancelEditing,
+      validateField
     }
   }
 }
+
 </script>
 
 <style scoped>

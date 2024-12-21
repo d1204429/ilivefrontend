@@ -146,17 +146,22 @@ const actions = {
         }
     },
 
-    async updateUserProfile({ commit }, userData) {
+    async updateUserProfile({ commit, dispatch }, userData) {
+        commit('SET_LOADING', true)
         try {
             const response = await authApi.updateUserProfile(userData)
             commit('UPDATE_USER', response.data)
             commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
             return response.data
         } catch (error) {
-            commit('SET_ERROR', error.response?.data?.message || '更新個人資料失敗')
+            const errorMsg = error.response?.data?.message || '更新個人資料失敗'
+            commit('SET_ERROR', errorMsg)
             throw error
+        } finally {
+            commit('SET_LOADING', false)
         }
-    },
+    }
+    ,
 
     async changePassword({ commit }, passwordData) {
         try {
