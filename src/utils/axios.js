@@ -15,7 +15,7 @@ const API_CONFIG = {
 
 // API 路徑常量
 const API_PATHS = {
-    AUTH: '/auth',
+    AUTH: '/users',
     USERS: '/users',
     PRODUCTS: '/products',
     CART: '/cart',
@@ -165,16 +165,21 @@ export const authApi = {
     refreshToken: (refreshToken) => api.post(`${API_PATHS.AUTH}/refresh-token`, { refreshToken }),
     verifyEmail: (token) => api.post(`${API_PATHS.AUTH}/verify-email`, { token }),
     forgotPassword: (email) => api.post(`${API_PATHS.AUTH}/forgot-password`, { email }),
-    resetPassword: (token, password) => api.post(`${API_PATHS.AUTH}/reset-password`, { token, password })
+    resetPassword: (token, password) => api.post(`${API_PATHS.AUTH}/reset-password`, { token, password }),
+    getUserProfile: () => api.get(`${API_PATHS.USERS}/profile`),
+    getProfile: () => api.get(`${API_PATHS.USERS}/profile`), // 添加別名
+    updateUserProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data), // 添加別名
 }
 
 // 用戶相關 API
 export const userApi = {
     getProfile: () => api.get(`${API_PATHS.USERS}/profile`),
-    updateUserProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data),
+    updateProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data),
     changePassword: (data) => api.put(`${API_PATHS.USERS}/password`, data),
     uploadAvatar: (formData) => api.post(`${API_PATHS.USERS}/avatar`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+    getUserProfile: () => api.get(`${API_PATHS.USERS}/profile`), // 添加別名
+    updateUserProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data) // 添加別名
     }),
     getPreferences: () => api.get(`${API_PATHS.USERS}/preferences`),
     updatePreferences: (data) => api.put(`${API_PATHS.USERS}/preferences`, data)

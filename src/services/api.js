@@ -114,8 +114,10 @@ export const authApi = {
 // 用戶相關 API
 export const userApi = {
     getProfile: () => api.get(`${API_PATHS.USERS}/profile`),
-    updateUserProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data),
+    updateProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data),
     changePassword: (data) => api.put(`${API_PATHS.USERS}/password`, data),
+    getUserProfile: () => api.get(`${API_PATHS.USERS}/profile`),
+    fetchUserInfo: () => api.get(`${API_PATHS.USERS}/profile`),
     uploadAvatar: (formData) => api.post(`${API_PATHS.USERS}/avatar`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
     }),

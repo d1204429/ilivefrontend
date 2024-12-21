@@ -215,7 +215,7 @@ export default {
       try {
         loading.value = true
         globalError.value = ''
-        await store.dispatch('auth/fetchUserInfo')
+        await store.dispatch('auth/getProfile')
         originalProfile.value = { ...currentUser.value }
         editedProfile.value = { ...currentUser.value }
       } catch (error) {
@@ -227,12 +227,19 @@ export default {
 
     const handleError = (message) => {
       globalError.value = message
-      store.dispatch('app/setError', {
-        message,
-        type: 'error',
-        duration: 3000
-      })
+      if (store.hasModule('app')) {
+        store.dispatch('app/setError', {
+          message,
+          type: 'error',
+          duration: 3000
+        }).catch(err => {
+          console.error('Error handling failed:', err)
+        })
+      } else {
+        console.error(message)
+      }
     }
+
 
     // Form Actions
     const handleSave = async (e) => {
@@ -242,7 +249,7 @@ export default {
       try {
         loading.value = true
         globalError.value = ''
-        await store.dispatch('auth/updateUserProfile', editedProfile.value)
+        await store.dispatch('auth/updateProfile', editedProfile.value)
         await fetchUserProfile()
         isEditing.value = false
         store.dispatch('app/setSuccess', {
@@ -286,13 +293,13 @@ export default {
     const checkAuthAndLoadData = async () => {
       if (!isAuthenticated.value) {
         router.push({
-          name: 'Login',
+          name: '/Login',
           query: { redirect: router.currentRoute.value.fullPath }
         })
         return
-      }
-      await fetchUserProfile()
-    }
+      }try{await fetchUserProfile()
+      }catch (error) {handleError('載入資料失敗')
+      }}
 
     // Watchers
     watch(() => editedProfile.value, (newValue) => {
