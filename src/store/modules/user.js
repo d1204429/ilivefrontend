@@ -59,13 +59,16 @@ const mutations = {
         state.loginAttempts = 0
         state.isLocked = false
         state.lockUntil = null
-        localStorage.clear()
+        localStorage.removeItem('user')
+        localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+        localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+        localStorage.removeItem('lastLoginTime')
     },
     INCREMENT_LOGIN_ATTEMPTS(state) {
         state.loginAttempts++
         if (state.loginAttempts >= 5) {
             state.isLocked = true
-            state.lockUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString() // 30分鐘後
+            state.lockUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString()
         }
     },
     RESET_LOGIN_ATTEMPTS(state) {
@@ -76,7 +79,7 @@ const mutations = {
 }
 
 const actions = {
-    async login({ commit, state }, credentials) {
+    async login({ commit, dispatch }, credentials) {
         if (state.isLocked && new Date(state.lockUntil) > new Date()) {
             throw new Error('帳號已被鎖定，請稍後再試')
         }
@@ -93,6 +96,7 @@ const actions = {
             commit('SET_USER_INFO', response.user)
             commit('SET_AUTH_STATUS', true)
             commit('RESET_LOGIN_ATTEMPTS')
+            await dispatch('fetchUserInfo')
             return response
         } catch (error) {
             commit('INCREMENT_LOGIN_ATTEMPTS')
@@ -108,6 +112,7 @@ const actions = {
         commit('SET_ERROR', null)
         try {
             const response = await authService.register(userData)
+            commit('SET_SUCCESS_MESSAGE', '註冊成功，請登入')
             return response
         } catch (error) {
             commit('SET_ERROR', error.message || '註冊失敗')
@@ -129,13 +134,13 @@ const actions = {
     },
 
     async fetchUserInfo({ commit, state }) {
-        if (!state.userInfo?.userId) return
+        if (!state.isAuthenticated) return
 
         commit('SET_LOADING', true)
         try {
-            const userInfo = await userApi.getProfile(state.userInfo.userId)
-            commit('SET_USER_INFO', userInfo)
-            return userInfo
+            const response = await userApi.getProfile()
+            commit('SET_USER_INFO', response)
+            return response
         } catch (error) {
             if (error.response?.status === 401) {
                 commit('CLEAR_USER_STATE')
@@ -147,12 +152,10 @@ const actions = {
         }
     },
 
-    async updateUserInfo({ commit, state }, userData) {
-        if (!state.userInfo?.userId) return
-
+    async updateUserInfo({ commit }, userData) {
         commit('SET_LOADING', true)
         try {
-            const response = await userApi.updateProfile(state.userInfo.userId, userData)
+            const response = await userApi.updateProfile(userData)
             commit('SET_USER_INFO', response)
             return response
         } catch (error) {
@@ -163,15 +166,11 @@ const actions = {
         }
     },
 
-    async changePassword({ commit, state }, { oldPassword, newPassword }) {
-        if (!state.userInfo?.userId) return
-
+    async changePassword({ commit }, { oldPassword, newPassword }) {
         commit('SET_LOADING', true)
         try {
-            await userApi.changePassword(state.userInfo.userId, {
-                oldPassword,
-                newPassword
-            })
+            await userApi.changePassword({ oldPassword, newPassword })
+            commit('SET_SUCCESS_MESSAGE', '密碼修改成功')
         } catch (error) {
             commit('SET_ERROR', error.message)
             throw error
@@ -219,7 +218,7 @@ const getters = {
     refreshToken: state => state.refreshToken,
     loading: state => state.loading,
     error: state => state.error,
-    userId: state => state.userInfo?.userId,
+    userId: state => state.userInfo?.id,
     username: state => state.userInfo?.username,
     email: state => state.userInfo?.email,
     fullName: state => state.userInfo?.fullName,
