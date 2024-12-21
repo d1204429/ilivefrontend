@@ -13,7 +13,7 @@
 
     <div class="profile-content">
       <div v-if="loading" class="loading-spinner">
-        載入中...
+        <BaseLoading message="載入中..." />
       </div>
       <div v-else class="profile-info">
         <div class="info-group">
@@ -24,7 +24,7 @@
               type="text"
               :disabled="loading"
           />
-          <span v-else>{{ userProfile.username }}</span>
+          <span v-else>{{ userProfile?.username || '-' }}</span>
         </div>
         <div class="info-group">
           <label>電子信箱</label>
@@ -34,7 +34,7 @@
               type="email"
               :disabled="loading"
           />
-          <span v-else>{{ userProfile.email }}</span>
+          <span v-else>{{ userProfile?.email || '-' }}</span>
         </div>
         <div class="info-group">
           <label>全名</label>
@@ -44,7 +44,7 @@
               type="text"
               :disabled="loading"
           />
-          <span v-else>{{ userProfile.fullName }}</span>
+          <span v-else>{{ userProfile?.fullName || '-' }}</span>
         </div>
         <div class="info-group">
           <label>電話號碼</label>
@@ -54,7 +54,7 @@
               type="tel"
               :disabled="loading"
           />
-          <span v-else>{{ userProfile.phoneNumber }}</span>
+          <span v-else>{{ userProfile?.phoneNumber || '-' }}</span>
         </div>
         <div class="info-group">
           <label>地址</label>
@@ -63,7 +63,7 @@
               v-model="editedProfile.address"
               :disabled="loading"
           ></textarea>
-          <span v-else>{{ userProfile.address }}</span>
+          <span v-else>{{ userProfile?.address || '-' }}</span>
         </div>
       </div>
     </div>
@@ -74,9 +74,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
+import BaseLoading from '@/components/common/BaseLoading.vue'
 
 export default {
   name: 'ProfileView',
+
+  components: {
+    BaseLoading
+  },
 
   setup() {
     const store = useStore()
@@ -86,18 +91,25 @@ export default {
     const loading = ref(false)
     const editedProfile = ref({})
 
-    const userProfile = computed(() => store.getters['user/profile'])
+    // 從 store 獲取用戶資料
+    const userProfile = computed(() => store.state.user.userInfo)
+    const isAuthenticated = computed(() => store.getters['auth/isAuthenticated'])
 
     const fetchUserProfile = async () => {
+      if (!isAuthenticated.value) {
+        router.push('/login')
+        return
+      }
+
       try {
         loading.value = true
         await store.dispatch('user/fetchProfile')
       } catch (error) {
+        console.error('獲取用戶資料失敗:', error)
         store.dispatch('app/setError', {
-          message: '獲取用戶資料失敗',
+          message: '獲取用戶資料失敗，請稍後再試',
           type: 'error'
         })
-        router.push('/login')
       } finally {
         loading.value = false
       }
@@ -118,6 +130,7 @@ export default {
           duration: 2000
         })
       } catch (error) {
+        console.error('更新個人資料失敗:', error)
         store.dispatch('app/setError', {
           message: '更新個人資料失敗，請稍後再試',
           type: 'error'
