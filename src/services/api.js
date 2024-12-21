@@ -78,14 +78,28 @@ export const authApi = {
     refreshToken: (refreshToken) => api.post('/users/refresh-token', { refreshToken })
 }
 
+
+
+
 export const userApi = {
     getProfile: (userId) => api.get(`/users/${userId}`),
     updateProfile: (userId, data) => api.put(`/users/${userId}`, data),
     changePassword: (userId, data) => api.put(`/users/${userId}/password`, data),
     uploadAvatar: (userId, formData) => api.post(`/users/${userId}/avatar`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
-    })
+    }),
+    getOrders: (userId) => api.get(`/users/${userId}/orders`),
+    getFavorites: (userId) => api.get(`/users/${userId}/favorites`),
+    addFavorite: (userId, productId) => api.post(`/users/${userId}/favorites`, { productId }),
+    removeFavorite: (userId, productId) => api.delete(`/users/${userId}/favorites/${productId}`),
+    getAddresses: (userId) => api.get(`/users/${userId}/addresses`),
+    addAddress: (userId, address) => api.post(`/users/${userId}/addresses`, address),
+    updateAddress: (userId, addressId, address) => api.put(`/users/${userId}/addresses/${addressId}`, address),
+    deleteAddress: (userId, addressId) => api.delete(`/users/${userId}/addresses/${addressId}`)
 }
+
+
+
 
 export const productApi = {
     getList: (params) => api.get('/products', { params }),
