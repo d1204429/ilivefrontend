@@ -44,7 +44,7 @@
             </BaseInput>
           </div>
           <small class="password-hint" v-if="formData.password">
-            密碼必須包含大小寫字母、數字和特殊符號，長度至少8個字元
+            密碼長度至少8個字元
           </small>
         </div>
 
@@ -159,15 +159,27 @@ export default {
     const validationRules = {
       username: [
         v => !!v || '請輸入帳號',
-        v => v.length >= 3 || '帳號長度至少需要3個字元',
-        v => /^[a-zA-Z0-9_]+$/.test(v) || '帳號只能包含字母、數字和底線'
+        v => v.length >= 3 || '帳號長度至少需要3個字元'
       ],
       password: [
         v => !!v || '請輸入密碼',
-        v => v.length >= 8 || '密碼長度至少需要8個字元',
-        v => /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])[A-Za-z\d!@#$%^&*(),.?":{}|<>]{8,}$/.test(v) ||
-            '密碼必須包含大小寫字母、數字和特殊符號'
+        v => v.length >= 8 || '密碼長度至少需要8個字元'
       ]
+    }
+
+    const clearAllTimers = () => {
+      if (countdownTimer) {
+        clearInterval(countdownTimer)
+        countdownTimer = null
+      }
+      if (successTimer) {
+        clearInterval(successTimer)
+        successTimer = null
+      }
+      if (lockTimer) {
+        clearTimeout(lockTimer)
+        lockTimer = null
+      }
     }
 
     const validateField = (fieldName) => {
@@ -205,7 +217,6 @@ export default {
     const handleLoginError = (error) => {
       loginAttempts.value++
       const remainingAttempts = maxLoginAttempts - loginAttempts.value
-      const errorMessage = error.response?.data?.message || ''
 
       if (loginAttempts.value >= maxLoginAttempts) {
         isLocked.value = true
@@ -214,17 +225,19 @@ export default {
           isLocked.value = false
           loginAttempts.value = 0
           globalError.value = ''
-        }, 900000) // 15分鐘後解鎖
+        }, 900000)
         return
       }
 
-      if (errorMessage.includes('用戶不存在') || errorMessage.includes('找不到用戶')) {
-        startRedirectCountdown('register')
-      } else if (errorMessage.includes('密碼錯誤')) {
-        globalError.value = `密碼錯誤，還剩${remainingAttempts}次嘗試機會`
-      } else {
-        globalError.value = errorMessage || '登入失敗，請檢查帳號密碼是否正確'
-      }
+      const errorMessage = error.response?.data?.message || '登入失敗，請檢查帳號密碼是否正確'
+      globalError.value = `${errorMessage}，還剩${remainingAttempts}次嘗試機會`
+    }
+
+    const redirectToHome = () => {
+      clearAllTimers()
+      isRedirecting.value = false
+      successMessage.value = ''
+      router.push('/')
     }
 
     const startSuccessCountdown = () => {
@@ -232,48 +245,14 @@ export default {
       successMessage.value = '登入成功！'
       isRedirecting.value = true
 
-      if (successTimer) {
-        clearInterval(successTimer)
-      }
+      clearAllTimers()
 
       successTimer = setInterval(() => {
         countdown.value--
-        successMessage.value = `登入成功！${countdown.value}秒後自動跳轉到首頁`
-
         if (countdown.value <= 0) {
-          clearInterval(successTimer)
-          router.push('/')
+          redirectToHome()
         }
       }, 1000)
-    }
-
-    const startRedirectCountdown = (path) => {
-      countdown.value = 5
-      isRedirecting.value = true
-      globalError.value = '無此帳號，請註冊新帳號'
-
-      if (countdownTimer) {
-        clearInterval(countdownTimer)
-      }
-
-      countdownTimer = setInterval(() => {
-        countdown.value--
-        if (countdown.value <= 0) {
-          clearInterval(countdownTimer)
-          router.push(`/${path}`)
-        }
-      }, 1000)
-    }
-
-    const redirectToHome = () => {
-      clearAllTimers()
-      router.push('/')
-    }
-
-    const clearAllTimers = () => {
-      if (countdownTimer) clearInterval(countdownTimer)
-      if (successTimer) clearInterval(successTimer)
-      if (lockTimer) clearTimeout(lockTimer)
     }
 
     const handleSubmit = async () => {
@@ -291,14 +270,13 @@ export default {
           password: formData.password
         })
 
-        loginAttempts.value = 0
-
         if (formData.rememberMe) {
           localStorage.setItem('rememberedUsername', formData.username)
         } else {
           localStorage.removeItem('rememberedUsername')
         }
 
+        loginAttempts.value = 0
         startSuccessCountdown()
       } catch (error) {
         console.error('登入失敗:', error)
@@ -320,10 +298,8 @@ export default {
       }
     }
 
-    // 初始化表單
     initializeForm()
 
-    // 組件銷毀時清理
     onBeforeUnmount(() => {
       clearAllTimers()
     })
@@ -348,8 +324,8 @@ export default {
     }
   }
 }
-</script>
 
+</script>
 <style scoped>
 .login-view {
   display: flex;

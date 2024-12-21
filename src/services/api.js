@@ -20,13 +20,11 @@ const api = axios.create(API_CONFIG)
 // 請求攔截器
 api.interceptors.request.use(
     config => {
-        // 添加 token
         const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
         if (token) {
             config.headers['Authorization'] = `Bearer ${token}`
         }
 
-        // GET 請求添加時間戳防止緩存
         if (config.method?.toLowerCase() === 'get') {
             config.params = {
                 ...config.params,
@@ -34,36 +32,17 @@ api.interceptors.request.use(
             }
         }
 
-        // 開發環境日誌
-        if (import.meta.env.DEV) {
-            console.log('API Request:', {
-                url: config.url,
-                method: config.method,
-                data: config.data,
-                params: config.params
-            })
-        }
-
         return config
     },
-    error => {
-        console.error('Request Error:', error)
-        return Promise.reject(error)
-    }
+    error => Promise.reject(error)
 )
 
 // 響應攔截器
 api.interceptors.response.use(
-    response => {
-        if (import.meta.env.DEV) {
-            console.log('API Response:', response.data)
-        }
-        return response.data
-    },
+    response => response.data,
     async error => {
         const originalRequest = error.config
 
-        // 處理 401 錯誤和 token 刷新
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true
 
@@ -107,29 +86,21 @@ export const authApi = {
     verifyEmail: (token) => api.post('/users/verify-email', { token }),
     forgotPassword: (email) => api.post('/users/forgot-password', { email }),
     resetPassword: (token, password) => api.post('/users/reset-password', { token, password }),
-    checkEmailExists: (email) => api.post('/users/check-email', { email }),
-    resendVerification: (email) => api.post('/users/resend-verification', { email })
+    checkEmailExists: (email) => api.post('/users/check-email', { email })
 }
 
 // 用戶相關 API
 export const userApi = {
-    getProfile: (userId) => api.get(`/users/${userId}`),
-    updateProfile: (userId, data) => api.put(`/users/${userId}`, data),
-    changePassword: (userId, data) => api.put(`/users/${userId}/password`, data),
-    uploadAvatar: (userId, formData) => api.post(`/users/${userId}/avatar`, formData, {
+    getProfile: () => api.get('/users/profile'),
+    updateProfile: (data) => api.put('/users/profile', data),
+    changePassword: (data) => api.put('/users/password', data),
+    uploadAvatar: (formData) => api.post('/users/avatar', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
     }),
-    getOrders: (userId, params) => api.get(`/users/${userId}/orders`, { params }),
-    getFavorites: (userId, params) => api.get(`/users/${userId}/favorites`, { params }),
-    addFavorite: (userId, productId) => api.post(`/users/${userId}/favorites`, { productId }),
-    removeFavorite: (userId, productId) => api.delete(`/users/${userId}/favorites/${productId}`),
-    getAddresses: (userId) => api.get(`/users/${userId}/addresses`),
-    addAddress: (userId, address) => api.post(`/users/${userId}/addresses`, address),
-    updateAddress: (userId, addressId, address) => api.put(`/users/${userId}/addresses/${addressId}`, address),
-    deleteAddress: (userId, addressId) => api.delete(`/users/${userId}/addresses/${addressId}`),
-    getNotifications: (userId, params) => api.get(`/users/${userId}/notifications`, { params }),
-    markNotificationRead: (userId, notificationId) => api.put(`/users/${userId}/notifications/${notificationId}/read`),
-    updateNotificationPreferences: (userId, preferences) => api.put(`/users/${userId}/notification-preferences`, preferences)
+    getAddresses: () => api.get('/users/addresses'),
+    addAddress: (address) => api.post('/users/addresses', address),
+    updateAddress: (addressId, address) => api.put(`/users/addresses/${addressId}`, address),
+    deleteAddress: (addressId) => api.delete(`/users/addresses/${addressId}`)
 }
 
 // 商品相關 API
@@ -138,14 +109,9 @@ export const productApi = {
     getById: (id) => api.get(`/products/${id}`),
     getCategories: () => api.get('/categories'),
     search: (params) => api.get('/products/search', { params }),
-    getNewArrivals: (params) => api.get('/products/new-arrivals', { params }),
-    getRecommended: (params) => api.get('/products/recommended', { params }),
-    getReviews: (productId, params) => api.get(`/products/${productId}/reviews`, { params }),
-    addReview: (productId, data) => api.post(`/products/${productId}/reviews`, data),
-    updateReview: (productId, reviewId, data) => api.put(`/products/${productId}/reviews/${reviewId}`, data),
-    deleteReview: (productId, reviewId) => api.delete(`/products/${productId}/reviews/${reviewId}`),
-    getRelated: (productId, params) => api.get(`/products/${productId}/related`, { params }),
-    reportReview: (productId, reviewId, reason) => api.post(`/products/${productId}/reviews/${reviewId}/report`, { reason })
+    getNewArrivals: () => api.get('/products/new-arrivals'),
+    getRecommended: () => api.get('/products/recommended'),
+    getReviews: (productId) => api.get(`/products/${productId}/reviews`)
 }
 
 // 購物車相關 API
@@ -158,11 +124,7 @@ export const cartApi = {
     applyCoupon: (code) => api.post('/cart/coupon', { code }),
     removeCoupon: () => api.delete('/cart/coupon'),
     getShippingMethods: () => api.get('/cart/shipping-methods'),
-    setShippingMethod: (methodId) => api.put('/cart/shipping-method', { methodId }),
-    validateItems: () => api.post('/cart/validate'),
-    saveForLater: (itemId) => api.post(`/cart/items/${itemId}/save-for-later`),
-    moveToCart: (itemId) => api.post(`/cart/saved-items/${itemId}/move-to-cart`),
-    getSavedItems: () => api.get('/cart/saved-items')
+    setShippingMethod: (methodId) => api.put('/cart/shipping-method', { methodId })
 }
 
 // 訂單相關 API
@@ -170,17 +132,10 @@ export const orderApi = {
     create: (data) => api.post('/orders', data),
     getList: (params) => api.get('/orders', { params }),
     getById: (id) => api.get(`/orders/${id}`),
-    cancel: (id, reason) => api.put(`/orders/${id}/cancel`, { reason }),
+    cancel: (id) => api.put(`/orders/${id}/cancel`),
     pay: (id, data) => api.post(`/orders/${id}/payment`, data),
     getPaymentMethods: () => api.get('/orders/payment-methods'),
-    confirmReceipt: (id) => api.put(`/orders/${id}/confirm-receipt`),
-    getShipmentTracking: (id) => api.get(`/orders/${id}/tracking`),
-    requestRefund: (id, data) => api.post(`/orders/${id}/refund`, data),
-    getRefundStatus: (id) => api.get(`/orders/${id}/refund`),
-    updateShippingAddress: (id, address) => api.put(`/orders/${id}/shipping-address`, address),
-    getInvoice: (id) => api.get(`/orders/${id}/invoice`),
-    resendOrderConfirmation: (id) => api.post(`/orders/${id}/resend-confirmation`),
-    submitFeedback: (id, data) => api.post(`/orders/${id}/feedback`, data)
+    confirmReceipt: (id) => api.put(`/orders/${id}/confirm-receipt`)
 }
 
 export default api
