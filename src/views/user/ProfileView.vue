@@ -24,7 +24,7 @@
               type="text"
               :disabled="loading"
           />
-          <span v-else>{{ userProfile?.username || '-' }}</span>
+          <span v-else>{{ currentUser?.username || '-' }}</span>
         </div>
         <div class="info-group">
           <label>電子信箱</label>
@@ -34,7 +34,7 @@
               type="email"
               :disabled="loading"
           />
-          <span v-else>{{ userProfile?.email || '-' }}</span>
+          <span v-else>{{ currentUser?.email || '-' }}</span>
         </div>
         <div class="info-group">
           <label>全名</label>
@@ -44,7 +44,7 @@
               type="text"
               :disabled="loading"
           />
-          <span v-else>{{ userProfile?.fullName || '-' }}</span>
+          <span v-else>{{ currentUser?.fullName || '-' }}</span>
         </div>
         <div class="info-group">
           <label>電話號碼</label>
@@ -54,7 +54,7 @@
               type="tel"
               :disabled="loading"
           />
-          <span v-else>{{ userProfile?.phoneNumber || '-' }}</span>
+          <span v-else>{{ currentUser?.phoneNumber || '-' }}</span>
         </div>
         <div class="info-group">
           <label>地址</label>
@@ -63,7 +63,7 @@
               v-model="editedProfile.address"
               :disabled="loading"
           ></textarea>
-          <span v-else>{{ userProfile?.address || '-' }}</span>
+          <span v-else>{{ currentUser?.address || '-' }}</span>
         </div>
       </div>
     </div>
@@ -91,8 +91,8 @@ export default {
     const loading = ref(false)
     const editedProfile = ref({})
 
-    // 從 store 獲取用戶資料
-    const userProfile = computed(() => store.state.user.userInfo)
+    // 直接從 auth store 獲取用戶資料
+    const currentUser = computed(() => store.getters['auth/currentUser'])
     const isAuthenticated = computed(() => store.getters['auth/isAuthenticated'])
 
     const fetchUserProfile = async () => {
@@ -103,7 +103,7 @@ export default {
 
       try {
         loading.value = true
-        await store.dispatch('user/fetchProfile')
+        await store.dispatch('auth/fetchUserInfo')
       } catch (error) {
         console.error('獲取用戶資料失敗:', error)
         store.dispatch('app/setError', {
@@ -116,14 +116,14 @@ export default {
     }
 
     const startEditing = () => {
-      editedProfile.value = { ...userProfile.value }
+      editedProfile.value = { ...currentUser.value }
       isEditing.value = true
     }
 
     const saveProfile = async () => {
       try {
         loading.value = true
-        await store.dispatch('user/updateProfile', editedProfile.value)
+        await store.dispatch('auth/updateUserInfo', editedProfile.value)
         isEditing.value = false
         store.dispatch('app/setSuccess', {
           message: '個人資料更新成功',
@@ -145,14 +145,18 @@ export default {
       editedProfile.value = {}
     }
 
-    onMounted(() => {
-      fetchUserProfile()
+    onMounted(async () => {
+      if (isAuthenticated.value) {
+        await fetchUserProfile()
+      } else {
+        router.push('/login')
+      }
     })
 
     return {
       isEditing,
       loading,
-      userProfile,
+      currentUser,
       editedProfile,
       startEditing,
       saveProfile,
@@ -161,6 +165,7 @@ export default {
   }
 }
 </script>
+
 
 <style scoped>
 .profile-container {
