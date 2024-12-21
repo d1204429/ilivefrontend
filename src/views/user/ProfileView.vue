@@ -5,18 +5,36 @@
       <div class="profile-header">
         <h2 class="title">個人資料</h2>
         <div class="action-buttons">
-          <button v-if="!isEditing" @click="startEditing" class="btn btn-edit">
+          <button
+              v-if="!isEditing"
+              @click="startEditing"
+              class="btn btn-edit"
+              :disabled="loading"
+          >
             編輯
           </button>
           <template v-else>
-            <button @click="saveProfile" class="btn btn-save" :disabled="loading || !isFormValid">
-              儲存
+            <button
+                @click="handleSave"
+                class="btn btn-save"
+                :disabled="loading || !isFormValid"
+            >
+              {{ loading ? '儲存中...' : '儲存' }}
             </button>
-            <button @click="cancelEditing" class="btn btn-cancel" :disabled="loading">
+            <button
+                @click="handleCancel"
+                class="btn btn-cancel"
+                :disabled="loading"
+            >
               取消
             </button>
           </template>
         </div>
+      </div>
+
+      <!-- 錯誤提示 -->
+      <div v-if="globalError" class="error-banner">
+        {{ globalError }}
       </div>
 
       <!-- 個人資料表單 -->
@@ -24,73 +42,88 @@
         <div v-if="loading" class="loading-wrapper">
           <BaseLoading message="載入中..." />
         </div>
-        <form v-else class="profile-form" @submit.prevent="saveProfile">
+        <form v-else class="profile-form" @submit.prevent="handleSave">
           <!-- 使用者名稱 -->
           <div class="form-group">
             <label>使用者名稱</label>
-            <input
-                v-if="isEditing"
-                v-model="editedProfile.username"
-                type="text"
-                class="form-input"
-                :class="{ 'has-error': errors.username }"
-            />
-            <span v-else class="form-text">{{ currentUser?.username || '-' }}</span>
+            <div class="input-wrapper">
+              <input
+                  v-if="isEditing"
+                  v-model.trim="editedProfile.username"
+                  type="text"
+                  class="form-input"
+                  :class="{ 'has-error': errors.username }"
+                  @blur="validateField('username')"
+              />
+              <span v-else class="form-text">{{ currentUser?.username || '-' }}</span>
+            </div>
             <span v-if="errors.username" class="error-text">{{ errors.username }}</span>
           </div>
 
           <!-- 電子信箱 -->
           <div class="form-group">
             <label>電子信箱</label>
-            <input
-                v-if="isEditing"
-                v-model="editedProfile.email"
-                type="email"
-                class="form-input"
-                :class="{ 'has-error': errors.email }"
-            />
-            <span v-else class="form-text">{{ currentUser?.email || '-' }}</span>
+            <div class="input-wrapper">
+              <input
+                  v-if="isEditing"
+                  v-model.trim="editedProfile.email"
+                  type="email"
+                  class="form-input"
+                  :class="{ 'has-error': errors.email }"
+                  @blur="validateField('email')"
+              />
+              <span v-else class="form-text">{{ currentUser?.email || '-' }}</span>
+            </div>
             <span v-if="errors.email" class="error-text">{{ errors.email }}</span>
           </div>
 
           <!-- 全名 -->
           <div class="form-group">
             <label>全名</label>
-            <input
-                v-if="isEditing"
-                v-model="editedProfile.fullName"
-                type="text"
-                class="form-input"
-                :class="{ 'has-error': errors.fullName }"
-            />
-            <span v-else class="form-text">{{ currentUser?.fullName || '-' }}</span>
+            <div class="input-wrapper">
+              <input
+                  v-if="isEditing"
+                  v-model.trim="editedProfile.fullName"
+                  type="text"
+                  class="form-input"
+                  :class="{ 'has-error': errors.fullName }"
+                  @blur="validateField('fullName')"
+              />
+              <span v-else class="form-text">{{ currentUser?.fullName || '-' }}</span>
+            </div>
             <span v-if="errors.fullName" class="error-text">{{ errors.fullName }}</span>
           </div>
 
           <!-- 電話號碼 -->
           <div class="form-group">
             <label>電話號碼</label>
-            <input
-                v-if="isEditing"
-                v-model="editedProfile.phoneNumber"
-                type="tel"
-                class="form-input"
-                :class="{ 'has-error': errors.phoneNumber }"
-            />
-            <span v-else class="form-text">{{ currentUser?.phoneNumber || '-' }}</span>
+            <div class="input-wrapper">
+              <input
+                  v-if="isEditing"
+                  v-model.trim="editedProfile.phoneNumber"
+                  type="tel"
+                  class="form-input"
+                  :class="{ 'has-error': errors.phoneNumber }"
+                  @blur="validateField('phoneNumber')"
+              />
+              <span v-else class="form-text">{{ currentUser?.phoneNumber || '-' }}</span>
+            </div>
             <span v-if="errors.phoneNumber" class="error-text">{{ errors.phoneNumber }}</span>
           </div>
 
           <!-- 地址 -->
           <div class="form-group">
             <label>地址</label>
-            <textarea
-                v-if="isEditing"
-                v-model="editedProfile.address"
-                class="form-textarea"
-                :class="{ 'has-error': errors.address }"
-            ></textarea>
-            <span v-else class="form-text">{{ currentUser?.address || '-' }}</span>
+            <div class="input-wrapper">
+              <textarea
+                  v-if="isEditing"
+                  v-model.trim="editedProfile.address"
+                  class="form-textarea"
+                  :class="{ 'has-error': errors.address }"
+                  @blur="validateField('address')"
+              ></textarea>
+              <span v-else class="form-text">{{ currentUser?.address || '-' }}</span>
+            </div>
             <span v-if="errors.address" class="error-text">{{ errors.address }}</span>
           </div>
         </form>
@@ -100,7 +133,6 @@
 </template>
 
 <script>
-
 import { ref, computed, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
@@ -123,6 +155,7 @@ export default {
     const editedProfile = ref({})
     const errors = ref({})
     const originalProfile = ref({})
+    const globalError = ref('')
     const validationFields = ['username', 'email', 'fullName', 'phoneNumber', 'address']
 
     // Computed Properties
@@ -179,13 +212,9 @@ export default {
 
     // Data Management
     const fetchUserProfile = async () => {
-      if (!isAuthenticated.value) {
-        router.push('/login')
-        return
-      }
-
       try {
         loading.value = true
+        globalError.value = ''
         await store.dispatch('auth/fetchUserInfo')
         originalProfile.value = { ...currentUser.value }
         editedProfile.value = { ...currentUser.value }
@@ -197,6 +226,7 @@ export default {
     }
 
     const handleError = (message) => {
+      globalError.value = message
       store.dispatch('app/setError', {
         message,
         type: 'error',
@@ -205,18 +235,13 @@ export default {
     }
 
     // Form Actions
-    const startEditing = () => {
-      editedProfile.value = { ...currentUser.value }
-      originalProfile.value = { ...currentUser.value }
-      isEditing.value = true
-      errors.value = {}
-    }
-
-    const saveProfile = async () => {
+    const handleSave = async (e) => {
+      e.preventDefault()
       if (!validation.validateForm() || !hasChanges.value) return
 
       try {
         loading.value = true
+        globalError.value = ''
         await store.dispatch('auth/updateUserProfile', editedProfile.value)
         await fetchUserProfile()
         isEditing.value = false
@@ -232,7 +257,7 @@ export default {
       }
     }
 
-    const cancelEditing = () => {
+    const handleCancel = () => {
       if (hasChanges.value) {
         if (confirm('確定要取消編輯？未儲存的變更將會遺失。')) {
           resetForm()
@@ -242,10 +267,31 @@ export default {
       }
     }
 
+    const startEditing = () => {
+      editedProfile.value = { ...currentUser.value }
+      originalProfile.value = { ...currentUser.value }
+      isEditing.value = true
+      errors.value = {}
+      globalError.value = ''
+    }
+
     const resetForm = () => {
       isEditing.value = false
       editedProfile.value = { ...originalProfile.value }
       errors.value = {}
+      globalError.value = ''
+    }
+
+    // Auth Check & Initial Data Load
+    const checkAuthAndLoadData = async () => {
+      if (!isAuthenticated.value) {
+        router.push({
+          name: 'Login',
+          query: { redirect: router.currentRoute.value.fullPath }
+        })
+        return
+      }
+      await fetchUserProfile()
     }
 
     // Watchers
@@ -259,32 +305,28 @@ export default {
     }, { deep: true })
 
     // Lifecycle Hooks
-    onMounted(async () => {
-      if (isAuthenticated.value) {
-        await fetchUserProfile()
-      } else {
-        router.push('/login')
-      }
-    })
+    onMounted(checkAuthAndLoadData)
 
     return {
+      // State
       isEditing,
       loading,
       currentUser,
       editedProfile,
       errors,
+      globalError,
       isFormValid,
       hasChanges,
+      // Methods
       startEditing,
-      saveProfile,
-      cancelEditing,
+      handleSave,
+      handleCancel,
       validateField: validation.validateField
     }
   }
 }
-
-
 </script>
+
 
 <style scoped>
 .profile-container {
@@ -296,76 +338,94 @@ export default {
 .profile-card {
   background: #fff;
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .profile-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
+  padding: 1.25rem;
   border-bottom: 1px solid #eee;
+}
+
+.error-banner {
+  background-color: #fff5f5;
+  color: #e53e3e;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #feb2b2;
 }
 
 .title {
   font-size: 1.25rem;
-  font-weight: 500;
-  color: #333;
+  font-weight: 600;
+  color: #2d3748;
   margin: 0;
 }
 
 .profile-content {
-  padding: 1rem;
+  padding: 1.25rem;
 }
 
 .form-group {
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .form-group label {
   display: block;
   font-size: 0.875rem;
-  color: #666;
+  font-weight: 500;
+  color: #4a5568;
   margin-bottom: 0.5rem;
+}
+
+.input-wrapper {
+  position: relative;
 }
 
 .form-input,
 .form-textarea {
   width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  padding: 0.625rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
   font-size: 0.875rem;
-  transition: border-color 0.2s;
+  transition: all 0.2s ease;
+  background-color: #fff;
 }
 
 .form-input:focus,
 .form-textarea:focus {
   border-color: #4299e1;
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
   outline: none;
 }
 
 .form-textarea {
-  min-height: 80px;
+  min-height: 100px;
   resize: vertical;
 }
 
 .form-text {
   display: block;
-  padding: 0.5rem;
-  background: #f5f5f5;
-  border-radius: 4px;
+  padding: 0.625rem;
+  background: #f7fafc;
+  border-radius: 6px;
   font-size: 0.875rem;
-  color: #333;
+  color: #4a5568;
+  border: 1px solid #edf2f7;
 }
 
 .btn {
-  padding: 0.5rem 1rem;
+  padding: 0.625rem 1.25rem;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: all 0.2s ease;
 }
 
 .btn:disabled {
@@ -373,9 +433,17 @@ export default {
   cursor: not-allowed;
 }
 
+.btn:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
 .btn-edit {
   background: #4299e1;
   color: white;
+}
+
+.btn-edit:not(:disabled):hover {
+  background: #3182ce;
 }
 
 .btn-save {
@@ -383,16 +451,25 @@ export default {
   color: white;
 }
 
+.btn-save:not(:disabled):hover {
+  background: #38a169;
+}
+
 .btn-cancel {
   background: #f56565;
   color: white;
-  margin-left: 0.5rem;
+  margin-left: 0.75rem;
+}
+
+.btn-cancel:not(:disabled):hover {
+  background: #e53e3e;
 }
 
 .loading-wrapper {
   display: flex;
   justify-content: center;
-  padding: 1rem;
+  align-items: center;
+  padding: 2rem;
 }
 
 .has-error {
@@ -400,15 +477,16 @@ export default {
 }
 
 .error-text {
-  color: #f56565;
+  color: #e53e3e;
   font-size: 0.75rem;
-  margin-top: 0.25rem;
+  margin-top: 0.375rem;
+  display: block;
 }
 
 /* RWD */
 @media (max-width: 768px) {
   .profile-container {
-    padding: 0.5rem;
+    padding: 0.75rem;
   }
 
   .profile-header {
@@ -421,26 +499,30 @@ export default {
     width: 100%;
     display: flex;
     justify-content: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
   }
 
   .btn {
     flex: 1;
-    max-width: 120px;
+    max-width: 130px;
+  }
+
+  .btn-cancel {
+    margin-left: 0;
   }
 }
 
 @media (max-width: 480px) {
   .profile-header {
-    padding: 0.75rem;
+    padding: 1rem;
   }
 
   .profile-content {
-    padding: 0.75rem;
+    padding: 1rem;
   }
 
   .btn {
-    padding: 0.375rem 0.75rem;
+    padding: 0.5rem 1rem;
     font-size: 0.813rem;
   }
 }

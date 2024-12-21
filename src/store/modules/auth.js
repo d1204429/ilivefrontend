@@ -1,13 +1,17 @@
 import { authApi } from '@/services/api'
 
+const TOKEN_KEY = import.meta.env.VITE_JWT_TOKEN_KEY
+const REFRESH_KEY = import.meta.env.VITE_JWT_REFRESH_KEY
+
 const state = {
     user: JSON.parse(localStorage.getItem('user')) || null,
-    token: localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY) || null,
-    refreshToken: localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY) || null,
+    token: localStorage.getItem(TOKEN_KEY) || null,
+    refreshToken: localStorage.getItem(REFRESH_KEY) || null,
     loading: false,
     error: null,
     authStatus: null,
-    successMessage: null
+    successMessage: null,
+    lastLoginTime: localStorage.getItem('lastLoginTime') || null
 }
 
 const mutations = {
@@ -24,8 +28,12 @@ const mutations = {
         state.user = user
         if (user) {
             localStorage.setItem('user', JSON.stringify(user))
+            const loginTime = new Date().toISOString()
+            state.lastLoginTime = loginTime
+            localStorage.setItem('lastLoginTime', loginTime)
         } else {
             localStorage.removeItem('user')
+            localStorage.removeItem('lastLoginTime')
         }
     },
     SET_AUTH_STATUS(state, status) {
@@ -35,23 +43,27 @@ const mutations = {
         state.token = accessToken
         state.refreshToken = refreshToken
         if (accessToken) {
-            localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, accessToken)
-            localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, refreshToken)
+            localStorage.setItem(TOKEN_KEY, accessToken)
+            localStorage.setItem(REFRESH_KEY, refreshToken)
         } else {
-            localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
-            localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+            localStorage.removeItem(TOKEN_KEY)
+            localStorage.removeItem(REFRESH_KEY)
         }
     },
     CLEAR_AUTH(state) {
-        state.user = null
-        state.token = null
-        state.refreshToken = null
-        state.error = null
-        state.authStatus = null
-        state.successMessage = null
+        Object.assign(state, {
+            user: null,
+            token: null,
+            refreshToken: null,
+            error: null,
+            authStatus: null,
+            successMessage: null,
+            lastLoginTime: null
+        })
         localStorage.removeItem('user')
-        localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
-        localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem(REFRESH_KEY)
+        localStorage.removeItem('lastLoginTime')
     },
     UPDATE_USER(state, userData) {
         state.user = { ...state.user, ...userData }
@@ -63,8 +75,14 @@ const actions = {
     async login({ commit, dispatch }, credentials) {
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
+
         try {
             const response = await authApi.login(credentials)
+
+            if (!response.accessToken || !response.user) {
+                throw new Error('Invalid login response')
+            }
+
             commit('SET_TOKENS', {
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken
@@ -72,10 +90,12 @@ const actions = {
             commit('SET_USER', response.user)
             commit('SET_AUTH_STATUS', 'authenticated')
             commit('SET_SUCCESS_MESSAGE', '登入成功')
+
             await dispatch('fetchUserProfile')
             return response
         } catch (error) {
-            commit('SET_ERROR', error.response?.data?.message || '登入失敗')
+            const errorMessage = error.response?.data?.message || '登入失敗，請檢查帳號密碼'
+            commit('SET_ERROR', errorMessage)
             throw error
         } finally {
             commit('SET_LOADING', false)
@@ -85,12 +105,14 @@ const actions = {
     async register({ commit }, userData) {
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
+
         try {
             const response = await authApi.register(userData)
             commit('SET_SUCCESS_MESSAGE', '註冊成功，請登入')
             return response
         } catch (error) {
-            commit('SET_ERROR', error.response?.data?.message || '註冊失敗')
+            const errorMessage = error.response?.data?.message || '註冊失敗，請稍後再試'
+            commit('SET_ERROR', errorMessage)
             throw error
         } finally {
             commit('SET_LOADING', false)
@@ -99,7 +121,9 @@ const actions = {
 
     async logout({ commit, dispatch }) {
         try {
-            await authApi.logout()
+            if (state.token) {
+                await authApi.logout()
+            }
             await dispatch('clearUserData')
         } catch (error) {
             console.error('登出錯誤:', error)
@@ -109,8 +133,17 @@ const actions = {
     },
 
     async refreshToken({ commit, state }) {
+        if (!state.refreshToken) {
+            throw new Error('No refresh token available')
+        }
+
         try {
             const response = await authApi.refreshToken(state.refreshToken)
+
+            if (!response.accessToken) {
+                throw new Error('Invalid refresh token response')
+            }
+
             commit('SET_TOKENS', {
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken
@@ -123,13 +156,13 @@ const actions = {
     },
 
     async checkAuth({ commit, dispatch }) {
-        const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+        const token = localStorage.getItem(TOKEN_KEY)
         const user = JSON.parse(localStorage.getItem('user'))
 
         if (token && user) {
             commit('SET_TOKENS', {
                 accessToken: token,
-                refreshToken: localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+                refreshToken: localStorage.getItem(REFRESH_KEY)
             })
             commit('SET_USER', user)
             commit('SET_AUTH_STATUS', 'authenticated')
@@ -140,36 +173,46 @@ const actions = {
     async fetchUserProfile({ commit }) {
         try {
             const response = await authApi.getUserProfile()
-            commit('SET_USER', response.data)
+            if (response.data) {
+                commit('SET_USER', response.data)
+            }
         } catch (error) {
             console.error('獲取用戶資料失敗:', error)
+            if (error.response?.status === 401) {
+                commit('CLEAR_AUTH')
+            }
         }
     },
 
-    async updateUserProfile({ commit, dispatch }, userData) {
+    async updateUserProfile({ commit }, userData) {
         commit('SET_LOADING', true)
+
         try {
             const response = await authApi.updateUserProfile(userData)
             commit('UPDATE_USER', response.data)
             commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
             return response.data
         } catch (error) {
-            const errorMsg = error.response?.data?.message || '更新個人資料失敗'
-            commit('SET_ERROR', errorMsg)
+            const errorMessage = error.response?.data?.message || '更新個人資料失敗，請稍後再試'
+            commit('SET_ERROR', errorMessage)
             throw error
         } finally {
             commit('SET_LOADING', false)
         }
-    }
-    ,
+    },
 
     async changePassword({ commit }, passwordData) {
+        commit('SET_LOADING', true)
+
         try {
             await authApi.changePassword(passwordData)
             commit('SET_SUCCESS_MESSAGE', '密碼更改成功')
         } catch (error) {
-            commit('SET_ERROR', error.response?.data?.message || '更改密碼失敗')
+            const errorMessage = error.response?.data?.message || '更改密碼失敗，請稍後再試'
+            commit('SET_ERROR', errorMessage)
             throw error
+        } finally {
+            commit('SET_LOADING', false)
         }
     },
 
@@ -201,7 +244,8 @@ const getters = {
     error: state => state.error,
     successMessage: state => state.successMessage,
     authStatus: state => state.authStatus,
-    token: state => state.token
+    token: state => state.token,
+    lastLoginTime: state => state.lastLoginTime
 }
 
 export default {
