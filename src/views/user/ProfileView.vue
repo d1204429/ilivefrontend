@@ -40,28 +40,6 @@
         </div>
       </div>
     </div>
-
-    <div class="orders-section">
-      <h3>訂單記錄</h3>
-      <div class="orders-list">
-        <div v-if="orders.length === 0" class="no-orders">
-          尚無訂單記錄
-        </div>
-        <div v-else v-for="order in orders" :key="order.orderId" class="order-item">
-          <div class="order-header">
-            <span>訂單編號: {{ order.orderId }}</span>
-            <span>訂購日期: {{ formatDate(order.createdAt) }}</span>
-          </div>
-          <div class="order-details">
-            <span>總金額: ${{ order.totalAmount }}</span>
-            <span>狀態: {{ getOrderStatus(order.status) }}</span>
-          </div>
-          <button @click="viewOrderDetail(order.orderId)" class="detail-btn">
-            查看詳情
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -80,13 +58,11 @@ export default {
         phoneNumber: '',
         address: ''
       },
-      editedProfile: {},
-      orders: []
+      editedProfile: {}
     };
   },
   created() {
     this.fetchUserProfile();
-    this.fetchOrders();
   },
   methods: {
     async fetchUserProfile() {
@@ -101,20 +77,8 @@ export default {
         console.error('獲取用戶資料失敗:', error);
       }
     },
-    async fetchOrders() {
-      try {
-        const response = await axios.get('/api/orders/user', {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('accessToken')}`
-          }
-        });
-        this.orders = response.data;
-      } catch (error) {
-        console.error('獲取訂單記錄失敗:', error);
-      }
-    },
     startEditing() {
-      this.editedProfile = { ...this.userProfile };
+      this.editedProfile = {...this.userProfile};
       this.isEditing = true;
     },
     async saveProfile() {
@@ -135,21 +99,6 @@ export default {
     cancelEditing() {
       this.isEditing = false;
       this.editedProfile = {};
-    },
-    formatDate(date) {
-      return new Date(date).toLocaleDateString('zh-TW');
-    },
-    getOrderStatus(status) {
-      const statusMap = {
-        'PENDING': '處理中',
-        'SHIPPED': '已出貨',
-        'DELIVERED': '已送達',
-        'CANCELLED': '已取消'
-      };
-      return statusMap[status] || status;
-    },
-    viewOrderDetail(orderId) {
-      this.$router.push(`/order/${orderId}`);
     }
   }
 };
@@ -173,7 +122,7 @@ export default {
   background: #fff;
   padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .info-group {
@@ -202,8 +151,7 @@ export default {
 
 .edit-btn,
 .save-btn,
-.cancel-btn,
-.detail-btn {
+.cancel-btn {
   padding: 8px 16px;
   border-radius: 4px;
   border: none;
@@ -223,40 +171,5 @@ export default {
 .cancel-btn {
   background: #f44336;
   color: white;
-}
-
-.orders-section {
-  margin-top: 30px;
-}
-
-.order-item {
-  background: #fff;
-  padding: 15px;
-  margin-bottom: 15px;
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-.order-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.order-details {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.detail-btn {
-  background: #607D8B;
-  color: white;
-}
-
-.no-orders {
-  text-align: center;
-  padding: 20px;
-  color: #666;
 }
 </style>
