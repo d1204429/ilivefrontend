@@ -184,9 +184,9 @@ const actions = {
 
     async fetchUserProfile({ commit }) {
         try {
-            const response = await authApi.getProfile()
-            if (response?.data) {
-                commit('SET_USER', response.data)
+            const response = await authApi.getUserProfile()
+            if (response) {
+                commit('SET_USER', response)
             }
         } catch (error) {
             console.error('獲取用戶資料失敗:', error)
@@ -201,14 +201,24 @@ const actions = {
         commit('SET_LOADING', true)
 
         try {
-            const response = await authApi.updateProfile(userData)
-            commit('UPDATE_USER', response.data)
+            const response = await authApi.updateUserProfile(userData)
+            commit('UPDATE_USER', response)
             commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
-            return response.data
+            return response
         } catch (error) {
             handleError(error)
             commit('SET_ERROR', error.response?.data?.message || '更新個人資料失敗')
             throw error
+        } finally {
+            commit('SET_LOADING', false)
+        }
+    },async syncUserProfile({ commit, dispatch }) {
+        try {
+            commit('SET_LOADING', true)
+            await dispatch('fetchUserProfile')
+            commit('SET_SUCCESS_MESSAGE', '資料同步成功')
+        } catch (error) {
+            handleError(error)
         } finally {
             commit('SET_LOADING', false)
         }
