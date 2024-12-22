@@ -240,3 +240,158 @@ export const API_RESPONSE_CODE = {
     UNAUTHORIZED: import.meta.env.VITE_UNAUTHORIZED_CODE,
     FORBIDDEN: import.meta.env.VITE_FORBIDDEN_CODE
 }
+// 付款方式
+export const PAYMENT_METHODS = {
+    CREDIT_CARD: {
+        id: 'credit_card',
+        name: '信用卡',
+        icon: 'fa-credit-card',
+        description: '支援VISA、Master、JCB',
+        enabled: true,
+        minAmount: 0,
+        maxAmount: 1000000
+    },
+    ATM: {
+        id: 'atm',
+        name: 'ATM轉帳',
+        icon: 'fa-university',
+        description: '請在1小時內完成繳費',
+        enabled: true,
+        minAmount: 0,
+        maxAmount: 30000
+    },
+    TRANSFER: {
+        id: 'transfer',
+        name: '銀行轉帳',
+        icon: 'fa-money-bill',
+        description: '請在1小時內完成繳費',
+        enabled: true,
+        minAmount: 0,
+        maxAmount: 50000
+    },
+    LINE_PAY: {
+        id: 'line_pay',
+        name: 'LINE Pay',
+        icon: 'fa-line',
+        description: '使用LINE Pay支付',
+        enabled: true,
+        minAmount: 0,
+        maxAmount: 100000
+    }
+}
+
+// 運送方式
+export const SHIPPING_METHODS = {
+    HOME_DELIVERY: {
+        id: 'home',
+        name: '宅配到府',
+        description: '2-3 個工作天到貨',
+        price: parseInt(import.meta.env.VITE_HOME_DELIVERY_FEE) || 60,
+        icon: 'fa-truck',
+        minAmount: 0,
+        freeShippingAmount: parseInt(import.meta.env.VITE_FREE_SHIPPING_AMOUNT) || 1000,
+        enabled: true
+    },
+    STORE_PICKUP: {
+        id: 'store',
+        name: '超商取貨',
+        description: '2-3 個工作天到店',
+        price: parseInt(import.meta.env.VITE_STORE_PICKUP_FEE) || 60,
+        icon: 'fa-store',
+        minAmount: 0,
+        freeShippingAmount: parseInt(import.meta.env.VITE_FREE_SHIPPING_AMOUNT) || 1000,
+        enabled: true
+    }
+}
+
+// 驗證規則
+export const VALIDATION_RULES = {
+    USERNAME: {
+        required: true,
+        min: parseInt(import.meta.env.VITE_USERNAME_MIN_LENGTH) || 3,
+        max: parseInt(import.meta.env.VITE_USERNAME_MAX_LENGTH) || 20,
+        pattern: /^[a-zA-Z0-9_-]+$/,
+        message: '使用者名稱只能包含英文、數字、底線'
+    },
+    PASSWORD: {
+        required: true,
+        min: parseInt(import.meta.env.VITE_PASSWORD_MIN_LENGTH) || 8,
+        max: parseInt(import.meta.env.VITE_PASSWORD_MAX_LENGTH) || 20,
+        pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/,
+        message: '密碼必須包含大小寫字母、數字和特殊字符'
+    },
+    EMAIL: {
+        required: true,
+        pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+        message: '請輸入有效的電子郵件'
+    },
+    PHONE: {
+        required: true,
+        pattern: /^09\d{8}$/,
+        message: '請輸入有效的手機號碼'
+    },
+    ADDRESS: {
+        required: true,
+        min: 5,
+        max: 100,
+        message: '地址長度必須在5-100字之間'
+    }
+}
+
+// 本地存儲鍵名
+export const STORAGE_KEYS = {
+    ACCESS_TOKEN: import.meta.env.VITE_JWT_TOKEN_KEY || 'access_token',
+    REFRESH_TOKEN: import.meta.env.VITE_JWT_REFRESH_KEY || 'refresh_token',
+    USER: import.meta.env.VITE_USER_STORAGE_KEY || 'user',
+    CART: import.meta.env.VITE_CART_STORAGE_KEY || 'cart',
+    THEME: `${import.meta.env.VITE_STORAGE_PREFIX}theme`,
+    LANGUAGE: `${import.meta.env.VITE_STORAGE_PREFIX}language`,
+    LAST_LOGIN: `${import.meta.env.VITE_STORAGE_PREFIX}last_login`,
+    REMEMBER_ME: `${import.meta.env.VITE_STORAGE_PREFIX}remember_me`
+}
+
+// 錯誤訊息
+export const ERROR_MESSAGES = {
+    NETWORK_ERROR: '網路連線錯誤，請稍後再試',
+    AUTH_FAILED: '認證失敗，請重新登入',
+    INVALID_INPUT: '輸入資料不正確',
+    SERVER_ERROR: '伺服器錯誤，請稍後再試',
+    TOKEN_EXPIRED: '登入已過期，請重新登入',
+    TOKEN_INVALID: '無效的認證令牌',
+    PERMISSION_DENIED: '無權限執行此操作',
+    INVALID_OPERATION: '無效的操作',
+    RESOURCE_NOT_FOUND: '找不到請求的資源',
+    RATE_LIMIT_EXCEEDED: '請求次數過多，請稍後再試',
+    VALIDATION_ERROR: '資料驗證失敗',
+    SESSION_EXPIRED: '工作階段已過期',
+    MAINTENANCE: '系統維護中，請稍後再試'
+}
+
+// HTTP 狀態碼
+export const HTTP_STATUS = {
+    OK: 200,
+    CREATED: 201,
+    ACCEPTED: 202,
+    NO_CONTENT: 204,
+    BAD_REQUEST: 400,
+    UNAUTHORIZED: 401,
+    FORBIDDEN: 403,
+    NOT_FOUND: 404,
+    METHOD_NOT_ALLOWED: 405,
+    TIMEOUT: 408,
+    CONFLICT: 409,
+    UNPROCESSABLE_ENTITY: 422,
+    TOO_MANY_REQUESTS: 429,
+    INTERNAL_SERVER_ERROR: 500,
+    SERVICE_UNAVAILABLE: 503
+}
+
+// API 響應碼
+export const API_RESPONSE_CODE = {
+    SUCCESS: import.meta.env.VITE_SUCCESS_CODE || 0,
+    ERROR: import.meta.env.VITE_ERROR_CODE || -1,
+    UNAUTHORIZED: import.meta.env.VITE_UNAUTHORIZED_CODE || 401,
+    FORBIDDEN: import.meta.env.VITE_FORBIDDEN_CODE || 403,
+    VALIDATION_ERROR: import.meta.env.VITE_VALIDATION_ERROR_CODE || 422,
+    SYSTEM_ERROR: import.meta.env.VITE_SYSTEM_ERROR_CODE || 500
+}
