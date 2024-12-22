@@ -1,6 +1,7 @@
 <template>
   <div class="profile-container">
     <div class="profile-card">
+      <!-- Header Section -->
       <div class="profile-header">
         <h2 class="title">個人資料</h2>
         <div class="action-buttons">
@@ -8,7 +9,7 @@
               v-if="!isEditing"
               @click="startEditing"
               class="btn btn-edit"
-              :disabled="loading"
+              :disabled="loading || !isAuthenticated"
           >
             編輯
           </button>
@@ -31,15 +32,17 @@
         </div>
       </div>
 
+      <!-- Error Display -->
       <div v-if="globalError" class="error-banner">
         {{ globalError }}
       </div>
 
+      <!-- Main Content -->
       <div class="profile-content">
         <div v-if="loading" class="loading-wrapper">
           <BaseLoading message="載入中..." />
         </div>
-        <form v-else class="profile-form" @submit.prevent="handleSave">
+        <form v-else-if="currentUser" class="profile-form" @submit.prevent="handleSave">
           <div class="form-group" v-for="field in formFields" :key="field.name">
             <label>{{ field.label }}</label>
             <div class="input-wrapper">
@@ -51,6 +54,7 @@
                     class="form-input"
                     :class="{ 'has-error': errors[field.name] }"
                     @blur="validateField(field.name)"
+                    :disabled="loading"
                 />
                 <textarea
                     v-else
@@ -58,10 +62,11 @@
                     class="form-textarea"
                     :class="{ 'has-error': errors[field.name] }"
                     @blur="validateField(field.name)"
+                    :disabled="loading"
                 ></textarea>
               </template>
               <span v-else class="form-text">
-                {{ currentUser?.[field.name] || '-' }}
+                {{ currentUser[field.name] || '-' }}
               </span>
             </div>
             <span v-if="errors[field.name]" class="error-text">
@@ -69,6 +74,9 @@
             </span>
           </div>
         </form>
+        <div v-else class="error-message">
+          無法載入用戶資料
+        </div>
       </div>
     </div>
   </div>
@@ -105,6 +113,8 @@ export default {
     const errors = ref({})
     const originalProfile = ref({})
     const globalError = ref('')
+    const retryCount = ref(0)
+    const MAX_RETRIES = 3
 
     // Computed Properties
     const currentUser = computed(() => store.getters['auth/currentUser'])
@@ -155,6 +165,37 @@ export default {
       }
     }
 
+    // Error Handling
+    const handleAuthError = async (error) => {
+      if (error.response?.status === 401) {
+        try {
+          await store.dispatch('auth/refreshToken')
+          return true
+        } catch (refreshError) {
+          await store.dispatch('auth/logout')
+          router.push({
+            name: 'login',
+            query: {
+              redirect: router.currentRoute.value.fullPath,
+              error: 'session_expired'
+            }
+          })
+          return false
+        }
+      }
+      return false
+    }
+
+    const handleError = async (error) => {
+      const message = error.response?.data?.message || '操作失敗，請稍後再試'
+      globalError.value = message
+      await store.dispatch('app/setError', {
+        message,
+        type: 'error',
+        duration: 3000
+      })
+    }
+
     // Data Management
     const fetchUserProfile = async () => {
       try {
@@ -163,20 +204,21 @@ export default {
         await store.dispatch('auth/getProfile')
         originalProfile.value = { ...currentUser.value }
         editedProfile.value = { ...currentUser.value }
+        retryCount.value = 0
       } catch (error) {
-        handleError('獲取用戶資料失敗，請稍後再試')
+        if (await handleAuthError(error)) {
+          if (retryCount.value < MAX_RETRIES) {
+            retryCount.value++
+            await fetchUserProfile()
+          } else {
+            handleError(error)
+          }
+        } else {
+          handleError(error)
+        }
       } finally {
         loading.value = false
       }
-    }
-
-    const handleError = (message) => {
-      globalError.value = message
-      store.dispatch('app/setError', {
-        message,
-        type: 'error',
-        duration: 3000
-      }).catch(console.error)
     }
 
     // Form Actions
@@ -195,7 +237,9 @@ export default {
           duration: 2000
         })
       } catch (error) {
-        handleError(error.response?.data?.message || '更新個人資料失敗，請稍後再試')
+        if (!(await handleAuthError(error))) {
+          handleError(error)
+        }
       } finally {
         loading.value = false
       }
@@ -245,6 +289,7 @@ export default {
       }
     }, { deep: true })
 
+    // Lifecycle Hooks
     onMounted(checkAuthAndLoadData)
 
     return {
@@ -257,6 +302,7 @@ export default {
       isFormValid,
       hasChanges,
       formFields,
+      isAuthenticated,
       startEditing,
       handleSave,
       handleCancel,
@@ -265,6 +311,7 @@ export default {
   }
 }
 </script>
+
 
 
 <style scoped>

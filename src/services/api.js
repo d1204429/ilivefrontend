@@ -1,8 +1,14 @@
-// src/utils/api.js
 import axios from 'axios'
 import router from '@/router'
 import store from '@/store'
 import { handleError } from '@/utils/errorHandler'
+
+// Token 相關常量
+const TOKEN_CONSTANTS = {
+    ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
+    REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
+    TOKEN_PREFIX: 'Bearer'
+}
 
 // API 配置常量
 const API_CONFIG = {
@@ -63,19 +69,48 @@ export const API_PATHS = {
 // 創建 axios 實例
 const api = axios.create(API_CONFIG)
 
+// 請求隊列和刷新標記
+let isRefreshing = false
+let failedQueue = []
+
 // 請求重試配置
 const retryConfig = {
     retries: 2,
     retryDelay: 1000,
     shouldRetry: (error) => {
         return (
-            axios.isCancel(error) ||
             error.code === 'ECONNABORTED' ||
             error.response?.status === 408 ||
             error.response?.status === 429 ||
             error.response?.status >= 500
         )
     }
+}
+
+// Token 管理器
+const tokenManager = {
+    getAccessToken: () => localStorage.getItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY),
+    getRefreshToken: () => localStorage.getItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY),
+    setTokens: (accessToken, refreshToken) => {
+        localStorage.setItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY, accessToken)
+        localStorage.setItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY, refreshToken)
+    },
+    removeTokens: () => {
+        localStorage.removeItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY)
+        localStorage.removeItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY)
+    }
+}
+
+// 處理請求隊列
+const processQueue = (error, token = null) => {
+    failedQueue.forEach(prom => {
+        if (error) {
+            prom.reject(error)
+        } else {
+            prom.resolve(token)
+        }
+    })
+    failedQueue = []
 }
 
 // 請求攔截器
@@ -85,18 +120,16 @@ api.interceptors.request.use(
             store.dispatch('app/setLoading', true)
         }
 
-        const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
-        if (token) {
-            config.headers['Authorization'] = `Bearer ${token}`
+        const token = tokenManager.getAccessToken()
+        if (token && !config.skipAuth) {
+            config.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
         }
 
         if (config.method?.toLowerCase() === 'get' && !config.noCache) {
-            config.params = {
-                ...config.params,
-                _t: Date.now()
-            }
+            config.params = { ...config.params, _t: Date.now() }
         }
 
+        config.metadata = { startTime: Date.now() }
         config.requestId = `${Date.now()}-${Math.random().toString(36).substring(7)}`
 
         const source = axios.CancelToken.source()
@@ -124,51 +157,70 @@ api.interceptors.response.use(
             store.dispatch('app/setLoading', false)
         }
 
-        if (axios.isCancel(error)) {
-            return Promise.reject(new Error('請求已取消'))
-        }
-
         const originalRequest = error.config
 
+        // 處理 401 錯誤和 token 刷新
         if (error.response?.status === 401 && !originalRequest._retry) {
-            return handleTokenRefresh(error)
+            if (isRefreshing) {
+                try {
+                    const token = await new Promise((resolve, reject) => {
+                        failedQueue.push({ resolve, reject })
+                    })
+                    originalRequest.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
+                    return api(originalRequest)
+                } catch (err) {
+                    return Promise.reject(err)
+                }
+            }
+
+            originalRequest._retry = true
+            isRefreshing = true
+
+            try {
+                const refreshToken = tokenManager.getRefreshToken()
+                if (!refreshToken) throw new Error('No refresh token available')
+
+                const response = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
+                    { refreshToken },
+                    { skipAuth: true }
+                )
+
+                if (response?.accessToken && response?.refreshToken) {
+                    tokenManager.setTokens(response.accessToken, response.refreshToken)
+                    api.defaults.headers.common.Authorization =
+                        `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${response.accessToken}`
+
+                    processQueue(null, response.accessToken)
+                    originalRequest.headers.Authorization =
+                        `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${response.accessToken}`
+                    return api(originalRequest)
+                } else {
+                    throw new Error('Invalid token refresh response')
+                }
+            } catch (refreshError) {
+                processQueue(refreshError, null)
+                await handleLogout()
+                return Promise.reject(refreshError)
+            } finally {
+                isRefreshing = false
+            }
         }
 
-        if (retryConfig.shouldRetry(error) && (!originalRequest._retryCount || originalRequest._retryCount < retryConfig.retries)) {
-            originalRequest._retryCount = (originalRequest._retryCount || 0) + 1
-            return new Promise(resolve => {
-                setTimeout(() => resolve(api(originalRequest)), retryConfig.retryDelay * originalRequest._retryCount)
-            })
+        // 處理請求重試
+        if (shouldRetryRequest(error)) {
+            return handleRequestRetry(error)
         }
 
-        handleError(error)
-        return Promise.reject(error)
+        // 處理其他錯誤
+        const errorInfo = await handleError(error)
+        return Promise.reject(errorInfo)
     }
 )
 
-async function handleTokenRefresh(error) {
-    const originalRequest = error.config
-    originalRequest._retry = true
-
+// 處理登出
+const handleLogout = async () => {
     try {
-        const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
-        if (!refreshToken) {
-            throw new Error('無效的重新整理令牌')
-        }
-
-        const response = await api.post(API_PATHS.AUTH.REFRESH_TOKEN, { refreshToken })
-        if (!response?.accessToken) {
-            throw new Error('重新整理令牌響應無效')
-        }
-
-        localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.accessToken)
-        localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, response.refreshToken)
-
-        originalRequest.headers['Authorization'] = `Bearer ${response.accessToken}`
-        return api(originalRequest)
-    } catch (refreshError) {
-        localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
-        localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+        tokenManager.removeTokens()
         await store.dispatch('auth/logout')
         router.push({
             path: '/login',
@@ -177,10 +229,27 @@ async function handleTokenRefresh(error) {
                 error: 'session_expired'
             }
         })
-        return Promise.reject(refreshError)
+    } catch (error) {
+        console.error('Logout failed:', error)
     }
 }
 
+// 判斷是否應該重試請求
+const shouldRetryRequest = (error) => {
+    const { retries = 0 } = error.config
+    return retries < retryConfig.retries && retryConfig.shouldRetry(error)
+}
+
+// 處理請求重試
+const handleRequestRetry = (error) => {
+    const config = error.config
+    config.retries = (config.retries || 0) + 1
+    const delayTime = config.retries * retryConfig.retryDelay
+
+    return new Promise(resolve => {
+        setTimeout(() => resolve(api(config)), delayTime)
+    })
+}
 // API 服務
 export const authApi = {
     login: (credentials) => api.post(API_PATHS.AUTH.LOGIN, credentials),
@@ -244,5 +313,6 @@ export const orderApi = {
     confirmReceipt: (id) => api.put(`${API_PATHS.ORDERS.BASE}/${id}/confirm-receipt`),
     getShipmentTracking: (id) => api.get(`${API_PATHS.ORDERS.BASE}/${id}${API_PATHS.ORDERS.TRACKING}`)
 }
+
 
 export default api
