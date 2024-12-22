@@ -2,7 +2,7 @@ import { authApi } from '@/services/api'
 import { handleError } from '@/utils/errorHandler'
 import router from '@/router'
 
-// 常量配置
+// Token相關常量
 const TOKEN_CONFIG = {
     ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
@@ -11,6 +11,7 @@ const TOKEN_CONFIG = {
     SESSION_TIMEOUT: parseInt(import.meta.env.VITE_SESSION_TIMEOUT) || 60 * 60 * 1000
 }
 
+// 安全配置
 const SECURITY_CONFIG = {
     MAX_LOGIN_ATTEMPTS: parseInt(import.meta.env.VITE_MAX_LOGIN_ATTEMPTS) || 5,
     LOCK_DURATION: parseInt(import.meta.env.VITE_LOCK_DURATION) || 30 * 60 * 1000,
@@ -33,7 +34,8 @@ const INITIAL_STATE = {
     sessionTimeout: null,
     tokenRefreshTimeout: null,
     isRefreshing: false,
-    refreshSubscribers: []
+    refreshSubscribers: [],
+    pendingRequests: []
 }
 
 // State
@@ -96,6 +98,12 @@ const mutations = {
     ADD_REFRESH_SUBSCRIBER(state, callback) {
         state.refreshSubscribers.push(callback)
     },
+    ADD_PENDING_REQUEST(state, request) {
+        state.pendingRequests.push(request)
+    },
+    CLEAR_PENDING_REQUESTS(state) {
+        state.pendingRequests = []
+    },
     CLEAR_REFRESH_SUBSCRIBERS(state) {
         state.refreshSubscribers = []
     },
@@ -147,7 +155,6 @@ const mutations = {
         localStorage.removeItem('lockUntil')
     }
 }
-
 // Actions
 const actions = {
     async login({ commit, dispatch }, credentials) {
@@ -314,22 +321,38 @@ const actions = {
         }
     }
 }
-
 // Getters
 const getters = {
     isAuthenticated: state => !!state.token && !!state.user,
     currentUser: state => state.user,
+    accessToken: state => state.token,
+    refreshToken: state => state.refreshToken,
     isLoading: state => state.loading,
     error: state => state.error,
     successMessage: state => state.successMessage,
     authStatus: state => state.authStatus,
-    token: state => state.token,
     lastLoginTime: state => state.lastLoginTime,
     hasRefreshToken: state => !!state.refreshToken,
     isAccountLocked: state => state.isLocked,
     remainingLockTime: state => {
         if (!state.lockUntil) return 0
         return Math.max(0, new Date(state.lockUntil) - new Date())
+    },
+    isRefreshing: state => state.isRefreshing,
+    pendingRequests: state => state.pendingRequests,
+    userPermissions: state => state.user?.permissions || [],
+    userRoles: state => state.user?.roles || [],
+    userPreferences: state => state.user?.preferences || {},
+    isSessionValid: state => {
+        if (!state.lastLoginTime) return false
+        const sessionTimeout = TOKEN_CONFIG.SESSION_TIMEOUT
+        const lastLogin = new Date(state.lastLoginTime).getTime()
+        return (Date.now() - lastLogin) < sessionTimeout
+    },
+    isTokenExpired: state => {
+        if (!state.token) return true
+        const tokenData = JSON.parse(atob(state.token.split('.')[1]))
+        return tokenData.exp * 1000 < Date.now()
     }
 }
 

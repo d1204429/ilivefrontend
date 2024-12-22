@@ -16,7 +16,8 @@ export const ErrorTypes = {
     API: 'API_ERROR',
     TOKEN_EXPIRED: 'TOKEN_EXPIRED',
     TOKEN_INVALID: 'TOKEN_INVALID',
-    TOKEN_REFRESH_FAILED: 'TOKEN_REFRESH_FAILED'
+    TOKEN_REFRESH_FAILED: 'TOKEN_REFRESH_FAILED',
+    REQUEST_CANCELLED: 'REQUEST_CANCELLED'
 }
 
 // 錯誤狀態碼映射
@@ -27,7 +28,8 @@ const ERROR_STATUS_MAP = {
     },
     401: {
         type: ErrorTypes.AUTH,
-        message: '身份驗證已過期，請重新登入'
+        message: '身份驗證已過期，請重新登入',
+        retryable: true
     },
     403: {
         type: ErrorTypes.PERMISSION,
@@ -45,26 +47,31 @@ const ERROR_STATUS_MAP = {
     },
     429: {
         type: ErrorTypes.RATE_LIMIT,
-        message: '請求過於頻繁，請稍後再試'
+        message: '請求過於頻繁，請稍後再試',
+        retryable: true
     },
     500: {
         type: ErrorTypes.SERVER,
         message: '伺服器內部錯誤，請稍後再試',
-        redirect: '/500'
+        redirect: '/500',
+        retryable: true
     },
     502: {
         type: ErrorTypes.NETWORK,
         message: '網路閘道錯誤，請稍後再試',
-        redirect: '/500'
+        redirect: '/500',
+        retryable: true
     },
     503: {
         type: ErrorTypes.SERVER,
         message: '服務暫時不可用，請稍後再試',
-        redirect: '/500'
+        redirect: '/500',
+        retryable: true
     },
     504: {
         type: ErrorTypes.TIMEOUT,
-        message: '網關超時，請稍後再試'
+        message: '網關超時，請稍後再試',
+        retryable: true
     }
 }
 
@@ -77,59 +84,55 @@ export const handleError = async (error) => {
         details: null,
         shouldRedirect: false,
         redirectPath: '',
-        retryable: false
+        retryable: false,
+        timestamp: new Date().toISOString(),
+        requestId: error.config?.requestId
     }
 
     try {
-        // 處理響應錯誤
         if (error.response) {
             errorInfo = handleResponseError(error)
-        }
-        // 處理網絡錯誤
-        else if (error.request) {
+        } else if (error.request) {
             errorInfo = handleNetworkError(error)
-        }
-        // 處理業務邏輯錯誤
-        else if (error instanceof AppError) {
+        } else if (error instanceof AppError) {
             errorInfo = handleAppError(error)
-        }
-        // 處理其他錯誤
-        else {
+        } else {
             errorInfo = handleUnknownError(error)
         }
 
-        // 處理認證錯誤
         if (errorInfo.type === ErrorTypes.AUTH && !error.config?.skipAuthError) {
-            await handleAuthError(error)
+            const handled = await handleAuthError(error)
+            if (handled) {
+                return null
+            }
         }
 
-        // 記錄錯誤
-        const errorLog = await logError({
-            ...errorInfo,
-            error,
-            url: window.location.href
-        })
+        if (!error.config?.skipErrorLog) {
+            const errorLog = await logError({
+                ...errorInfo,
+                error,
+                url: window.location.href,
+                user: store.getters['auth/currentUser']
+            })
+            errorInfo.logId = errorLog.id
+        }
 
-        // 顯示錯誤消息
         if (!error.config?.skipErrorMessage) {
             showErrorMessage(errorInfo.message, errorInfo.type)
         }
 
-        // 處理重定向
         if (errorInfo.shouldRedirect && !error.config?.skipRedirect) {
             await handleRedirect(errorInfo.redirectPath)
         }
 
-        return {
-            ...errorInfo,
-            logId: errorLog.id
-        }
+        return errorInfo
     } catch (handlingError) {
         console.error('Error handling failed:', handlingError)
         return {
             type: ErrorTypes.UNKNOWN,
             message: '錯誤處理失敗',
-            originalError: error
+            originalError: error,
+            handlingError
         }
     }
 }
@@ -149,7 +152,8 @@ const handleResponseError = (error) => {
         details: data,
         shouldRedirect: !!errorConfig.redirect,
         redirectPath: errorConfig.redirect,
-        retryable: status >= 500 || status === 429
+        retryable: errorConfig.retryable || status >= 500 || status === 429,
+        requestId: error.config?.requestId
     }
 }
 
@@ -159,14 +163,16 @@ const handleNetworkError = (error) => {
         return {
             type: ErrorTypes.TIMEOUT,
             message: '請求超時，請檢查網路連接並重試',
-            retryable: true
+            retryable: true,
+            requestId: error.config?.requestId
         }
     }
 
     return {
         type: ErrorTypes.NETWORK,
         message: '網路連線失敗，請檢查網路設定',
-        retryable: true
+        retryable: true,
+        requestId: error.config?.requestId
     }
 }
 
@@ -176,7 +182,8 @@ const handleAppError = (error) => {
         type: error.type,
         message: error.message,
         details: error.data,
-        retryable: false
+        retryable: false,
+        timestamp: error.timestamp
     }
 }
 
@@ -192,15 +199,14 @@ const handleUnknownError = (error) => {
 // 處理認證錯誤
 const handleAuthError = async (error) => {
     const currentPath = router.currentRoute.value.path
-    if (currentPath === '/login') return
+    if (currentPath === '/login') return false
 
-    // 檢查是否可以刷新token
     const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
     if (refreshToken && !error.config?._retry) {
         try {
             error.config._retry = true
             await store.dispatch('auth/refreshToken', refreshToken)
-            return
+            return true
         } catch (refreshError) {
             console.error('Token refresh failed:', refreshError)
             await handleTokenRefreshFailure()
@@ -208,6 +214,7 @@ const handleAuthError = async (error) => {
     } else {
         await handleTokenRefreshFailure()
     }
+    return false
 }
 
 // 處理Token刷新失敗
@@ -277,7 +284,8 @@ export const logError = async (errorInfo) => {
             method: errorInfo.error?.config?.method,
             params: errorInfo.error?.config?.params,
             data: errorInfo.error?.config?.data
-        }
+        },
+        user: store.getters['auth/currentUser']
     }
 
     // 開發環境下在控制台輸出錯誤信息
@@ -309,12 +317,13 @@ const generateErrorId = () => {
 
 // 上報錯誤到服務器
 const reportErrorToServer = async (errorData) => {
-    const apiUrl = `${import.meta.env.VITE_API_URL}/api/v1/error-logs`
+    const apiUrl = import.meta.env.VITE_ERROR_REPORT_URL
     try {
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${store.getters['auth/accessToken']}`
             },
             body: JSON.stringify(errorData)
         })
@@ -332,10 +341,16 @@ export class AppError extends Error {
         this.type = type
         this.data = data
         this.timestamp = new Date().toISOString()
+        this.requestId = null
 
         if (Error.captureStackTrace) {
             Error.captureStackTrace(this, AppError)
         }
+    }
+
+    setRequestId(requestId) {
+        this.requestId = requestId
+        return this
     }
 }
 

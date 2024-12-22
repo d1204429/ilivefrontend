@@ -1,11 +1,20 @@
 import api from '@/utils/axios'
-import { handleError } from '@/utils/errorHandler'
 import router from '@/router'
+import store from '@/store'
+import { handleError } from '@/utils/errorHandler'
+
+// Token相關常量
+const TOKEN_CONFIG = {
+    ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
+    REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
+    TOKEN_PREFIX: 'Bearer',
+    REFRESH_INTERVAL: parseInt(import.meta.env.VITE_TOKEN_REFRESH_INTERVAL) || 900000
+}
 
 class AuthService {
     constructor() {
-        this.token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
-        this.refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+        this.token = localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
+        this.refreshToken = localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
         this.user = JSON.parse(localStorage.getItem('user'))
         this.tokenRefreshTimeout = null
         this.isRefreshing = false
@@ -14,12 +23,12 @@ class AuthService {
 
     setAuthData(data) {
         if (data.accessToken) {
-            localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, data.accessToken)
+            localStorage.setItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY, data.accessToken)
             this.token = data.accessToken
             this.setupTokenRefresh()
         }
         if (data.refreshToken) {
-            localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, data.refreshToken)
+            localStorage.setItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY, data.refreshToken)
             this.refreshToken = data.refreshToken
         }
         if (data.user) {
@@ -32,8 +41,8 @@ class AuthService {
         if (this.tokenRefreshTimeout) {
             clearTimeout(this.tokenRefreshTimeout)
         }
-        localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
-        localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+        localStorage.removeItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
+        localStorage.removeItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
         localStorage.removeItem('user')
         localStorage.removeItem('rememberedUsername')
         this.token = null
@@ -48,13 +57,11 @@ class AuthService {
         if (this.tokenRefreshTimeout) {
             clearTimeout(this.tokenRefreshTimeout)
         }
-
-        const refreshInterval = parseInt(import.meta.env.VITE_TOKEN_REFRESH_INTERVAL) || 15 * 60 * 1000
         this.tokenRefreshTimeout = setTimeout(() => {
             this.refreshAccessToken().catch(() => {
                 this.handleAuthError()
             })
-        }, refreshInterval)
+        }, TOKEN_CONFIG.REFRESH_INTERVAL)
     }
 
     onTokenRefreshed(token) {
@@ -76,10 +83,7 @@ class AuthService {
 
     async login(username, password, rememberMe = false) {
         try {
-            const response = await api.post('/users/login', {
-                username,
-                password
-            })
+            const response = await api.post('/users/login', { username, password })
 
             if (response?.accessToken && response?.user) {
                 this.setAuthData({
@@ -98,28 +102,6 @@ class AuthService {
         } catch (error) {
             if (error.response?.status === 401) {
                 throw new Error('用戶名或密碼錯誤')
-            }
-            throw handleError(error)
-        }
-    }
-
-    async register(userData) {
-        try {
-            const response = await api.post('/users/register', userData)
-            return response
-        } catch (error) {
-            const errorMessage = error.response?.data?.message
-            if (errorMessage) {
-                if (errorMessage.includes('用戶名已存在')) {
-                    throw new Error('此用戶名已被使用')
-                }
-                if (errorMessage.includes('電子郵件已存在')) {
-                    throw new Error('此電子郵件已被註冊')
-                }
-                if (errorMessage.includes('手機號碼已存在')) {
-                    throw new Error('此手機號碼已被註冊')
-                }
-                throw new Error(errorMessage)
             }
             throw handleError(error)
         }
@@ -145,9 +127,10 @@ class AuthService {
                 throw new Error('無效的刷新令牌')
             }
 
-            const response = await api.post('/users/refresh-token', {
-                refreshToken: this.refreshToken
-            }, { skipAuth: true })
+            const response = await api.post('/users/refresh-token',
+                { refreshToken: this.refreshToken },
+                { skipAuth: true }
+            )
 
             if (response?.accessToken) {
                 this.setAuthData({
@@ -176,6 +159,28 @@ class AuthService {
                 error: 'session_expired'
             }
         })
+    }
+
+    async register(userData) {
+        try {
+            const response = await api.post('/users/register', userData)
+            return response
+        } catch (error) {
+            const errorMessage = error.response?.data?.message
+            if (errorMessage) {
+                if (errorMessage.includes('用戶名已存在')) {
+                    throw new Error('此用戶名已被使用')
+                }
+                if (errorMessage.includes('電子郵件已存在')) {
+                    throw new Error('此電子郵件已被註冊')
+                }
+                if (errorMessage.includes('手機號碼已存在')) {
+                    throw new Error('此手機號碼已被註冊')
+                }
+                throw new Error(errorMessage)
+            }
+            throw handleError(error)
+        }
     }
 
     async getProfile() {
@@ -230,6 +235,7 @@ class AuthService {
             console.error('登出時發生錯誤:', error)
         } finally {
             this.clearAuthData()
+            await store.dispatch('cart/clearCart')
             router.push('/login')
         }
     }

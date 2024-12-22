@@ -96,6 +96,8 @@ export default {
   setup() {
     const store = useStore()
     const router = useRouter()
+    const retryCount = ref(0)
+    const MAX_RETRIES = 3
 
     // Form Fields Configuration
     const formFields = [
@@ -113,8 +115,6 @@ export default {
     const errors = ref({})
     const originalProfile = ref({})
     const globalError = ref('')
-    const retryCount = ref(0)
-    const MAX_RETRIES = 3
 
     // Computed Properties
     const currentUser = computed(() => store.getters['auth/currentUser'])
@@ -165,37 +165,6 @@ export default {
       }
     }
 
-    // Error Handling
-    const handleAuthError = async (error) => {
-      if (error.response?.status === 401) {
-        try {
-          await store.dispatch('auth/refreshToken')
-          return true
-        } catch (refreshError) {
-          await store.dispatch('auth/logout')
-          router.push({
-            name: 'login',
-            query: {
-              redirect: router.currentRoute.value.fullPath,
-              error: 'session_expired'
-            }
-          })
-          return false
-        }
-      }
-      return false
-    }
-
-    const handleError = async (error) => {
-      const message = error.response?.data?.message || '操作失敗，請稍後再試'
-      globalError.value = message
-      await store.dispatch('app/setError', {
-        message,
-        type: 'error',
-        duration: 3000
-      })
-    }
-
     // Data Management
     const fetchUserProfile = async () => {
       try {
@@ -206,19 +175,25 @@ export default {
         editedProfile.value = { ...currentUser.value }
         retryCount.value = 0
       } catch (error) {
-        if (await handleAuthError(error)) {
-          if (retryCount.value < MAX_RETRIES) {
-            retryCount.value++
-            await fetchUserProfile()
-          } else {
-            handleError(error)
-          }
+        if (error.response?.status === 401 && retryCount.value < MAX_RETRIES) {
+          retryCount.value++
+          await store.dispatch('auth/refreshToken')
+          await fetchUserProfile()
         } else {
-          handleError(error)
+          handleError('獲取用戶資料失敗，請稍後再試')
         }
       } finally {
         loading.value = false
       }
+    }
+
+    const handleError = (message) => {
+      globalError.value = message
+      store.dispatch('app/setError', {
+        message,
+        type: 'error',
+        duration: 3000
+      }).catch(console.error)
     }
 
     // Form Actions
@@ -237,9 +212,7 @@ export default {
           duration: 2000
         })
       } catch (error) {
-        if (!(await handleAuthError(error))) {
-          handleError(error)
-        }
+        handleError(error.response?.data?.message || '更新個人資料失敗，請稍後再試')
       } finally {
         loading.value = false
       }
@@ -289,7 +262,6 @@ export default {
       }
     }, { deep: true })
 
-    // Lifecycle Hooks
     onMounted(checkAuthAndLoadData)
 
     return {
@@ -311,8 +283,6 @@ export default {
   }
 }
 </script>
-
-
 
 <style scoped>
 .profile-container {

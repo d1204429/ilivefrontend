@@ -6,35 +6,52 @@ import router from '@/router'
 const TOKEN_CONFIG = {
     ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
-    TOKEN_PREFIX: 'Bearer'
+    TOKEN_PREFIX: 'Bearer',
+    REFRESH_INTERVAL: parseInt(import.meta.env.VITE_TOKEN_REFRESH_INTERVAL) || 15 * 60 * 1000
 }
 
 // 安全相關常量
 const SECURITY_CONFIG = {
     MAX_LOGIN_ATTEMPTS: parseInt(import.meta.env.VITE_MAX_LOGIN_ATTEMPTS) || 5,
     LOCK_DURATION: parseInt(import.meta.env.VITE_LOCK_DURATION) || 30 * 60 * 1000,
-    SESSION_TIMEOUT: parseInt(import.meta.env.VITE_SESSION_TIMEOUT) || 60 * 60 * 1000
+    SESSION_TIMEOUT: parseInt(import.meta.env.VITE_SESSION_TIMEOUT) || 60 * 60 * 1000,
+    PASSWORD_MIN_LENGTH: parseInt(import.meta.env.VITE_PASSWORD_MIN_LENGTH) || 8
 }
 
 // 初始狀態
-const state = {
-    userInfo: JSON.parse(localStorage.getItem('user')) || null,
-    isAuthenticated: !!localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY),
-    accessToken: localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY) || null,
-    refreshToken: localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY) || null,
+const INITIAL_STATE = {
+    userInfo: null,
+    isAuthenticated: false,
+    accessToken: null,
+    refreshToken: null,
     loading: false,
     error: null,
     successMessage: null,
-    lastLoginTime: localStorage.getItem('lastLoginTime') || null,
-    loginAttempts: parseInt(localStorage.getItem('loginAttempts')) || 0,
-    isLocked: localStorage.getItem('isLocked') === 'true',
-    lockUntil: localStorage.getItem('lockUntil') || null,
+    lastLoginTime: null,
+    loginAttempts: 0,
+    isLocked: false,
+    lockUntil: null,
     sessionTimeout: null,
     tokenRefreshTimeout: null,
     isRefreshing: false,
-    refreshSubscribers: []
+    refreshSubscribers: [],
+    pendingRequests: []
 }
 
+// State
+const state = {
+    ...INITIAL_STATE,
+    userInfo: JSON.parse(localStorage.getItem('user')),
+    isAuthenticated: !!localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY),
+    accessToken: localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY),
+    refreshToken: localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY),
+    lastLoginTime: localStorage.getItem('lastLoginTime'),
+    loginAttempts: parseInt(localStorage.getItem('loginAttempts')) || 0,
+    isLocked: localStorage.getItem('isLocked') === 'true',
+    lockUntil: localStorage.getItem('lockUntil')
+}
+
+// Mutations
 const mutations = {
     SET_LOADING(state, status) {
         state.loading = status
@@ -79,12 +96,19 @@ const mutations = {
     ADD_REFRESH_SUBSCRIBER(state, callback) {
         state.refreshSubscribers.push(callback)
     },
+    ADD_PENDING_REQUEST(state, request) {
+        state.pendingRequests.push(request)
+    },
+    CLEAR_PENDING_REQUESTS(state) {
+        state.pendingRequests = []
+    },
     CLEAR_REFRESH_SUBSCRIBERS(state) {
         state.refreshSubscribers = []
     },
     INCREMENT_LOGIN_ATTEMPTS(state) {
         state.loginAttempts++
         localStorage.setItem('loginAttempts', state.loginAttempts)
+
         if (state.loginAttempts >= SECURITY_CONFIG.MAX_LOGIN_ATTEMPTS) {
             state.isLocked = true
             state.lockUntil = new Date(Date.now() + SECURITY_CONFIG.LOCK_DURATION).toISOString()
@@ -119,22 +143,7 @@ const mutations = {
         if (state.tokenRefreshTimeout) {
             clearTimeout(state.tokenRefreshTimeout)
         }
-        Object.assign(state, {
-            userInfo: null,
-            isAuthenticated: false,
-            accessToken: null,
-            refreshToken: null,
-            error: null,
-            successMessage: null,
-            lastLoginTime: null,
-            loginAttempts: 0,
-            isLocked: false,
-            lockUntil: null,
-            sessionTimeout: null,
-            tokenRefreshTimeout: null,
-            isRefreshing: false,
-            refreshSubscribers: []
-        })
+        Object.assign(state, { ...INITIAL_STATE })
         localStorage.removeItem('user')
         localStorage.removeItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
         localStorage.removeItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
@@ -144,7 +153,7 @@ const mutations = {
         localStorage.removeItem('lockUntil')
     }
 }
-
+// Actions
 const actions = {
     async login({ commit, dispatch }, credentials) {
         if (state.isLocked && new Date(state.lockUntil) > new Date()) {
@@ -241,7 +250,7 @@ const actions = {
             router.push('/login')
         }
     },
-
+    // Actions (續)
     async fetchUserInfo({ commit, dispatch }) {
         if (!state.isAuthenticated) return null
 
@@ -314,6 +323,7 @@ const actions = {
     }
 }
 
+// Getters
 const getters = {
     isAuthenticated: state => state.isAuthenticated,
     currentUser: state => state.userInfo,
@@ -333,6 +343,16 @@ const getters = {
     remainingLockTime: state => {
         if (!state.lockUntil) return 0
         return Math.max(0, new Date(state.lockUntil) - new Date())
+    },
+    isRefreshing: state => state.isRefreshing,
+    pendingRequests: state => state.pendingRequests,
+    userPermissions: state => state.userInfo?.permissions || [],
+    userRoles: state => state.userInfo?.roles || [],
+    isSessionValid: state => {
+        if (!state.lastLoginTime) return false
+        const sessionTimeout = SECURITY_CONFIG.SESSION_TIMEOUT
+        const lastLogin = new Date(state.lastLoginTime).getTime()
+        return (Date.now() - lastLogin) < sessionTimeout
     }
 }
 
