@@ -1,3 +1,4 @@
+// src/router/index.js
 import { createRouter, createWebHistory } from 'vue-router'
 import store from '@/store'
 
@@ -7,7 +8,12 @@ const ROUTE_CONSTANTS = {
     APP_NAME: import.meta.env.VITE_APP_NAME || 'iLive',
     DEFAULT_TITLE: '首頁',
     LOGIN_PATH: '/login',
-    HOME_PATH: '/'
+    HOME_PATH: '/',
+    ERROR_PATHS: {
+        FORBIDDEN: '/403',
+        NOT_FOUND: '/404',
+        SERVER_ERROR: '/500'
+    }
 }
 
 const routes = [
@@ -76,7 +82,7 @@ const routes = [
     },
     {
         path: '/login',
-        name: 'login',
+        name: 'Login',
         component: () => import('@/views/user/LoginView.vue'),
         meta: {
             title: '登入',
@@ -117,26 +123,26 @@ const routes = [
         path: '/403',
         name: 'Forbidden',
         component: () => import('@/views/ErrorView.vue'),
-        props: { code: 403, message: '無權限訪問' },
-        meta: { title: '403 Forbidden' }
+        props: { code: 403, message: '無權限訪問此頁面' },
+        meta: { title: '403 無權限訪問' }
     },
     {
         path: '/404',
         name: 'NotFound',
         component: () => import('@/views/ErrorView.vue'),
-        props: { code: 404, message: '頁面不存在' },
-        meta: { title: '404 Not Found' }
+        props: { code: 404, message: '找不到此頁面' },
+        meta: { title: '404 頁面不存在' }
     },
     {
         path: '/500',
         name: 'ServerError',
         component: () => import('@/views/ErrorView.vue'),
-        props: { code: 500, message: '伺服器錯誤' },
-        meta: { title: '500 Server Error' }
+        props: { code: 500, message: '伺服器發生錯誤' },
+        meta: { title: '500 伺服器錯誤' }
     },
     {
         path: '/:pathMatch(.*)*',
-        redirect: '/404'
+        redirect: ROUTE_CONSTANTS.ERROR_PATHS.NOT_FOUND
     }
 ]
 
@@ -161,7 +167,7 @@ const checkAuthentication = async () => {
         const refreshToken = localStorage.getItem(ROUTE_CONSTANTS.REFRESH_KEY)
         const isAuthenticated = store.getters['auth/isAuthenticated']
 
-        if (!token) return false
+        if (!token && !refreshToken) return false
 
         if (!isAuthenticated && refreshToken) {
             try {
@@ -169,7 +175,8 @@ const checkAuthentication = async () => {
                 await store.dispatch('auth/getProfile')
                 return true
             } catch (error) {
-                await store.dispatch('auth/logout')
+                console.error('Token更新失敗:', error)
+                await handleLogout()
                 return false
             }
         }
@@ -177,15 +184,24 @@ const checkAuthentication = async () => {
         return isAuthenticated
     } catch (error) {
         console.error('認證檢查失敗:', error)
+        await handleLogout()
         return false
     }
+}
+
+const handleLogout = async () => {
+    localStorage.removeItem(ROUTE_CONSTANTS.TOKEN_KEY)
+    localStorage.removeItem(ROUTE_CONSTANTS.REFRESH_KEY)
+    await store.dispatch('auth/logout')
 }
 
 const handleAuthRedirect = (to) => {
     const currentPath = to.fullPath
     const isLoginPage = currentPath === ROUTE_CONSTANTS.LOGIN_PATH
 
-    if (isLoginPage) return { path: ROUTE_CONSTANTS.HOME_PATH }
+    if (isLoginPage) {
+        return { path: ROUTE_CONSTANTS.HOME_PATH }
+    }
 
     return {
         path: ROUTE_CONSTANTS.LOGIN_PATH,
@@ -197,18 +213,23 @@ const handleAuthRedirect = (to) => {
 }
 
 const setDocumentTitle = (to) => {
-    document.title = to.meta.title
-        ? `${to.meta.title} - ${ROUTE_CONSTANTS.APP_NAME}`
-        : ROUTE_CONSTANTS.APP_NAME
+    const title = to.meta.title || ROUTE_CONSTANTS.DEFAULT_TITLE
+    document.title = `${title} - ${ROUTE_CONSTANTS.APP_NAME}`
+}
+
+const saveNavigationHistory = (from) => {
+    if (from.name && !from.meta.hideForAuth) {
+        localStorage.setItem('previousPath', from.fullPath)
+    }
 }
 
 router.beforeEach(async (to, from, next) => {
     try {
         setDocumentTitle(to)
+        saveNavigationHistory(from)
 
         const isAuthenticated = await checkAuthentication()
 
-        // 需要認證但未登入
         if (to.meta.requiresAuth && !isAuthenticated) {
             store.dispatch('app/setError', {
                 message: '請先登入以繼續操作',
@@ -218,7 +239,6 @@ router.beforeEach(async (to, from, next) => {
             return next(handleAuthRedirect(to))
         }
 
-        // 已登入訪問登入/註冊頁
         if (to.meta.hideForAuth && isAuthenticated) {
             store.dispatch('app/setSuccess', {
                 message: '您已經登入',
@@ -227,20 +247,15 @@ router.beforeEach(async (to, from, next) => {
             return next(ROUTE_CONSTANTS.HOME_PATH)
         }
 
-        // 保存導航歷史
-        if (!to.meta.hideForAuth && from.name) {
-            localStorage.setItem('previousPath', from.fullPath)
-        }
-
         next()
     } catch (error) {
         console.error('路由守衛錯誤:', error)
         store.dispatch('app/setError', {
-            message: '系統錯誤，請稍後再試',
+            message: '系統發生錯誤，請稍後再試',
             type: 'error',
             duration: 3000
         })
-        next('/500')
+        next(ROUTE_CONSTANTS.ERROR_PATHS.SERVER_ERROR)
     }
 })
 

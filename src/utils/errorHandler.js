@@ -1,3 +1,4 @@
+// src/utils/errorHandler.js
 import store from '@/store'
 import router from '@/router'
 
@@ -8,7 +9,11 @@ export const ErrorTypes = {
     SERVER: 'SERVER_ERROR',
     UNKNOWN: 'UNKNOWN_ERROR',
     BUSINESS: 'BUSINESS_ERROR',
-    TIMEOUT: 'TIMEOUT_ERROR'
+    TIMEOUT: 'TIMEOUT_ERROR',
+    PERMISSION: 'PERMISSION_ERROR',
+    RATE_LIMIT: 'RATE_LIMIT_ERROR',
+    DATABASE: 'DATABASE_ERROR',
+    API: 'API_ERROR'
 }
 
 export const handleError = async (error) => {
@@ -17,37 +22,40 @@ export const handleError = async (error) => {
     let shouldRedirect = false
     let redirectPath = ''
     let statusCode = null
+    let errorDetails = null
 
     try {
         if (error.response) {
             const { status, data } = error.response
             statusCode = status
+            errorDetails = data
 
             switch (status) {
                 case 400:
                     errorType = ErrorTypes.VALIDATION
-                    errorMessage = data.message || '請求參數錯誤'
+                    errorMessage = data.message || '請求參數錯誤，請檢查輸入內容'
                     break
 
                 case 401:
                     errorType = ErrorTypes.AUTH
-                    errorMessage = '身份驗證已過期，請重新登入'
+                    errorMessage = data.message || '身份驗證已過期，請重新登入'
                     if (!error.config?.skipAuthError) {
                         await handleAuthError(error)
                     }
                     break
 
                 case 403:
-                    errorType = ErrorTypes.AUTH
-                    errorMessage = '您沒有權限執行此操作'
+                    errorType = ErrorTypes.PERMISSION
+                    errorMessage = data.message || '您沒有權限執行此操作'
                     shouldRedirect = true
                     redirectPath = '/403'
                     break
 
                 case 404:
-                    errorType = ErrorTypes.VALIDATION
-                    errorMessage = '請求的資源不存在'
-                    shouldRedirect = false
+                    errorType = ErrorTypes.API
+                    errorMessage = data.message || '請求的資源不存在'
+                    shouldRedirect = true
+                    redirectPath = '/404'
                     break
 
                 case 422:
@@ -56,42 +64,61 @@ export const handleError = async (error) => {
                     break
 
                 case 429:
-                    errorType = ErrorTypes.SERVER
-                    errorMessage = '請求過於頻繁，請稍後再試'
+                    errorType = ErrorTypes.RATE_LIMIT
+                    errorMessage = data.message || '請求過於頻繁，請稍後再試'
                     break
 
                 case 500:
-                case 502:
-                case 503:
                     errorType = ErrorTypes.SERVER
-                    errorMessage = '伺服器暫時無法處理請求，請稍後再試'
+                    errorMessage = '伺服器內部錯誤，請稍後再試'
                     shouldRedirect = true
                     redirectPath = '/500'
                     break
 
+                case 502:
+                    errorType = ErrorTypes.NETWORK
+                    errorMessage = '網路閘道錯誤，請稍後再試'
+                    shouldRedirect = true
+                    redirectPath = '/500'
+                    break
+
+                case 503:
+                    errorType = ErrorTypes.SERVER
+                    errorMessage = '服務暫時不可用，請稍後再試'
+                    shouldRedirect = true
+                    redirectPath = '/500'
+                    break
+
+                case 504:
+                    errorType = ErrorTypes.TIMEOUT
+                    errorMessage = '網關超時，請稍後再試'
+                    break
+
                 default:
                     errorType = ErrorTypes.UNKNOWN
-                    errorMessage = data?.message || `未知錯誤 (${status})`
+                    errorMessage = data?.message || `系統錯誤 (${status})`
             }
         } else if (error.code === 'ECONNABORTED') {
             errorType = ErrorTypes.TIMEOUT
-            errorMessage = '請求超時，請檢查網路連接'
-        } else if (error.request) {
+            errorMessage = '請求超時，請檢查網路連接並重試'
+        } else if (error.code === 'ERR_NETWORK') {
             errorType = ErrorTypes.NETWORK
-            errorMessage = '網路連線錯誤，請檢查網路設定'
+            errorMessage = '網路連線失敗，請檢查網路設定'
         } else if (error instanceof AppError) {
             errorType = error.type
             errorMessage = error.message
+            errorDetails = error.data
         } else {
             errorType = ErrorTypes.UNKNOWN
             errorMessage = error.message || '發生未知錯誤'
         }
 
-        await logError({
+        const errorLog = await logError({
             type: errorType,
             message: errorMessage,
             error,
             statusCode,
+            details: errorDetails,
             url: window.location.href
         })
 
@@ -107,7 +134,8 @@ export const handleError = async (error) => {
             type: errorType,
             message: errorMessage,
             statusCode,
-            url: window.location.href
+            details: errorDetails,
+            logId: errorLog.id
         }
     } catch (handlingError) {
         console.error('Error handling failed:', handlingError)
@@ -126,6 +154,7 @@ const handleAuthError = async (error) => {
     const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
     if (refreshToken && !error.config?._retry) {
         try {
+            error.config._retry = true
             await store.dispatch('auth/refreshToken', refreshToken)
             return
         } catch (refreshError) {
@@ -144,7 +173,7 @@ const handleRedirect = async (path) => {
         await router.push({
             path,
             query: path === '/login' ? {
-                redirect: router.currentRoute.value.fullPath,
+                redirect: encodeURIComponent(router.currentRoute.value.fullPath),
                 timestamp: Date.now()
             } : undefined
         })
@@ -154,27 +183,41 @@ const handleRedirect = async (path) => {
 }
 
 const showErrorMessage = (message, type) => {
+    const duration = getDurationByErrorType(type)
     store.dispatch('app/setError', {
         message,
         type,
-        duration: import.meta.env.VITE_ERROR_SHOW_DURATION || 3000
+        duration
     }).catch(console.error)
+}
+
+const getDurationByErrorType = (type) => {
+    const durations = {
+        [ErrorTypes.VALIDATION]: 5000,
+        [ErrorTypes.AUTH]: 3000,
+        [ErrorTypes.NETWORK]: 4000,
+        [ErrorTypes.SERVER]: 3000,
+        [ErrorTypes.RATE_LIMIT]: 4000,
+        default: import.meta.env.VITE_ERROR_SHOW_DURATION || 3000
+    }
+    return durations[type] || durations.default
 }
 
 const formatValidationErrors = (errors) => {
     if (!errors) return null
     if (typeof errors === 'string') return errors
-    if (Array.isArray(errors)) return errors.filter(Boolean).join(', ')
+    if (Array.isArray(errors)) return errors.filter(Boolean).join('、')
 
     return typeof errors === 'object'
-        ? Object.values(errors).flat().filter(Boolean).join(', ')
+        ? Object.values(errors).flat().filter(Boolean).join('、')
         : null
 }
 
 export const logError = async (errorInfo) => {
-    const { type, message, error, statusCode, url } = errorInfo
+    const { type, message, error, statusCode, details, url } = errorInfo
 
     const logData = {
+        id: generateErrorId(),
         timestamp: new Date().toISOString(),
         type,
         message,
@@ -182,6 +225,7 @@ export const logError = async (errorInfo) => {
         url,
         userAgent: navigator.userAgent,
         stack: error?.stack,
+        details,
         response: error?.response?.data,
         request: {
             url: error?.config?.url,
@@ -200,11 +244,33 @@ export const logError = async (errorInfo) => {
 
     if (import.meta.env.PROD) {
         try {
-            // TODO: 實現錯誤上報邏輯
-            // await reportError(logData)
+            await reportErrorToServer(logData)
         } catch (reportError) {
             console.error('Error reporting failed:', reportError)
         }
+    }
+
+    return logData
+}
+
+const generateErrorId = () => {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+}
+
+const reportErrorToServer = async (errorData) => {
+    // 實作錯誤上報邏輯
+    const apiUrl = `${import.meta.env.VITE_API_URL}/api/v1/error-logs`
+    try {
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(errorData)
+        })
+        return response.json()
+    } catch (error) {
+        console.error('Error reporting failed:', error)
     }
 }
 
