@@ -1,7 +1,6 @@
 import store from '@/store'
 import router from '@/router'
 
-// 錯誤類型常量
 export const ErrorTypes = {
     VALIDATION: 'VALIDATION_ERROR',
     AUTH: 'AUTH_ERROR',
@@ -12,7 +11,6 @@ export const ErrorTypes = {
     TIMEOUT: 'TIMEOUT_ERROR'
 }
 
-// 錯誤處理主函數
 export const handleError = async (error) => {
     let errorMessage = ''
     let errorType = ErrorTypes.UNKNOWN
@@ -34,7 +32,7 @@ export const handleError = async (error) => {
                 case 401:
                     errorType = ErrorTypes.AUTH
                     errorMessage = '身份驗證已過期，請重新登入'
-                    await handleAuthError()
+                    await handleAuthError(error)
                     break
 
                 case 403:
@@ -47,8 +45,6 @@ export const handleError = async (error) => {
                 case 404:
                     errorType = ErrorTypes.VALIDATION
                     errorMessage = '請求的資源不存在'
-                    shouldRedirect = true
-                    redirectPath = '/404'
                     break
 
                 case 422:
@@ -59,15 +55,6 @@ export const handleError = async (error) => {
                 case 429:
                     errorType = ErrorTypes.SERVER
                     errorMessage = '請求過於頻繁，請稍後再試'
-                    break
-
-                case 500:
-                case 502:
-                case 503:
-                    errorType = ErrorTypes.SERVER
-                    errorMessage = '伺服器暫時無法處理請求，請稍後再試'
-                    shouldRedirect = true
-                    redirectPath = '/500'
                     break
 
                 default:
@@ -88,20 +75,18 @@ export const handleError = async (error) => {
             errorMessage = error.message || '發生未知錯誤'
         }
 
-        // 記錄錯誤
         await logError({
             type: errorType,
             message: errorMessage,
             error,
-            statusCode
+            statusCode,
+            url: window.location.href
         })
 
-        // 顯示錯誤訊息
-        if (errorType !== ErrorTypes.AUTH || statusCode !== 401) {
+        if (!error.config?.skipErrorMessage) {
             showErrorMessage(errorMessage, errorType)
         }
 
-        // 處理重定向
         if (shouldRedirect) {
             await handleRedirect(redirectPath)
         }
@@ -109,7 +94,8 @@ export const handleError = async (error) => {
         return {
             type: errorType,
             message: errorMessage,
-            statusCode
+            statusCode,
+            url: window.location.href
         }
     } catch (handlingError) {
         console.error('Error handling failed:', handlingError)
@@ -121,75 +107,68 @@ export const handleError = async (error) => {
     }
 }
 
-// 處理認證錯誤
-const handleAuthError = async () => {
-    const refreshToken = store.getters['auth/refreshToken']
-    if (refreshToken) {
+const handleAuthError = async (error) => {
+    const currentPath = router.currentRoute.value.path
+    if (currentPath === '/login') return
+
+    const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+    if (refreshToken && !error.config?._retry) {
         try {
-            await store.dispatch('auth/refreshToken')
+            await store.dispatch('auth/refreshToken', refreshToken)
+            return
         } catch (refreshError) {
-            await store.dispatch('auth/logout')
-            await handleRedirect('/login')
+            console.error('Token refresh failed:', refreshError)
         }
-    } else {
-        await store.dispatch('auth/logout')
-        await handleRedirect('/login')
     }
+
+    await store.dispatch('auth/logout')
+    await handleRedirect('/login')
 }
 
-// 處理重定向
 const handleRedirect = async (path) => {
-    if (router.currentRoute.value.path !== path) {
-        try {
-            await router.push({
-                path,
-                query: path === '/login' ? {
-                    redirect: router.currentRoute.value.fullPath,
-                    timestamp: Date.now()
-                } : {}
-            })
-        } catch (navigationError) {
-            console.error('Navigation error:', navigationError)
-        }
+    const currentPath = router.currentRoute.value.path
+    if (currentPath === path) return
+
+    try {
+        await router.push({
+            path,
+            query: path === '/login' ? {
+                redirect: currentPath,
+                timestamp: Date.now()
+            } : undefined
+        })
+    } catch (navigationError) {
+        console.error('Navigation failed:', navigationError)
     }
 }
 
-// 顯示錯誤訊息
 const showErrorMessage = (message, type) => {
     store.dispatch('app/setError', {
         message,
         type,
-        duration: import.meta.env.VITE_ERROR_SHOW_DURATION || 3000
-    })
+        duration: 3000
+    }).catch(console.error)
 }
 
-// 格式化驗證錯誤
 const formatValidationErrors = (errors) => {
     if (!errors) return null
     if (typeof errors === 'string') return errors
     if (Array.isArray(errors)) return errors.join(', ')
 
-    if (typeof errors === 'object') {
-        return Object.values(errors)
-            .flat()
-            .filter(error => typeof error === 'string')
-            .join(', ')
-    }
-
-    return null
+    return typeof errors === 'object'
+        ? Object.values(errors).flat().filter(Boolean).join(', ')
+        : null
 }
 
-// 錯誤日誌記錄
 export const logError = async (errorInfo) => {
-    const { type, message, error, statusCode } = errorInfo
+    const { type, message, error, statusCode, url } = errorInfo
 
     const logData = {
         timestamp: new Date().toISOString(),
         type,
         message,
         statusCode,
-        url: window.location.href,
-        path: router.currentRoute.value.path,
+        url,
         userAgent: navigator.userAgent,
         stack: error?.stack,
         response: error?.response?.data,
@@ -200,26 +179,23 @@ export const logError = async (errorInfo) => {
         }
     }
 
-    if (import.meta.env.DEV) {
-        console.group('Error Details')
-        console.error('Error Type:', type)
-        console.error('Error Message:', message)
-        console.error('Status Code:', statusCode)
-        console.error('Full Error:', logData)
-        console.groupEnd()
-    }
+    console.group('Error Details')
+    console.error('Error Type:', type)
+    console.error('Error Message:', message)
+    console.error('Status Code:', statusCode)
+    console.error('Full Error:', logData)
+    console.groupEnd()
 
     if (import.meta.env.PROD) {
         try {
             // TODO: 實現錯誤上報邏輯
-            // await sendErrorToServer(logData)
+            // await reportError(logData)
         } catch (reportError) {
             console.error('Error reporting failed:', reportError)
         }
     }
 }
 
-// 自定義錯誤類別
 export class AppError extends Error {
     constructor(message, type = ErrorTypes.UNKNOWN, data = null) {
         super(message)

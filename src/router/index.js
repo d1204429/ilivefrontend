@@ -1,15 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import store from '@/store'
 
-// 路由常量配置
 const ROUTE_CONSTANTS = {
     TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
-    APP_NAME: import.meta.env.VITE_APP_NAME,
+    APP_NAME: import.meta.env.VITE_APP_NAME || 'iLive',
     DEFAULT_TITLE: '首頁'
 }
 
-// 路由配置
 const routes = [
     {
         path: '/',
@@ -17,7 +15,6 @@ const routes = [
         component: () => import('@/views/home/HomeView.vue'),
         meta: { title: '首頁' }
     },
-    // 商品相關路由
     {
         path: '/products',
         name: 'Products',
@@ -38,7 +35,6 @@ const routes = [
         props: true,
         meta: { title: '商品分類' }
     },
-    // 購物車相關路由
     {
         path: '/cart',
         name: 'Cart',
@@ -57,7 +53,6 @@ const routes = [
             title: '結帳'
         }
     },
-    // 訂單相關路由
     {
         path: '/orders',
         name: 'Orders',
@@ -78,19 +73,8 @@ const routes = [
         }
     },
     {
-        path: '/order/payment/:id',
-        name: 'OrderPayment',
-        component: () => import('@/views/order/OrderPaymentView.vue'),
-        props: true,
-        meta: {
-            requiresAuth: true,
-            title: '訂單付款'
-        }
-    },
-    // 用戶相關路由
-    {
         path: '/login',
-        name: 'Login',
+        name: 'login',
         component: () => import('@/views/user/LoginView.vue'),
         meta: {
             title: '登入',
@@ -113,29 +97,8 @@ const routes = [
         meta: {
             requiresAuth: true,
             title: '會員資料'
-        },
-        children: [
-            {
-                path: 'orders',
-                name: 'ProfileOrders',
-                component: () => import('@/views/order/OrderHistoryView.vue'),
-                meta: {
-                    requiresAuth: true,
-                    title: '我的訂單'
-                }
-            },
-            {
-                path: 'addresses',
-                name: 'ProfileAddresses',
-                component: () => import('@/views/user/AddressListView.vue'),
-                meta: {
-                    requiresAuth: true,
-                    title: '收貨地址'
-                }
-            }
-        ]
+        }
     },
-    // 其他頁面路由
     {
         path: '/about',
         name: 'About',
@@ -148,7 +111,6 @@ const routes = [
         component: () => import('@/views/contact/ContactView.vue'),
         meta: { title: '聯絡我們' }
     },
-    // 錯誤頁面路由
     {
         path: '/403',
         name: 'Forbidden',
@@ -176,106 +138,85 @@ const routes = [
     }
 ]
 
-// 創建路由實例
 const router = createRouter({
     history: createWebHistory(),
     routes,
     scrollBehavior(to, from, savedPosition) {
         if (savedPosition) {
-            return new Promise((resolve) => {
-                setTimeout(() => {
-                    resolve(savedPosition)
-                }, 300)
-            })
+            return savedPosition
         }
         return { top: 0 }
     }
 })
 
-// 處理身份驗證
-const handleAuthentication = async (to, from, next) => {
-    try {
-        const token = localStorage.getItem(ROUTE_CONSTANTS.TOKEN_KEY)
-        const refreshToken = localStorage.getItem(ROUTE_CONSTANTS.REFRESH_KEY)
-        const isAuthenticated = !!token && store.getters['auth/isAuthenticated']
+const checkAuthentication = async () => {
+    const token = localStorage.getItem(ROUTE_CONSTANTS.TOKEN_KEY)
+    const refreshToken = localStorage.getItem(ROUTE_CONSTANTS.REFRESH_KEY)
+    const isAuthenticated = store.getters['auth/isAuthenticated']
 
-        if (token && !isAuthenticated && refreshToken) {
-            try {
-                await store.dispatch('auth/refreshToken')
-            } catch (error) {
-                console.error('Token 刷新失敗:', error)
-                await store.dispatch('auth/logout')
-                return next({
-                    path: '/login',
-                    query: { redirect: to.fullPath }
-                })
-            }
+    if (token && !isAuthenticated && refreshToken) {
+        try {
+            await store.dispatch('auth/refreshToken', refreshToken)
+            return true
+        } catch (error) {
+            await store.dispatch('auth/logout')
+            return false
         }
+    }
+    return isAuthenticated
+}
 
-        if (to.matched.some(record => record.meta.requiresAuth) && !isAuthenticated) {
+const handleAuthRedirect = (to) => {
+    return {
+        path: '/login',
+        query: { redirect: to.fullPath }
+    }
+}
+
+router.beforeEach(async (to, from, next) => {
+    try {
+        document.title = to.meta.title
+            ? `${to.meta.title} - ${ROUTE_CONSTANTS.APP_NAME}`
+            : ROUTE_CONSTANTS.APP_NAME
+
+        const isAuthenticated = await checkAuthentication()
+
+        if (to.meta.requiresAuth && !isAuthenticated) {
             store.dispatch('app/setError', {
-                message: '請先登入',
+                message: '請先登入以繼續操作',
                 type: 'warning',
                 duration: 2000
             })
-            return next({
-                path: '/login',
-                query: { redirect: to.fullPath }
-            })
+            return next(handleAuthRedirect(to))
         }
 
-        if (isAuthenticated && to.meta.hideForAuth) {
-            return next({ path: '/' })
+        if (to.meta.hideForAuth && isAuthenticated) {
+            return next('/')
         }
 
-        return next()
+        if (!to.meta.hideForAuth && from.name) {
+            localStorage.setItem('previousPath', from.fullPath)
+        }
+
+        next()
     } catch (error) {
-        console.error('認證處理錯誤:', error)
+        console.error('路由錯誤:', error)
         store.dispatch('app/setError', {
-            message: '認證錯誤，請重新登入',
+            message: '系統錯誤，請稍後再試',
             type: 'error',
             duration: 3000
         })
-        return next('/login')
-    }
-}
-
-// 設置頁面標題
-const setPageTitle = (to) => {
-    const title = to.meta.title
-        ? `${to.meta.title} - ${ROUTE_CONSTANTS.APP_NAME}`
-        : ROUTE_CONSTANTS.APP_NAME
-    document.title = title
-}
-
-// 保存導航歷史
-const saveNavigationHistory = (to, from) => {
-    if (!to.meta.hideForAuth && from.name) {
-        localStorage.setItem('previousPath', from.fullPath)
-    }
-}
-
-// 路由守衛
-router.beforeEach(async (to, from, next) => {
-    try {
-        setPageTitle(to)
-        await handleAuthentication(to, from, next)
-        saveNavigationHistory(to, from)
-    } catch (error) {
-        console.error('路由守衛錯誤:', error)
         next('/500')
     }
 })
 
-// 路由錯誤處理
 router.onError((error) => {
-    console.error('路由錯誤:', error)
+    console.error('路由載入錯誤:', error)
     store.dispatch('app/setError', {
-        message: '頁面載入失敗',
+        message: '頁面載入失敗，請重新整理',
         type: 'error',
         duration: 3000
     })
-    router.push('/500').catch(() => {})
 })
 
 export default router

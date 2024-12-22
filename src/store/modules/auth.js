@@ -88,10 +88,6 @@ const mutations = {
         localStorage.removeItem(TOKEN_KEY)
         localStorage.removeItem(REFRESH_KEY)
         localStorage.removeItem('lastLoginTime')
-    },
-    UPDATE_USER(state, userData) {
-        state.user = { ...state.user, ...userData }
-        localStorage.setItem('user', JSON.stringify(state.user))
     }
 }
 
@@ -148,7 +144,7 @@ const actions = {
         }
     },
 
-    async logout({ commit, state, dispatch }) {
+    async logout({ commit, dispatch }) {
         try {
             if (state.token) {
                 await authApi.logout()
@@ -156,8 +152,8 @@ const actions = {
         } catch (error) {
             console.error('登出錯誤:', error)
         } finally {
-            await dispatch('clearUserData')
             commit('CLEAR_AUTH')
+            await dispatch('cart/clearCart', null, { root: true })
         }
     },
 
@@ -182,7 +178,7 @@ const actions = {
 
         try {
             const response = await authApi.updateProfile(userData)
-            commit('UPDATE_USER', response)
+            commit('SET_USER', response)
             commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
             return response
         } catch (error) {
@@ -201,6 +197,10 @@ const actions = {
 
         try {
             const response = await authApi.refreshToken(state.refreshToken)
+            if (!response?.accessToken) {
+                throw new Error('重新整理權杖響應無效')
+            }
+
             commit('SET_TOKENS', {
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken
@@ -231,10 +231,6 @@ const actions = {
             handleError(error)
             commit('CLEAR_AUTH')
         }
-    },
-
-    clearUserData({ commit }) {
-        commit('CLEAR_AUTH')
     },
 
     setError({ commit }, error) {

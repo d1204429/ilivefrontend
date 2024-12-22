@@ -136,6 +136,8 @@ export default {
   setup() {
     const router = useRouter()
     const store = useStore()
+
+    // Reactive State
     const isLoading = ref(false)
     const showPassword = ref(false)
     const globalError = ref('')
@@ -156,32 +158,35 @@ export default {
       rememberMe: false
     })
 
+    // Validation Rules
     const validationRules = {
       username: [
         v => !!v || '請輸入帳號',
-        v => v.length >= 3 || '帳號長度至少需要3個字元'
+        v => v.length >= 3 || '帳號長度至少需要3個字元',
+        v => /^[a-zA-Z0-9_]+$/.test(v) || '帳號只能包含字母、數字和底線'
       ],
       password: [
         v => !!v || '請輸入密碼',
-        v => v.length >= 8 || '密碼長度至少需要8個字元'
+        v => v.length >= 8 || '密碼長度至少需要8個字元',
+        v => /[A-Z]/.test(v) || '密碼需要包含大寫字母',
+        v => /[a-z]/.test(v) || '密碼需要包含小寫字母',
+        v => /[0-9]/.test(v) || '密碼需要包含數字',
+        v => /[!@#$%^&*]/.test(v) || '密碼需要包含特殊字符'
       ]
     }
 
+    // Timer Management
     const clearAllTimers = () => {
-      if (countdownTimer) {
-        clearInterval(countdownTimer)
-        countdownTimer = null
-      }
-      if (successTimer) {
-        clearInterval(successTimer)
-        successTimer = null
-      }
-      if (lockTimer) {
-        clearTimeout(lockTimer)
-        lockTimer = null
-      }
+      [countdownTimer, successTimer, lockTimer].forEach(timer => {
+        if (timer) {
+          clearInterval(timer)
+          clearTimeout(timer)
+        }
+      })
+      countdownTimer = successTimer = lockTimer = null
     }
 
+    // Form Validation
     const validateField = (fieldName) => {
       const rules = validationRules[fieldName]
       const value = formData[fieldName]
@@ -199,13 +204,7 @@ export default {
     }
 
     const validateForm = () => {
-      let isValid = true
-      Object.keys(validationRules).forEach(field => {
-        if (!validateField(field)) {
-          isValid = false
-        }
-      })
-      return isValid
+      return Object.keys(validationRules).every(validateField)
     }
 
     const isFormValid = computed(() => {
@@ -214,6 +213,7 @@ export default {
           Object.keys(validationErrors).length === 0
     })
 
+    // Error Handling
     const handleLoginError = (error) => {
       loginAttempts.value++
       const remainingAttempts = maxLoginAttempts - loginAttempts.value
@@ -225,7 +225,7 @@ export default {
           isLocked.value = false
           loginAttempts.value = 0
           globalError.value = ''
-        }, 900000)
+        }, 900000) // 15 minutes
         return
       }
 
@@ -233,6 +233,7 @@ export default {
       globalError.value = `${errorMessage}，還剩${remainingAttempts}次嘗試機會`
     }
 
+    // Navigation
     const redirectToHome = () => {
       clearAllTimers()
       isRedirecting.value = false
@@ -244,7 +245,6 @@ export default {
       countdown.value = 5
       successMessage.value = '登入成功！'
       isRedirecting.value = true
-
       clearAllTimers()
 
       successTimer = setInterval(() => {
@@ -255,10 +255,10 @@ export default {
       }, 1000)
     }
 
+    // Form Submission
     const handleSubmit = async () => {
       try {
-        if (!validateForm()) return
-        if (isLocked.value) return
+        if (!validateForm() || isLocked.value) return
 
         clearAllTimers()
         isLoading.value = true
@@ -270,6 +270,7 @@ export default {
           password: formData.password
         })
 
+        // Handle Remember Me
         if (formData.rememberMe) {
           localStorage.setItem('rememberedUsername', formData.username)
         } else {
@@ -279,17 +280,18 @@ export default {
         loginAttempts.value = 0
         startSuccessCountdown()
       } catch (error) {
-        console.error('登入失敗:', error)
         handleLoginError(error)
       } finally {
         isLoading.value = false
       }
     }
 
+    // UI Helpers
     const togglePasswordVisibility = () => {
       showPassword.value = !showPassword.value
     }
 
+    // Initialization
     const initializeForm = () => {
       const rememberedUsername = localStorage.getItem('rememberedUsername')
       if (rememberedUsername) {
@@ -300,9 +302,8 @@ export default {
 
     initializeForm()
 
-    onBeforeUnmount(() => {
-      clearAllTimers()
-    })
+    // Cleanup
+    onBeforeUnmount(clearAllTimers)
 
     return {
       formData,
@@ -324,8 +325,8 @@ export default {
     }
   }
 }
-
 </script>
+
 <style scoped>
 .login-view {
   display: flex;
