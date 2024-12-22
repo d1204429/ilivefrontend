@@ -1,7 +1,7 @@
 <template>
   <div class="login-view">
     <div class="login-container">
-      <h2>登入 iLive</h2>
+      <h2>登入 {{ appName }}</h2>
 
       <form @submit.prevent="handleSubmit" class="login-form">
         <!-- Username Input -->
@@ -44,7 +44,7 @@
             </BaseInput>
           </div>
           <small class="password-hint" v-if="formData.password">
-            密碼長度至少8個字元
+            密碼長度至少8個字元，需包含大小寫字母、數字和特殊符號
           </small>
         </div>
 
@@ -98,7 +98,7 @@
             登入中...
           </template>
           <template v-else-if="isLocked">
-            帳號已鎖定
+            帳號已鎖定（{{ lockCountdown }}分鐘）
           </template>
           <template v-else>
             <i class="fas fa-sign-in-alt"></i>
@@ -123,11 +123,12 @@
 </template>
 
 <script>
-import { ref, reactive, computed, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseInput from '@/components/common/BaseInput.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
+import { AppError, ErrorTypes } from '@/utils/errorHandler'
 
 export default {
   name: 'LoginView',
@@ -135,7 +136,14 @@ export default {
 
   setup() {
     const router = useRouter()
+    const route = useRoute()
     const store = useStore()
+
+    // Constants
+    const appName = import.meta.env.VITE_APP_NAME
+    const maxLoginAttempts = parseInt(import.meta.env.VITE_MAX_LOGIN_ATTEMPTS) || 5
+    const lockDuration = parseInt(import.meta.env.VITE_LOCK_DURATION) || 900000 // 15 minutes
+    const redirectDelay = 5000 // 5 seconds
 
     // Reactive State
     const isLoading = ref(false)
@@ -145,9 +153,9 @@ export default {
     const validationErrors = reactive({})
     const countdown = ref(5)
     const loginAttempts = ref(0)
-    const maxLoginAttempts = 5
     const isRedirecting = ref(false)
     const isLocked = ref(false)
+    const lockCountdown = ref(0)
     let countdownTimer = null
     let successTimer = null
     let lockTimer = null
@@ -175,7 +183,14 @@ export default {
       ]
     }
 
-    // Timer Management
+    // Computed
+    const isFormValid = computed(() => {
+      return formData.username &&
+          formData.password &&
+          Object.keys(validationErrors).length === 0
+    })
+
+    // Methods
     const clearAllTimers = () => {
       [countdownTimer, successTimer, lockTimer].forEach(timer => {
         if (timer) {
@@ -186,7 +201,6 @@ export default {
       countdownTimer = successTimer = lockTimer = null
     }
 
-    // Form Validation
     const validateField = (fieldName) => {
       const rules = validationRules[fieldName]
       const value = formData[fieldName]
@@ -207,38 +221,41 @@ export default {
       return Object.keys(validationRules).every(validateField)
     }
 
-    const isFormValid = computed(() => {
-      return formData.username &&
-          formData.password &&
-          Object.keys(validationErrors).length === 0
-    })
-
-    // Error Handling
     const handleLoginError = (error) => {
       loginAttempts.value++
       const remainingAttempts = maxLoginAttempts - loginAttempts.value
 
       if (loginAttempts.value >= maxLoginAttempts) {
         isLocked.value = true
-        globalError.value = '登入嘗試次數過多，帳號已被鎖定15分鐘'
-        lockTimer = setTimeout(() => {
-          isLocked.value = false
-          loginAttempts.value = 0
-          globalError.value = ''
-        }, 900000) // 15 minutes
+        lockCountdown.value = Math.ceil(lockDuration / 60000)
+        globalError.value = `登入嘗試次數過多，帳號已被鎖定${lockCountdown.value}分鐘`
+
+        lockTimer = setInterval(() => {
+          lockCountdown.value--
+          if (lockCountdown.value <= 0) {
+            isLocked.value = false
+            loginAttempts.value = 0
+            globalError.value = ''
+            clearInterval(lockTimer)
+          }
+        }, 60000)
+
         return
       }
 
-      const errorMessage = error.response?.data?.message || '登入失敗，請檢查帳號密碼是否正確'
-      globalError.value = `${errorMessage}，還剩${remainingAttempts}次嘗試機會`
+      if (error instanceof AppError) {
+        globalError.value = `${error.message}，還剩${remainingAttempts}次嘗試機會`
+      } else {
+        globalError.value = `登入失敗，請檢查帳號密碼是否正確。還剩${remainingAttempts}次嘗試機會`
+      }
     }
 
-    // Navigation
     const redirectToHome = () => {
       clearAllTimers()
       isRedirecting.value = false
       successMessage.value = ''
-      router.push('/')
+      const redirect = route.query.redirect || '/'
+      router.push(redirect)
     }
 
     const startSuccessCountdown = () => {
@@ -255,7 +272,6 @@ export default {
       }, 1000)
     }
 
-    // Form Submission
     const handleSubmit = async () => {
       try {
         if (!validateForm() || isLocked.value) return
@@ -267,15 +283,9 @@ export default {
 
         await store.dispatch('auth/login', {
           username: formData.username.trim(),
-          password: formData.password
+          password: formData.password,
+          rememberMe: formData.rememberMe
         })
-
-        // Handle Remember Me
-        if (formData.rememberMe) {
-          localStorage.setItem('rememberedUsername', formData.username)
-        } else {
-          localStorage.removeItem('rememberedUsername')
-        }
 
         loginAttempts.value = 0
         startSuccessCountdown()
@@ -286,24 +296,31 @@ export default {
       }
     }
 
-    // UI Helpers
     const togglePasswordVisibility = () => {
       showPassword.value = !showPassword.value
     }
 
-    // Initialization
     const initializeForm = () => {
       const rememberedUsername = localStorage.getItem('rememberedUsername')
       if (rememberedUsername) {
         formData.username = rememberedUsername
         formData.rememberMe = true
       }
+
+      // Check for session expired error
+      if (route.query.error === 'session_expired') {
+        globalError.value = '登入已過期，請重新登入'
+      }
     }
 
-    initializeForm()
+    // Lifecycle Hooks
+    onMounted(() => {
+      initializeForm()
+    })
 
-    // Cleanup
-    onBeforeUnmount(clearAllTimers)
+    onBeforeUnmount(() => {
+      clearAllTimers()
+    })
 
     return {
       formData,
@@ -317,7 +334,9 @@ export default {
       isLocked,
       loginAttempts,
       maxLoginAttempts,
+      lockCountdown,
       isFormValid,
+      appName,
       handleSubmit,
       validateField,
       togglePasswordVisibility,

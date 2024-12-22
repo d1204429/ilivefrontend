@@ -1,7 +1,7 @@
 import axios from 'axios'
 import router from '@/router'
 import store from '@/store'
-import { handleError } from '@/utils/errorHandler'
+import { handleError, AppError, ErrorTypes } from '@/utils/errorHandler'
 
 // Token 配置
 const TOKEN_CONFIG = {
@@ -31,7 +31,6 @@ const RETRY_CONFIG = {
     retryDelay: parseInt(import.meta.env.VITE_REQUEST_RETRY_DELAY) || 1000,
     shouldRetry: (error) => {
         return (
-            axios.isCancel(error) ||
             error.code === 'ECONNABORTED' ||
             error.response?.status === 408 ||
             error.response?.status === 429 ||
@@ -44,30 +43,75 @@ const RETRY_CONFIG = {
 const api = axios.create(API_CONFIG)
 
 // 請求隊列管理
-let isRefreshing = false
-const refreshSubscribers = []
-const pendingRequests = new Map()
+const requestManager = {
+    isRefreshing: false,
+    refreshSubscribers: [],
+    pendingRequests: new Map(),
+
+    addPendingRequest(config) {
+        const requestId = this.generateRequestId(config)
+        const source = axios.CancelToken.source()
+        this.pendingRequests.set(requestId, source)
+        return { requestId, source }
+    },
+
+    removePendingRequest(requestId) {
+        this.pendingRequests.delete(requestId)
+    },
+
+    generateRequestId(config) {
+        return `${config.method}-${config.url}-${JSON.stringify(config.params || {})}-${JSON.stringify(config.data || {})}`
+    },
+
+    cancelPendingRequests() {
+        this.pendingRequests.forEach(source => {
+            source.cancel('Request cancelled due to new request')
+        })
+        this.pendingRequests.clear()
+    },
+
+    addRefreshSubscriber(callback) {
+        this.refreshSubscribers.push(callback)
+    },
+
+    clearRefreshSubscribers(error = null) {
+        this.refreshSubscribers.forEach(callback => {
+            if (error) {
+                callback.reject(error)
+            } else {
+                callback.resolve()
+            }
+        })
+        this.refreshSubscribers = []
+    }
+}
 
 // Token 管理
 const tokenManager = {
     getAccessToken() {
         return localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
     },
+
     getRefreshToken() {
         return localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
     },
+
     setTokens(accessToken, refreshToken) {
         if (accessToken) {
             localStorage.setItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY, accessToken)
+            api.defaults.headers.common.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${accessToken}`
         }
         if (refreshToken) {
             localStorage.setItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY, refreshToken)
         }
     },
+
     clearTokens() {
         localStorage.removeItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
         localStorage.removeItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
+        delete api.defaults.headers.common.Authorization
     },
+
     isTokenValid(token) {
         if (!token) return false
         try {
@@ -79,49 +123,31 @@ const tokenManager = {
     }
 }
 
-// 請求隊列處理
-const handleQueue = (error, token = null) => {
-    refreshSubscribers.forEach(callback => {
-        if (error) {
-            callback.reject(error)
-        } else {
-            callback.resolve(token)
-        }
-    })
-    refreshSubscribers.length = 0
-}
-
 // 請求攔截器
 api.interceptors.request.use(
     async config => {
-        // 請求開始時設置 loading
         if (!config.hideLoading) {
             store.dispatch('app/setLoading', true)
         }
 
-        // 設置請求標識
-        const requestId = `${config.method}-${config.url}-${JSON.stringify(config.params || {})}-${JSON.stringify(config.data || {})}`
+        const { requestId, source } = requestManager.addPendingRequest(config)
         config.requestId = requestId
-
-        // 取消重複請求
-        if (pendingRequests.has(requestId)) {
-            pendingRequests.get(requestId).cancel('重複請求已取消')
-        }
-
-        // 創建取消令牌
-        const source = axios.CancelToken.source()
         config.cancelToken = source.token
-        pendingRequests.set(requestId, source)
 
-        // 添加 token
         if (!config.skipAuth) {
             const token = tokenManager.getAccessToken()
-            if (token && tokenManager.isTokenValid(token)) {
-                config.headers.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${token}`
+            if (token) {
+                if (!tokenManager.isTokenValid(token)) {
+                    try {
+                        await store.dispatch('auth/refreshToken')
+                    } catch (error) {
+                        throw new AppError('登入已過期，請重新登入', ErrorTypes.AUTH)
+                    }
+                }
+                config.headers.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${tokenManager.getAccessToken()}`
             }
         }
 
-        // GET 請求添加時間戳防止緩存
         if (config.method?.toLowerCase() === 'get' && !config.noCache) {
             config.params = { ...config.params, _t: Date.now() }
         }
@@ -137,10 +163,8 @@ api.interceptors.request.use(
 // 響應攔截器
 api.interceptors.response.use(
     response => {
-        // 移除請求標識
-        pendingRequests.delete(response.config.requestId)
+        requestManager.removePendingRequest(response.config.requestId)
 
-        // 關閉 loading
         if (!response.config.hideLoading) {
             store.dispatch('app/setLoading', false)
         }
@@ -148,44 +172,35 @@ api.interceptors.response.use(
         return response.data
     },
     async error => {
-        // 移除請求標識
         if (error.config) {
-            pendingRequests.delete(error.config.requestId)
+            requestManager.removePendingRequest(error.config.requestId)
         }
 
-        // 關閉 loading
         if (!error.config?.hideLoading) {
             store.dispatch('app/setLoading', false)
         }
 
-        // 處理取消的請求
         if (axios.isCancel(error)) {
-            return Promise.reject(error)
+            return Promise.reject(new AppError('請求已取消', ErrorTypes.REQUEST_CANCELLED))
         }
 
         const originalRequest = error.config
 
-        // 處理 401 錯誤
+        // 處理 401 錯誤和 token 刷新
         if (error.response?.status === 401 && !originalRequest._retry) {
-            if (isRefreshing) {
-                try {
-                    const token = await new Promise((resolve, reject) => {
-                        refreshSubscribers.push({ resolve, reject })
-                    })
-                    originalRequest.headers.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${token}`
-                    return api(originalRequest)
-                } catch (err) {
-                    return Promise.reject(err)
-                }
+            if (requestManager.isRefreshing) {
+                return new Promise((resolve, reject) => {
+                    requestManager.addRefreshSubscriber({ resolve, reject })
+                }).then(() => api(originalRequest))
             }
 
             originalRequest._retry = true
-            isRefreshing = true
+            requestManager.isRefreshing = true
 
             try {
                 const refreshToken = tokenManager.getRefreshToken()
                 if (!refreshToken) {
-                    throw new Error('No refresh token available')
+                    throw new AppError('無效的刷新令牌', ErrorTypes.AUTH)
                 }
 
                 const response = await api.post('/auth/refresh-token',
@@ -195,36 +210,33 @@ api.interceptors.response.use(
 
                 if (response?.accessToken) {
                     tokenManager.setTokens(response.accessToken, response.refreshToken)
-                    api.defaults.headers.common.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${response.accessToken}`
-
-                    handleQueue(null, response.accessToken)
-                    originalRequest.headers.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${response.accessToken}`
+                    requestManager.clearRefreshSubscribers()
                     return api(originalRequest)
-                } else {
-                    throw new Error('Invalid token refresh response')
                 }
-            } catch (refreshError) {
-                handleQueue(refreshError)
+
+                throw new AppError('Token 更新失敗', ErrorTypes.AUTH)
+            } catch (error) {
+                requestManager.clearRefreshSubscribers(error)
                 await handleAuthError()
-                return Promise.reject(refreshError)
+                throw error
             } finally {
-                isRefreshing = false
+                requestManager.isRefreshing = false
             }
         }
 
         // 處理請求重試
-        if (RETRY_CONFIG.shouldRetry(error) && (!originalRequest._retryCount || originalRequest._retryCount < RETRY_CONFIG.maxRetries)) {
+        if (RETRY_CONFIG.shouldRetry(error) &&
+            (!originalRequest._retryCount || originalRequest._retryCount < RETRY_CONFIG.maxRetries)) {
             originalRequest._retryCount = (originalRequest._retryCount || 0) + 1
-            const delay = originalRequest._retryCount * RETRY_CONFIG.retryDelay
 
             return new Promise(resolve => {
-                setTimeout(() => resolve(api(originalRequest)), delay)
+                setTimeout(() => {
+                    resolve(api(originalRequest))
+                }, originalRequest._retryCount * RETRY_CONFIG.retryDelay)
             })
         }
 
-        // 處理其他錯誤
-        handleError(error)
-        return Promise.reject(error)
+        throw handleError(error)
     }
 )
 
@@ -232,13 +244,17 @@ api.interceptors.response.use(
 const handleAuthError = async () => {
     tokenManager.clearTokens()
     await store.dispatch('auth/logout')
-    router.push({
-        path: '/login',
-        query: {
-            redirect: router.currentRoute.value.fullPath,
-            error: 'session_expired'
-        }
-    })
+
+    const currentRoute = router.currentRoute.value
+    if (currentRoute.path !== '/login') {
+        router.push({
+            path: '/login',
+            query: {
+                redirect: currentRoute.fullPath,
+                error: 'session_expired'
+            }
+        })
+    }
 }
 
 export default api

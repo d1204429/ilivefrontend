@@ -1,7 +1,7 @@
 import api from '@/utils/axios'
 import router from '@/router'
 import store from '@/store'
-import { handleError } from '@/utils/errorHandler'
+import { handleError, AppError, ErrorTypes } from '@/utils/errorHandler'
 
 const TOKEN_CONFIG = {
     ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY || 'access_token',
@@ -23,9 +23,19 @@ class AuthService {
         this.tokenRefreshTimeout = null
         this.isRefreshing = false
         this.refreshSubscribers = []
+        this.failedQueue = []
 
         if (this.token && this.user) {
             this.setupTokenRefresh()
+            this.setAxiosAuthHeader(this.token)
+        }
+    }
+
+    setAxiosAuthHeader(token) {
+        if (token) {
+            api.defaults.headers.common.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${token}`
+        } else {
+            delete api.defaults.headers.common.Authorization
         }
     }
 
@@ -33,7 +43,7 @@ class AuthService {
         if (data.accessToken) {
             localStorage.setItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY, data.accessToken)
             this.token = data.accessToken
-            api.defaults.headers.common.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${data.accessToken}`
+            this.setAxiosAuthHeader(data.accessToken)
             this.setupTokenRefresh()
         }
         if (data.refreshToken) {
@@ -55,13 +65,14 @@ class AuthService {
         localStorage.removeItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
         localStorage.removeItem('user')
         localStorage.removeItem('rememberedUsername')
-        delete api.defaults.headers.common.Authorization
+        this.setAxiosAuthHeader(null)
         this.token = null
         this.refreshToken = null
         this.user = null
         this.tokenRefreshTimeout = null
         this.isRefreshing = false
         this.refreshSubscribers = []
+        this.failedQueue = []
         store.dispatch('auth/clearUser')
     }
 
@@ -76,10 +87,12 @@ class AuthService {
         const expiresIn = (jwtToken.exp * 1000) - Date.now()
         const refreshTime = Math.max(expiresIn - TOKEN_CONFIG.REFRESH_INTERVAL, 0)
 
-        this.tokenRefreshTimeout = setTimeout(() => {
-            this.refreshAccessToken().catch(() => {
-                this.handleAuthError()
-            })
+        this.tokenRefreshTimeout = setTimeout(async () => {
+            try {
+                await this.refreshAccessToken()
+            } catch (error) {
+                await this.handleAuthError(error)
+            }
         }, refreshTime)
     }
 
@@ -92,25 +105,26 @@ class AuthService {
             }).join(''))
             return JSON.parse(jsonPayload)
         } catch (e) {
+            console.error('Token parsing failed:', e)
             return null
         }
     }
 
     async login(username, password, rememberMe = false) {
         try {
-            const response = await api.post('/users/login', {
+            const response = await api.post('/api/v1/auth/login', {
                 username,
                 password
             })
 
-            if (!response?.accessToken || !response?.user) {
-                throw new Error('登入失敗：伺服器回應格式錯誤')
+            if (!response?.data?.accessToken || !response?.data?.user) {
+                throw new AppError('登入失敗：伺服器回應格式錯誤', ErrorTypes.AUTH)
             }
 
             this.setAuthData({
-                accessToken: response.accessToken,
-                refreshToken: response.refreshToken,
-                user: response.user
+                accessToken: response.data.accessToken,
+                refreshToken: response.data.refreshToken,
+                user: response.data.user
             })
 
             if (rememberMe) {
@@ -118,25 +132,19 @@ class AuthService {
             }
 
             await store.dispatch('cart/loadCart')
-            return response
+            return response.data
         } catch (error) {
             if (error.response?.status === 401) {
-                throw new Error('用戶名或密碼錯誤')
+                throw new AppError('用戶名或密碼錯誤', ErrorTypes.AUTH)
             }
-            throw handleError(error)
+            throw error
         }
     }
 
     async refreshAccessToken() {
         if (this.isRefreshing) {
             return new Promise((resolve, reject) => {
-                this.refreshSubscribers.push(token => {
-                    if (token) {
-                        resolve(token)
-                    } else {
-                        reject(new Error('Token 更新失敗'))
-                    }
-                })
+                this.refreshSubscribers.push({ resolve, reject })
             })
         }
 
@@ -144,57 +152,56 @@ class AuthService {
 
         try {
             if (!this.refreshToken) {
-                throw new Error('無效的刷新令牌')
+                throw new AppError('無效的刷新令牌', ErrorTypes.AUTH)
             }
 
-            const response = await api.post('/users/refresh-token', {
+            const response = await api.post('/api/v1/auth/refresh-token', {
                 refreshToken: this.refreshToken
             }, {
-                skipAuth: true
+                skipAuthRefresh: true
             })
 
-            if (!response?.accessToken) {
-                throw new Error('Token 更新失敗：伺服器回應格式錯誤')
+            if (!response?.data?.accessToken) {
+                throw new AppError('Token 更新失敗：伺服器回應格式錯誤', ErrorTypes.AUTH)
             }
 
             this.setAuthData({
-                accessToken: response.accessToken,
-                refreshToken: response.refreshToken
+                accessToken: response.data.accessToken,
+                refreshToken: response.data.refreshToken
             })
 
-            this.refreshSubscribers.forEach(callback => callback(response.accessToken))
-            this.refreshSubscribers = []
-
-            return response.accessToken
+            this.refreshSubscribers.forEach(({ resolve }) =>
+                resolve(response.data.accessToken)
+            )
+            return response.data.accessToken
         } catch (error) {
-            this.refreshSubscribers.forEach(callback => callback(null))
-            this.refreshSubscribers = []
-            await this.handleAuthError()
+            this.refreshSubscribers.forEach(({ reject }) => reject(error))
             throw error
         } finally {
             this.isRefreshing = false
+            this.refreshSubscribers = []
         }
     }
 
     async register(userData) {
         try {
-            const response = await api.post('/users/register', userData)
-            return response
+            const response = await api.post('/api/v1/auth/register', userData)
+            return response.data
         } catch (error) {
             const errorMessage = error.response?.data?.message
             if (errorMessage) {
                 if (errorMessage.includes('Username')) {
-                    throw new Error('此用戶名已被使用')
+                    throw new AppError('此用戶名已被使用', ErrorTypes.VALIDATION)
                 }
                 if (errorMessage.includes('Email')) {
-                    throw new Error('此電子郵件已被註冊')
+                    throw new AppError('此電子郵件已被註冊', ErrorTypes.VALIDATION)
                 }
                 if (errorMessage.includes('PhoneNumber')) {
-                    throw new Error('此手機號碼已被註冊')
+                    throw new AppError('此手機號碼已被註冊', ErrorTypes.VALIDATION)
                 }
-                throw new Error(errorMessage)
+                throw new AppError(errorMessage, ErrorTypes.VALIDATION)
             }
-            throw handleError(error)
+            throw error
         }
     }
 
@@ -202,21 +209,18 @@ class AuthService {
         try {
             const userId = this.user?.userId
             if (!userId) {
-                throw new Error('未找到用戶ID')
+                throw new AppError('未找到用戶ID', ErrorTypes.AUTH)
             }
 
-            const response = await api.get(`/users/${userId}`)
-            if (response) {
-                const updatedUserData = { ...this.user, ...response }
+            const response = await api.get(`/api/v1/users/${userId}`)
+            if (response?.data) {
+                const updatedUserData = { ...this.user, ...response.data }
                 this.setAuthData({ user: updatedUserData })
-                return response
+                return response.data
             }
-            throw new Error('獲取用戶資料失敗')
+            throw new AppError('獲取用戶資料失敗', ErrorTypes.API)
         } catch (error) {
-            if (error.response?.status === 401) {
-                await this.handleAuthError()
-            }
-            throw handleError(error)
+            throw error
         }
     }
 
@@ -224,18 +228,18 @@ class AuthService {
         try {
             const userId = this.user?.userId
             if (!userId) {
-                throw new Error('未找到用戶ID')
+                throw new AppError('未找到用戶ID', ErrorTypes.AUTH)
             }
 
-            const response = await api.put(`/users/${userId}`, profileData)
-            if (response) {
-                const updatedUserData = { ...this.user, ...response }
+            const response = await api.put(`/api/v1/users/${userId}`, profileData)
+            if (response?.data) {
+                const updatedUserData = { ...this.user, ...response.data }
                 this.setAuthData({ user: updatedUserData })
-                return response
+                return response.data
             }
-            throw new Error('更新用戶資料失敗')
+            throw new AppError('更新用戶資料失敗', ErrorTypes.API)
         } catch (error) {
-            throw handleError(error)
+            throw error
         }
     }
 
@@ -243,26 +247,26 @@ class AuthService {
         try {
             const userId = this.user?.userId
             if (!userId) {
-                throw new Error('未找到用戶ID')
+                throw new AppError('未找到用戶ID', ErrorTypes.AUTH)
             }
 
-            const response = await api.put(`/users/${userId}/password`, {
+            const response = await api.put(`/api/v1/users/${userId}/password`, {
                 oldPassword,
                 newPassword
             })
-            return response
+            return response.data
         } catch (error) {
             if (error.response?.status === 401) {
-                throw new Error('原密碼錯誤')
+                throw new AppError('原密碼錯誤', ErrorTypes.AUTH)
             }
-            throw handleError(error)
+            throw error
         }
     }
 
     async logout() {
         try {
             if (this.token) {
-                await api.post('/users/logout')
+                await api.post('/api/v1/auth/logout')
             }
         } catch (error) {
             console.error('登出時發生錯誤:', error)
@@ -273,15 +277,19 @@ class AuthService {
         }
     }
 
-    async handleAuthError() {
+    async handleAuthError(error) {
         this.clearAuthData()
-        router.push({
-            path: '/login',
-            query: {
-                redirect: router.currentRoute.value.fullPath,
-                error: 'session_expired'
-            }
-        })
+        const currentPath = router.currentRoute.value.fullPath
+        if (currentPath !== '/login') {
+            await router.push({
+                path: '/login',
+                query: {
+                    redirect: currentPath,
+                    error: 'session_expired'
+                }
+            })
+        }
+        throw error
     }
 
     getCurrentUser() {

@@ -1,7 +1,6 @@
 import store from '@/store'
 import router from '@/router'
 
-// 錯誤類型常量
 export const ErrorTypes = {
     VALIDATION: 'VALIDATION_ERROR',
     AUTH: 'AUTH_ERROR',
@@ -17,10 +16,10 @@ export const ErrorTypes = {
     TOKEN_EXPIRED: 'TOKEN_EXPIRED',
     TOKEN_INVALID: 'TOKEN_INVALID',
     TOKEN_REFRESH_FAILED: 'TOKEN_REFRESH_FAILED',
-    REQUEST_CANCELLED: 'REQUEST_CANCELLED'
+    REQUEST_CANCELLED: 'REQUEST_CANCELLED',
+    LOGIN_FAILED: 'LOGIN_FAILED'
 }
 
-// 錯誤狀態碼映射
 const ERROR_STATUS_MAP = {
     400: {
         type: ErrorTypes.VALIDATION,
@@ -28,8 +27,9 @@ const ERROR_STATUS_MAP = {
     },
     401: {
         type: ErrorTypes.AUTH,
-        message: '身份驗證已過期，請重新登入',
-        retryable: true
+        message: '登入已過期，請重新登入',
+        retryable: true,
+        redirect: '/login'
     },
     403: {
         type: ErrorTypes.PERMISSION,
@@ -52,41 +52,40 @@ const ERROR_STATUS_MAP = {
     },
     500: {
         type: ErrorTypes.SERVER,
-        message: '伺服器內部錯誤，請稍後再試',
+        message: '系統發生錯誤，請稍後再試',
         redirect: '/500',
         retryable: true
     },
     502: {
         type: ErrorTypes.NETWORK,
-        message: '網路閘道錯誤，請稍後再試',
+        message: '網路連線異常，請稍後再試',
         redirect: '/500',
         retryable: true
     },
     503: {
         type: ErrorTypes.SERVER,
-        message: '服務暫時不可用，請稍後再試',
+        message: '系統維護中，請稍後再試',
         redirect: '/500',
         retryable: true
     },
     504: {
         type: ErrorTypes.TIMEOUT,
-        message: '網關超時，請稍後再試',
+        message: '請求超時，請稍後再試',
         retryable: true
     }
 }
 
-// 錯誤處理器
 export const handleError = async (error) => {
     let errorInfo = {
         type: ErrorTypes.UNKNOWN,
-        message: '發生未知錯誤',
+        message: '系統發生未知錯誤',
         statusCode: null,
         details: null,
         shouldRedirect: false,
         redirectPath: '',
         retryable: false,
         timestamp: new Date().toISOString(),
-        requestId: error.config?.requestId
+        requestId: error.config?.requestId || generateErrorId()
     }
 
     try {
@@ -100,11 +99,9 @@ export const handleError = async (error) => {
             errorInfo = handleUnknownError(error)
         }
 
-        if (errorInfo.type === ErrorTypes.AUTH && !error.config?.skipAuthError) {
+        if (errorInfo.type === ErrorTypes.AUTH) {
             const handled = await handleAuthError(error)
-            if (handled) {
-                return null
-            }
+            if (handled) return null
         }
 
         if (!error.config?.skipErrorLog) {
@@ -117,11 +114,9 @@ export const handleError = async (error) => {
             errorInfo.logId = errorLog.id
         }
 
-        if (!error.config?.skipErrorMessage) {
-            showErrorMessage(errorInfo.message, errorInfo.type)
-        }
+        showErrorMessage(errorInfo.message, errorInfo.type)
 
-        if (errorInfo.shouldRedirect && !error.config?.skipRedirect) {
+        if (errorInfo.shouldRedirect) {
             await handleRedirect(errorInfo.redirectPath)
         }
 
@@ -137,7 +132,6 @@ export const handleError = async (error) => {
     }
 }
 
-// 處理響應錯誤
 const handleResponseError = (error) => {
     const { status, data } = error.response
     const errorConfig = ERROR_STATUS_MAP[status] || {
@@ -145,26 +139,28 @@ const handleResponseError = (error) => {
         message: `系統錯誤 (${status})`
     }
 
+    const message = data?.message || errorConfig.message
+    const details = typeof data === 'string' ? { message: data } : data
+
     return {
         type: errorConfig.type,
-        message: data?.message || errorConfig.message,
+        message,
         statusCode: status,
-        details: data,
+        details,
         shouldRedirect: !!errorConfig.redirect,
         redirectPath: errorConfig.redirect,
         retryable: errorConfig.retryable || status >= 500 || status === 429,
-        requestId: error.config?.requestId
+        requestId: error.config?.requestId || generateErrorId()
     }
 }
 
-// 處理網絡錯誤
 const handleNetworkError = (error) => {
     if (error.code === 'ECONNABORTED') {
         return {
             type: ErrorTypes.TIMEOUT,
-            message: '請求超時，請檢查網路連接並重試',
+            message: '網路連線逾時，請檢查網路狀態後重試',
             retryable: true,
-            requestId: error.config?.requestId
+            requestId: error.config?.requestId || generateErrorId()
         }
     }
 
@@ -172,37 +168,41 @@ const handleNetworkError = (error) => {
         type: ErrorTypes.NETWORK,
         message: '網路連線失敗，請檢查網路設定',
         retryable: true,
-        requestId: error.config?.requestId
+        requestId: error.config?.requestId || generateErrorId()
     }
 }
 
-// 處理應用錯誤
 const handleAppError = (error) => {
     return {
         type: error.type,
         message: error.message,
         details: error.data,
         retryable: false,
-        timestamp: error.timestamp
+        timestamp: error.timestamp,
+        requestId: error.requestId || generateErrorId()
     }
 }
 
-// 處理未知錯誤
 const handleUnknownError = (error) => {
     return {
         type: ErrorTypes.UNKNOWN,
         message: error.message || '發生未知錯誤',
-        retryable: false
+        retryable: false,
+        requestId: generateErrorId()
     }
 }
 
-// 處理認證錯誤
 const handleAuthError = async (error) => {
     const currentPath = router.currentRoute.value.path
     if (currentPath === '/login') return false
 
     const refreshToken = localStorage.getItem(import.meta.env.VITE_JWT_REFRESH_KEY)
-    if (refreshToken && !error.config?._retry) {
+    if (!refreshToken) {
+        await handleTokenRefreshFailure()
+        return false
+    }
+
+    if (!error.config?._retry) {
         try {
             error.config._retry = true
             await store.dispatch('auth/refreshToken', refreshToken)
@@ -211,19 +211,16 @@ const handleAuthError = async (error) => {
             console.error('Token refresh failed:', refreshError)
             await handleTokenRefreshFailure()
         }
-    } else {
-        await handleTokenRefreshFailure()
     }
+
     return false
 }
 
-// 處理Token刷新失敗
 const handleTokenRefreshFailure = async () => {
     await store.dispatch('auth/logout')
     await handleRedirect('/login')
 }
 
-// 處理重定向
 const handleRedirect = async (path) => {
     if (!path || router.currentRoute.value.path === path) return
 
@@ -239,7 +236,6 @@ const handleRedirect = async (path) => {
     }
 }
 
-// 顯示錯誤消息
 const showErrorMessage = (message, type) => {
     const duration = getDurationByErrorType(type)
     store.dispatch('app/setError', {
@@ -249,7 +245,6 @@ const showErrorMessage = (message, type) => {
     }).catch(console.error)
 }
 
-// 獲取錯誤顯示時間
 const getDurationByErrorType = (type) => {
     const durations = {
         [ErrorTypes.VALIDATION]: 5000,
@@ -262,15 +257,6 @@ const getDurationByErrorType = (type) => {
     return durations[type] || durations.default
 }
 
-// 格式化驗證錯誤
-const formatValidationErrors = (errors) => {
-    if (!errors) return null
-    if (typeof errors === 'string') return errors
-    if (Array.isArray(errors)) return errors.filter(Boolean).join('、')
-    return Object.values(errors).flat().filter(Boolean).join('、')
-}
-
-// 記錄錯誤
 export const logError = async (errorInfo) => {
     const logData = {
         id: generateErrorId(),
@@ -288,7 +274,6 @@ export const logError = async (errorInfo) => {
         user: store.getters['auth/currentUser']
     }
 
-    // 開發環境下在控制台輸出錯誤信息
     if (import.meta.env.DEV) {
         console.group('Error Details')
         console.error('Error Type:', errorInfo.type)
@@ -298,7 +283,6 @@ export const logError = async (errorInfo) => {
         console.groupEnd()
     }
 
-    // 生產環境下上報錯誤
     if (import.meta.env.PROD) {
         try {
             await reportErrorToServer(logData)
@@ -310,14 +294,14 @@ export const logError = async (errorInfo) => {
     return logData
 }
 
-// 生成錯誤ID
 const generateErrorId = () => {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 }
 
-// 上報錯誤到服務器
 const reportErrorToServer = async (errorData) => {
     const apiUrl = import.meta.env.VITE_ERROR_REPORT_URL
+    if (!apiUrl) return null
+
     try {
         const response = await fetch(apiUrl, {
             method: 'POST',
@@ -330,10 +314,10 @@ const reportErrorToServer = async (errorData) => {
         return response.json()
     } catch (error) {
         console.error('Error reporting failed:', error)
+        return null
     }
 }
 
-// 應用錯誤類
 export class AppError extends Error {
     constructor(message, type = ErrorTypes.UNKNOWN, data = null) {
         super(message)
@@ -341,7 +325,7 @@ export class AppError extends Error {
         this.type = type
         this.data = data
         this.timestamp = new Date().toISOString()
-        this.requestId = null
+        this.requestId = generateErrorId()
 
         if (Error.captureStackTrace) {
             Error.captureStackTrace(this, AppError)

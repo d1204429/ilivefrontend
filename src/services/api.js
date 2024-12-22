@@ -1,9 +1,8 @@
 import axios from 'axios'
 import router from '@/router'
 import store from '@/store'
-import { handleError } from '@/utils/errorHandler'
+import { handleError, AppError, ErrorTypes } from '@/utils/errorHandler'
 
-// Token 配置
 const TOKEN_CONFIG = {
     ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY || 'access_token',
     REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY || 'refresh_token',
@@ -12,7 +11,6 @@ const TOKEN_CONFIG = {
     TOKEN_EXPIRED_CODE: 'TOKEN_EXPIRED'
 }
 
-// API 配置
 const API_CONFIG = {
     baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
     timeout: parseInt(import.meta.env.VITE_API_TIMEOUT) || 15000,
@@ -27,7 +25,6 @@ const API_CONFIG = {
     retryDelay: parseInt(import.meta.env.VITE_API_RETRY_DELAY) || 1000
 }
 
-// API 路徑
 export const API_PATHS = {
     AUTH: {
         BASE: '/auth',
@@ -70,14 +67,13 @@ export const API_PATHS = {
     }
 }
 
-// 創建 axios 實例
 const api = axios.create(API_CONFIG)
 
-// 請求隊列管理
 const requestManager = {
     isRefreshing: false,
     refreshSubscribers: [],
     pendingRequests: new Map(),
+    failedQueue: [],
 
     addPendingRequest(config) {
         const requestId = this.generateRequestId(config)
@@ -100,10 +96,28 @@ const requestManager = {
             source.cancel('Request cancelled due to new request')
         })
         this.pendingRequests.clear()
+    },
+
+    addToFailedQueue(request) {
+        return new Promise((resolve, reject) => {
+            this.failedQueue.push({ request, resolve, reject })
+        })
+    },
+
+    processFailedQueue(token = null, error = null) {
+        this.failedQueue.forEach(promise => {
+            if (error) {
+                promise.reject(error)
+            } else {
+                const config = promise.request
+                config.headers.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${token}`
+                promise.resolve(api(config))
+            }
+        })
+        this.failedQueue = []
     }
 }
 
-// Token 管理
 const tokenManager = {
     getAccessToken() {
         return localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
@@ -139,29 +153,29 @@ const tokenManager = {
         }
     }
 }
-// 請求攔截器
+
 api.interceptors.request.use(
     async config => {
-        // 檢查是否有相同請求正在進行
         const source = requestManager.addPendingRequest(config)
         config.cancelToken = source.token
 
-        // 設置 loading 狀態
         if (!config.hideLoading) {
             store.dispatch('app/setLoading', true)
         }
 
-        // 添加認證 token
         const token = tokenManager.getAccessToken()
         if (token && !config.skipAuth) {
             if (!tokenManager.isTokenValid(token)) {
-                await store.dispatch('auth/refreshToken')
-                    .catch(() => store.dispatch('auth/logout'))
+                try {
+                    await store.dispatch('auth/refreshToken')
+                } catch (error) {
+                    await store.dispatch('auth/logout')
+                    throw new AppError('登入已過期，請重新登入', ErrorTypes.AUTH)
+                }
             }
             config.headers.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${tokenManager.getAccessToken()}`
         }
 
-        // GET 請求添加時間戳防止緩存
         if (config.method?.toLowerCase() === 'get' && !config.noCache) {
             config.params = {
                 ...config.params,
@@ -169,7 +183,6 @@ api.interceptors.request.use(
             }
         }
 
-        // 請求元數據
         config.metadata = {
             startTime: Date.now(),
             retryCount: 0
@@ -183,15 +196,12 @@ api.interceptors.request.use(
     }
 )
 
-// 響應攔截器
 api.interceptors.response.use(
     response => {
         requestManager.removePendingRequest(response.config)
-
         if (!response.config.hideLoading) {
             store.dispatch('app/setLoading', false)
         }
-
         return response.data
     },
     async error => {
@@ -200,25 +210,15 @@ api.interceptors.response.use(
         }
 
         requestManager.removePendingRequest(error.config)
-
         if (!error.config?.hideLoading) {
             store.dispatch('app/setLoading', false)
         }
 
         const originalRequest = error.config
 
-        // 處理 401 錯誤和 token 刷新
         if (error.response?.status === 401 && !originalRequest._retry) {
             if (requestManager.isRefreshing) {
-                try {
-                    const token = await new Promise((resolve, reject) => {
-                        requestManager.refreshSubscribers.push({ resolve, reject })
-                    })
-                    originalRequest.headers.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${token}`
-                    return api(originalRequest)
-                } catch (err) {
-                    return Promise.reject(err)
-                }
+                return requestManager.addToFailedQueue(originalRequest)
             }
 
             originalRequest._retry = true
@@ -227,7 +227,7 @@ api.interceptors.response.use(
             try {
                 const refreshToken = tokenManager.getRefreshToken()
                 if (!refreshToken) {
-                    throw new Error('無效的刷新令牌')
+                    throw new AppError('無效的刷新令牌', ErrorTypes.AUTH)
                 }
 
                 const response = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
@@ -237,23 +237,20 @@ api.interceptors.response.use(
 
                 if (response?.accessToken && response?.refreshToken) {
                     tokenManager.setTokens(response.accessToken, response.refreshToken)
-                    requestManager.refreshSubscribers.forEach(callback => callback.resolve(response.accessToken))
-                    originalRequest.headers.Authorization = `${TOKEN_CONFIG.TOKEN_PREFIX} ${response.accessToken}`
+                    requestManager.processFailedQueue(response.accessToken)
                     return api(originalRequest)
                 } else {
-                    throw new Error('Token 更新失敗')
+                    throw new AppError('Token 更新失敗', ErrorTypes.AUTH)
                 }
             } catch (refreshError) {
-                requestManager.refreshSubscribers.forEach(callback => callback.reject(refreshError))
-                await handleAuthError()
-                return Promise.reject(refreshError)
+                requestManager.processFailedQueue(null, refreshError)
+                await store.dispatch('auth/logout')
+                throw refreshError
             } finally {
-                requestManager.refreshSubscribers = []
                 requestManager.isRefreshing = false
             }
         }
 
-        // 請求重試
         if (originalRequest?.metadata?.retryCount < API_CONFIG.retryTimes &&
             error.response?.status >= 500) {
             originalRequest.metadata.retryCount++
@@ -261,11 +258,10 @@ api.interceptors.response.use(
             return api(originalRequest)
         }
 
-        return Promise.reject(handleError(error))
+        throw handleError(error)
     }
 )
 
-// API 服務
 export const authApi = {
     login: credentials => api.post(API_PATHS.AUTH.LOGIN, credentials),
     register: userData => api.post(API_PATHS.AUTH.REGISTER, userData),

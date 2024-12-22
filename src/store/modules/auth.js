@@ -1,5 +1,5 @@
 import { authApi } from '@/services/api'
-import { handleError } from '@/utils/errorHandler'
+import { handleError, AppError, ErrorTypes } from '@/utils/errorHandler'
 import router from '@/router'
 
 // Token 配置
@@ -60,7 +60,6 @@ const state = {
     roles: JSON.parse(localStorage.getItem('roles')) || [],
     preferences: JSON.parse(localStorage.getItem('preferences')) || {}
 }
-
 // Mutations
 const mutations = {
     SET_LOADING(state, status) {
@@ -200,55 +199,9 @@ const mutations = {
         localStorage.removeItem('preferences')
     }
 }
-// Actions
+// Actions (續)
 const actions = {
-    async login({ commit, dispatch }, { username, password, rememberMe = false }) {
-        if (state.isLocked && new Date(state.lockUntil) > new Date()) {
-            const remainingTime = Math.ceil((new Date(state.lockUntil) - new Date()) / 1000 / 60)
-            throw new Error(`帳號已被鎖定，請等待 ${remainingTime} 分鐘後再試`)
-        }
-
-        commit('SET_LOADING', true)
-        commit('SET_ERROR', null)
-        commit('SET_SUCCESS_MESSAGE', null)
-
-        try {
-            const response = await authApi.login({ username, password })
-
-            if (!response?.accessToken || !response?.user) {
-                throw new Error('伺服器回應格式錯誤')
-            }
-
-            commit('SET_TOKENS', {
-                accessToken: response.accessToken,
-                refreshToken: response.refreshToken
-            })
-            commit('SET_USER', response.user)
-            commit('SET_AUTH_STATUS', 'authenticated')
-            commit('RESET_LOGIN_ATTEMPTS')
-            commit('SET_SUCCESS_MESSAGE', '登入成功')
-
-            if (rememberMe) {
-                localStorage.setItem('rememberedUsername', username)
-            } else {
-                localStorage.removeItem('rememberedUsername')
-            }
-
-            await dispatch('setupAuthRefresh')
-            await dispatch('initializeUserSession')
-            return response
-        } catch (error) {
-            commit('INCREMENT_LOGIN_ATTEMPTS')
-            const errorMessage = handleError(error)
-            commit('SET_ERROR', errorMessage)
-            throw error
-        } finally {
-            commit('SET_LOADING', false)
-        }
-    },
-
     async initializeUserSession({ commit, dispatch }) {
-        // 初始化用戶會話
         const setupSessionKeepAlive = () => {
             window.addEventListener('mousemove', () => commit('UPDATE_ACTIVITY_TIME'))
             window.addEventListener('keypress', () => commit('UPDATE_ACTIVITY_TIME'))
@@ -256,7 +209,6 @@ const actions = {
             setInterval(() => {
                 const lastActivity = new Date(state.lastActivityTime).getTime()
                 const currentTime = Date.now()
-
                 if (currentTime - lastActivity > TOKEN_CONFIG.SESSION_TIMEOUT) {
                     dispatch('logout', { reason: 'session_timeout' })
                 }
@@ -286,7 +238,7 @@ const actions = {
                 async () => {
                     try {
                         await dispatch('refreshToken')
-                        setupTokenRefresh() // 重新設置定時器
+                        setupTokenRefresh()
                     } catch (error) {
                         await dispatch('logout', { reason: 'refresh_failed' })
                     }
@@ -299,75 +251,9 @@ const actions = {
         setupTokenRefresh()
     },
 
-    async refreshToken({ commit, state }) {
-        if (state.isRefreshing) {
-            return new Promise((resolve, reject) => {
-                commit('ADD_REFRESH_SUBSCRIBER', token => {
-                    if (token) {
-                        resolve(token)
-                    } else {
-                        reject(new Error('Token 更新失敗'))
-                    }
-                })
-            })
-        }
-
-        commit('SET_REFRESH_STATE', { isRefreshing: true })
-
-        try {
-            const response = await authApi.refreshToken({
-                refreshToken: state.refreshToken
-            })
-
-            if (!response?.accessToken) {
-                throw new Error('無效的 token 更新響應')
-            }
-
-            commit('SET_TOKENS', {
-                accessToken: response.accessToken,
-                refreshToken: response.refreshToken
-            })
-
-            state.refreshSubscribers.forEach(callback => callback(response.accessToken))
-            commit('CLEAR_REFRESH_SUBSCRIBERS')
-            return response.accessToken
-        } catch (error) {
-            state.refreshSubscribers.forEach(callback => callback(null))
-            commit('CLEAR_REFRESH_SUBSCRIBERS')
-            throw error
-        } finally {
-            commit('SET_REFRESH_STATE', { isRefreshing: false })
-        }
-    },
-
-    async logout({ commit, dispatch }, { reason = 'user_logout' } = {}) {
-        try {
-            if (state.token) {
-                await authApi.logout()
-            }
-        } catch (error) {
-            console.error('Logout error:', error)
-        } finally {
-            commit('CLEAR_AUTH')
-            await dispatch('cart/clearCart', null, { root: true })
-
-            const query = reason === 'session_timeout'
-                ? { error: 'session_timeout' }
-                : reason === 'refresh_failed'
-                    ? { error: 'token_expired' }
-                    : undefined
-
-            router.push({
-                path: '/login',
-                query
-            })
-        }
-    },
-
     async handleAuthError({ dispatch }, error) {
         if (error.response?.status === 401) {
             const errorCode = error.response?.data?.code
-
             if (errorCode === TOKEN_CONFIG.TOKEN_EXPIRED_CODE) {
                 try {
                     await dispatch('refreshToken')
@@ -377,7 +263,6 @@ const actions = {
                     return false
                 }
             }
-
             await dispatch('logout', { reason: 'unauthorized' })
             return false
         }
@@ -407,32 +292,6 @@ const actions = {
         } catch (error) {
             commit('CLEAR_AUTH')
             return false
-        }
-    },
-
-    async updateProfile({ commit }, profileData) {
-        try {
-            const response = await authApi.updateProfile(profileData)
-            commit('SET_USER', { ...state.user, ...response })
-            commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
-            return response
-        } catch (error) {
-            commit('SET_ERROR', handleError(error))
-            throw error
-        }
-    },
-
-    async changePassword({ commit }, { oldPassword, newPassword }) {
-        try {
-            if (!SECURITY_CONFIG.PASSWORD_PATTERN.test(newPassword)) {
-                throw new Error('密碼必須包含大小寫字母、數字和特殊字符，且長度至少為8位')
-            }
-
-            await authApi.changePassword({ oldPassword, newPassword })
-            commit('SET_SUCCESS_MESSAGE', '密碼修改成功')
-        } catch (error) {
-            commit('SET_ERROR', handleError(error))
-            throw error
         }
     }
 }
