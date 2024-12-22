@@ -1,7 +1,6 @@
 <template>
   <div class="profile-container">
     <div class="profile-card">
-      <!-- 頁面標題和操作按鈕 -->
       <div class="profile-header">
         <h2 class="title">個人資料</h2>
         <div class="action-buttons">
@@ -32,99 +31,42 @@
         </div>
       </div>
 
-      <!-- 錯誤提示 -->
       <div v-if="globalError" class="error-banner">
         {{ globalError }}
       </div>
 
-      <!-- 個人資料表單 -->
       <div class="profile-content">
         <div v-if="loading" class="loading-wrapper">
           <BaseLoading message="載入中..." />
         </div>
         <form v-else class="profile-form" @submit.prevent="handleSave">
-          <!-- 使用者名稱 -->
-          <div class="form-group">
-            <label>使用者名稱</label>
+          <div class="form-group" v-for="field in formFields" :key="field.name">
+            <label>{{ field.label }}</label>
             <div class="input-wrapper">
-              <input
-                  v-if="isEditing"
-                  v-model.trim="editedProfile.username"
-                  type="text"
-                  class="form-input"
-                  :class="{ 'has-error': errors.username }"
-                  @blur="validateField('username')"
-              />
-              <span v-else class="form-text">{{ currentUser?.username || '-' }}</span>
+              <template v-if="isEditing">
+                <input
+                    v-if="field.type !== 'textarea'"
+                    v-model.trim="editedProfile[field.name]"
+                    :type="field.type"
+                    class="form-input"
+                    :class="{ 'has-error': errors[field.name] }"
+                    @blur="validateField(field.name)"
+                />
+                <textarea
+                    v-else
+                    v-model.trim="editedProfile[field.name]"
+                    class="form-textarea"
+                    :class="{ 'has-error': errors[field.name] }"
+                    @blur="validateField(field.name)"
+                ></textarea>
+              </template>
+              <span v-else class="form-text">
+                {{ currentUser?.[field.name] || '-' }}
+              </span>
             </div>
-            <span v-if="errors.username" class="error-text">{{ errors.username }}</span>
-          </div>
-
-          <!-- 電子信箱 -->
-          <div class="form-group">
-            <label>電子信箱</label>
-            <div class="input-wrapper">
-              <input
-                  v-if="isEditing"
-                  v-model.trim="editedProfile.email"
-                  type="email"
-                  class="form-input"
-                  :class="{ 'has-error': errors.email }"
-                  @blur="validateField('email')"
-              />
-              <span v-else class="form-text">{{ currentUser?.email || '-' }}</span>
-            </div>
-            <span v-if="errors.email" class="error-text">{{ errors.email }}</span>
-          </div>
-
-          <!-- 全名 -->
-          <div class="form-group">
-            <label>全名</label>
-            <div class="input-wrapper">
-              <input
-                  v-if="isEditing"
-                  v-model.trim="editedProfile.fullName"
-                  type="text"
-                  class="form-input"
-                  :class="{ 'has-error': errors.fullName }"
-                  @blur="validateField('fullName')"
-              />
-              <span v-else class="form-text">{{ currentUser?.fullName || '-' }}</span>
-            </div>
-            <span v-if="errors.fullName" class="error-text">{{ errors.fullName }}</span>
-          </div>
-
-          <!-- 電話號碼 -->
-          <div class="form-group">
-            <label>電話號碼</label>
-            <div class="input-wrapper">
-              <input
-                  v-if="isEditing"
-                  v-model.trim="editedProfile.phoneNumber"
-                  type="tel"
-                  class="form-input"
-                  :class="{ 'has-error': errors.phoneNumber }"
-                  @blur="validateField('phoneNumber')"
-              />
-              <span v-else class="form-text">{{ currentUser?.phoneNumber || '-' }}</span>
-            </div>
-            <span v-if="errors.phoneNumber" class="error-text">{{ errors.phoneNumber }}</span>
-          </div>
-
-          <!-- 地址 -->
-          <div class="form-group">
-            <label>地址</label>
-            <div class="input-wrapper">
-              <textarea
-                  v-if="isEditing"
-                  v-model.trim="editedProfile.address"
-                  class="form-textarea"
-                  :class="{ 'has-error': errors.address }"
-                  @blur="validateField('address')"
-              ></textarea>
-              <span v-else class="form-text">{{ currentUser?.address || '-' }}</span>
-            </div>
-            <span v-if="errors.address" class="error-text">{{ errors.address }}</span>
+            <span v-if="errors[field.name]" class="error-text">
+              {{ errors[field.name] }}
+            </span>
           </div>
         </form>
       </div>
@@ -141,13 +83,20 @@ import { fullName, email, phoneNumber, address } from '@/utils/validators'
 
 export default {
   name: 'ProfileView',
-  components: {
-    BaseLoading
-  },
+  components: { BaseLoading },
 
   setup() {
     const store = useStore()
     const router = useRouter()
+
+    // Form Fields Configuration
+    const formFields = [
+      { name: 'username', label: '使用者名稱', type: 'text' },
+      { name: 'email', label: '電子信箱', type: 'email' },
+      { name: 'fullName', label: '全名', type: 'text' },
+      { name: 'phoneNumber', label: '電話號碼', type: 'tel' },
+      { name: 'address', label: '地址', type: 'textarea' }
+    ]
 
     // Reactive State
     const isEditing = ref(false)
@@ -156,7 +105,6 @@ export default {
     const errors = ref({})
     const originalProfile = ref({})
     const globalError = ref('')
-    const validationFields = ['username', 'email', 'fullName', 'phoneNumber', 'address']
 
     // Computed Properties
     const currentUser = computed(() => store.getters['auth/currentUser'])
@@ -182,12 +130,10 @@ export default {
           phoneNumber: () => phoneNumber(value) === true ? null : '請輸入有效的電話號碼',
           address: () => address(value) === true ? null : '請輸入有效的地址'
         }
-        return validationMap[field] ? validationMap[field]() : null
+        return validationMap[field]?.() || null
       },
-
       validateField: (field) => {
         if (!field || !editedProfile.value[field]) return
-
         const error = validation.getValidationError(field, editedProfile.value[field])
         if (error) {
           errors.value = { ...errors.value, [field]: error }
@@ -196,13 +142,12 @@ export default {
           errors.value = rest
         }
       },
-
       validateForm: () => {
         const newErrors = {}
-        validationFields.forEach(field => {
-          if (editedProfile.value[field]) {
-            const error = validation.getValidationError(field, editedProfile.value[field])
-            if (error) newErrors[field] = error
+        formFields.forEach(({ name }) => {
+          if (editedProfile.value[name]) {
+            const error = validation.getValidationError(name, editedProfile.value[name])
+            if (error) newErrors[name] = error
           }
         })
         errors.value = newErrors
@@ -227,19 +172,12 @@ export default {
 
     const handleError = (message) => {
       globalError.value = message
-      if (store.hasModule('app')) {
-        store.dispatch('app/setError', {
-          message,
-          type: 'error',
-          duration: 3000
-        }).catch(err => {
-          console.error('Error handling failed:', err)
-        })
-      } else {
-        console.error(message)
-      }
+      store.dispatch('app/setError', {
+        message,
+        type: 'error',
+        duration: 3000
+      }).catch(console.error)
     }
-
 
     // Form Actions
     const handleSave = async (e) => {
@@ -257,21 +195,17 @@ export default {
           duration: 2000
         })
       } catch (error) {
-        const errorMessage = error.response?.data?.message || '更新個人資料失敗，請稍後再試'
-        handleError(errorMessage)
+        handleError(error.response?.data?.message || '更新個人資料失敗，請稍後再試')
       } finally {
         loading.value = false
       }
     }
 
     const handleCancel = () => {
-      if (hasChanges.value) {
-        if (confirm('確定要取消編輯？未儲存的變更將會遺失。')) {
-          resetForm()
-        }
-      } else {
-        resetForm()
+      if (hasChanges.value && !confirm('確定要取消編輯？未儲存的變更將會遺失。')) {
+        return
       }
+      resetForm()
     }
 
     const startEditing = () => {
@@ -293,13 +227,13 @@ export default {
     const checkAuthAndLoadData = async () => {
       if (!isAuthenticated.value) {
         router.push({
-          name: '/Login',
+          name: 'login',
           query: { redirect: router.currentRoute.value.fullPath }
         })
         return
-      }try{await fetchUserProfile()
-      }catch (error) {handleError('載入資料失敗')
-      }}
+      }
+      await fetchUserProfile()
+    }
 
     // Watchers
     watch(() => editedProfile.value, (newValue) => {
@@ -311,11 +245,9 @@ export default {
       }
     }, { deep: true })
 
-    // Lifecycle Hooks
     onMounted(checkAuthAndLoadData)
 
     return {
-      // State
       isEditing,
       loading,
       currentUser,
@@ -324,7 +256,7 @@ export default {
       globalError,
       isFormValid,
       hasChanges,
-      // Methods
+      formFields,
       startEditing,
       handleSave,
       handleCancel,

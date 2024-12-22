@@ -1,9 +1,11 @@
 import { authApi } from '@/services/api'
 import { handleError } from '@/utils/errorHandler'
 
-// Constants
 const TOKEN_KEY = import.meta.env.VITE_JWT_TOKEN_KEY
 const REFRESH_KEY = import.meta.env.VITE_JWT_REFRESH_KEY
+const MAX_LOGIN_ATTEMPTS = 5
+const LOCK_DURATION = 30 * 60 * 1000 // 30 minutes
+
 const INITIAL_STATE = {
     user: null,
     token: null,
@@ -12,10 +14,12 @@ const INITIAL_STATE = {
     error: null,
     authStatus: null,
     successMessage: null,
-    lastLoginTime: null
+    lastLoginTime: null,
+    loginAttempts: 0,
+    isLocked: false,
+    lockUntil: null
 }
 
-// State
 const state = {
     user: JSON.parse(localStorage.getItem('user')) || null,
     token: localStorage.getItem(TOKEN_KEY) || null,
@@ -24,10 +28,12 @@ const state = {
     error: null,
     authStatus: null,
     successMessage: null,
-    lastLoginTime: localStorage.getItem('lastLoginTime') || null
+    lastLoginTime: localStorage.getItem('lastLoginTime') || null,
+    loginAttempts: 0,
+    isLocked: false,
+    lockUntil: null
 }
 
-// Mutations
 const mutations = {
     SET_LOADING(state, status) {
         state.loading = status
@@ -64,6 +70,18 @@ const mutations = {
             localStorage.removeItem(REFRESH_KEY)
         }
     },
+    INCREMENT_LOGIN_ATTEMPTS(state) {
+        state.loginAttempts++
+        if (state.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+            state.isLocked = true
+            state.lockUntil = new Date(Date.now() + LOCK_DURATION).toISOString()
+        }
+    },
+    RESET_LOGIN_ATTEMPTS(state) {
+        state.loginAttempts = 0
+        state.isLocked = false
+        state.lockUntil = null
+    },
     CLEAR_AUTH(state) {
         Object.assign(state, { ...INITIAL_STATE })
         localStorage.removeItem('user')
@@ -77,9 +95,12 @@ const mutations = {
     }
 }
 
-// Actions
 const actions = {
     async login({ commit, dispatch }, credentials) {
+        if (state.isLocked && new Date(state.lockUntil) > new Date()) {
+            throw new Error('帳號已被鎖定，請稍後再試')
+        }
+
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
 
@@ -95,14 +116,15 @@ const actions = {
             })
             commit('SET_USER', response.user)
             commit('SET_AUTH_STATUS', 'authenticated')
+            commit('RESET_LOGIN_ATTEMPTS')
             commit('SET_SUCCESS_MESSAGE', '登入成功')
 
-            await dispatch('fetchUserProfile')
+            await dispatch('getProfile')
             return response
         } catch (error) {
-            const errorMessage = error.response?.data?.message || '登入失敗，請檢查帳號密碼'
+            commit('INCREMENT_LOGIN_ATTEMPTS')
             handleError(error)
-            commit('SET_ERROR', errorMessage)
+            commit('SET_ERROR', error.response?.data?.message || '登入失敗，請檢查帳號密碼')
             throw error
         } finally {
             commit('SET_LOADING', false)
@@ -139,6 +161,39 @@ const actions = {
         }
     },
 
+    async getProfile({ commit }) {
+        try {
+            const response = await authApi.getProfile()
+            if (response) {
+                commit('SET_USER', response)
+            }
+            return response
+        } catch (error) {
+            if (error.response?.status === 401) {
+                commit('CLEAR_AUTH')
+            }
+            handleError(error)
+            throw error
+        }
+    },
+
+    async updateProfile({ commit }, userData) {
+        commit('SET_LOADING', true)
+
+        try {
+            const response = await authApi.updateProfile(userData)
+            commit('UPDATE_USER', response)
+            commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
+            return response
+        } catch (error) {
+            handleError(error)
+            commit('SET_ERROR', error.response?.data?.message || '更新個人資料失敗')
+            throw error
+        } finally {
+            commit('SET_LOADING', false)
+        }
+    },
+
     async refreshToken({ commit, state }) {
         if (!state.refreshToken) {
             throw new Error('無可用的重新整理權杖')
@@ -146,10 +201,6 @@ const actions = {
 
         try {
             const response = await authApi.refreshToken(state.refreshToken)
-            if (!response?.accessToken) {
-                throw new Error('無效的重新整理權杖回應')
-            }
-
             commit('SET_TOKENS', {
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken
@@ -174,68 +225,11 @@ const actions = {
                 })
                 commit('SET_USER', user)
                 commit('SET_AUTH_STATUS', 'authenticated')
-                await dispatch('fetchUserProfile')
+                await dispatch('getProfile')
             }
         } catch (error) {
             handleError(error)
             commit('CLEAR_AUTH')
-        }
-    },
-
-    async fetchUserProfile({ commit }) {
-        try {
-            const response = await authApi.getUserProfile()
-            if (response) {
-                commit('SET_USER', response)
-            }
-        } catch (error) {
-            console.error('獲取用戶資料失敗:', error)
-            if (error.response?.status === 401) {
-                commit('CLEAR_AUTH')
-            }
-            handleError(error)
-        }
-    },
-
-    async updateUserProfile({ commit }, userData) {
-        commit('SET_LOADING', true)
-
-        try {
-            const response = await authApi.updateUserProfile(userData)
-            commit('UPDATE_USER', response)
-            commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
-            return response
-        } catch (error) {
-            handleError(error)
-            commit('SET_ERROR', error.response?.data?.message || '更新個人資料失敗')
-            throw error
-        } finally {
-            commit('SET_LOADING', false)
-        }
-    },async syncUserProfile({ commit, dispatch }) {
-        try {
-            commit('SET_LOADING', true)
-            await dispatch('fetchUserProfile')
-            commit('SET_SUCCESS_MESSAGE', '資料同步成功')
-        } catch (error) {
-            handleError(error)
-        } finally {
-            commit('SET_LOADING', false)
-        }
-    },
-
-    async changePassword({ commit }, passwordData) {
-        commit('SET_LOADING', true)
-
-        try {
-            await authApi.changePassword(passwordData)
-            commit('SET_SUCCESS_MESSAGE', '密碼更改成功')
-        } catch (error) {
-            handleError(error)
-            commit('SET_ERROR', error.response?.data?.message || '更改密碼失敗')
-            throw error
-        } finally {
-            commit('SET_LOADING', false)
         }
     },
 
@@ -260,7 +254,6 @@ const actions = {
     }
 }
 
-// Getters
 const getters = {
     isAuthenticated: state => !!state.token && !!state.user,
     currentUser: state => state.user,
@@ -270,7 +263,12 @@ const getters = {
     authStatus: state => state.authStatus,
     token: state => state.token,
     lastLoginTime: state => state.lastLoginTime,
-    hasRefreshToken: state => !!state.refreshToken
+    hasRefreshToken: state => !!state.refreshToken,
+    isAccountLocked: state => state.isLocked,
+    remainingLockTime: state => {
+        if (!state.lockUntil) return 0
+        return Math.max(0, new Date(state.lockUntil) - new Date())
+    }
 }
 
 export default {

@@ -3,7 +3,6 @@ import router from '@/router'
 import store from '@/store'
 import { handleError } from '@/utils/errorHandler'
 
-// API 配置常量
 const API_CONFIG = {
     baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
     timeout: 15000,
@@ -14,9 +13,8 @@ const API_CONFIG = {
     withCredentials: true
 }
 
-// API 路徑常量
 const API_PATHS = {
-    AUTH: '/users',
+    AUTH: '/auth', // 修改認證路徑
     USERS: '/users',
     PRODUCTS: '/products',
     CART: '/cart',
@@ -24,19 +22,16 @@ const API_PATHS = {
     CATEGORIES: '/categories'
 }
 
-// 創建 axios 實例
 const api = axios.create(API_CONFIG)
 
 // 請求攔截器
 api.interceptors.request.use(
     config => {
-        // Token 處理
         const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
         if (token) {
             config.headers['Authorization'] = `Bearer ${token}`
         }
 
-        // GET 請求添加時間戳防止緩存
         if (config.method?.toLowerCase() === 'get') {
             config.params = {
                 ...config.params,
@@ -44,9 +39,7 @@ api.interceptors.request.use(
             }
         }
 
-        // 請求開始時顯示 loading
         store.dispatch('app/setLoading', true)
-
         return config
     },
     error => {
@@ -65,7 +58,6 @@ api.interceptors.response.use(
         store.dispatch('app/setLoading', false)
         const originalRequest = error.config
 
-        // Token 過期處理
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true
 
@@ -108,7 +100,9 @@ export const authApi = {
     verifyEmail: (token) => api.post(`${API_PATHS.AUTH}/verify-email`, { token }),
     forgotPassword: (email) => api.post(`${API_PATHS.AUTH}/forgot-password`, { email }),
     resetPassword: (token, password) => api.post(`${API_PATHS.AUTH}/reset-password`, { token, password }),
-    checkEmailExists: (email) => api.post(`${API_PATHS.AUTH}/check-email`, { email })
+    checkEmailExists: (email) => api.post(`${API_PATHS.AUTH}/check-email`, { email }),
+    getProfile: () => api.get(`${API_PATHS.USERS}/profile`), // 添加 getProfile
+    updateProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data) // 添加 updateProfile
 }
 
 // 用戶相關 API
@@ -116,8 +110,6 @@ export const userApi = {
     getProfile: () => api.get(`${API_PATHS.USERS}/profile`),
     updateProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data),
     changePassword: (data) => api.put(`${API_PATHS.USERS}/password`, data),
-    getUserProfile: () => api.get(`${API_PATHS.USERS}/profile`),
-    fetchUserInfo: () => api.get(`${API_PATHS.USERS}/profile`),
     uploadAvatar: (formData) => api.post(`${API_PATHS.USERS}/avatar`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
     }),
@@ -129,7 +121,7 @@ export const userApi = {
     getPreferences: () => api.get(`${API_PATHS.USERS}/preferences`)
 }
 
-// 商品相關 API
+// 其他 API 保持不變
 export const productApi = {
     getList: (params) => api.get(API_PATHS.PRODUCTS, { params }),
     getById: (id) => api.get(`${API_PATHS.PRODUCTS}/${id}`),
@@ -141,7 +133,6 @@ export const productApi = {
     addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS}/${productId}/reviews`, data)
 }
 
-// 購物車相關 API
 export const cartApi = {
     getItems: () => api.get(`${API_PATHS.CART}/items`),
     addItem: (data) => api.post(`${API_PATHS.CART}/items`, data),
@@ -155,7 +146,6 @@ export const cartApi = {
     checkout: (data) => api.post(`${API_PATHS.CART}/checkout`, data)
 }
 
-// 訂單相關 API
 export const orderApi = {
     create: (data) => api.post(API_PATHS.ORDERS, data),
     getList: (params) => api.get(API_PATHS.ORDERS, { params }),

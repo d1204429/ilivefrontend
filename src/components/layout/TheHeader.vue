@@ -1,11 +1,8 @@
 <template>
   <header class="header">
-    <!-- 保持原有模板內容不變 -->
     <div class="header-container">
       <!-- 漢堡選單按鈕 -->
-      <div class="burger-menu"
-           :class="{ 'active': isMenuOpen }"
-           @click="toggleMenu">
+      <div class="burger-menu" :class="{ 'active': isMenuOpen }" @click="toggleMenu">
         <span class="burger-bar"></span>
         <span class="burger-bar"></span>
         <span class="burger-bar"></span>
@@ -72,18 +69,14 @@
         </template>
         <router-link to="/cart" class="cart-link">
           <i class="fas fa-shopping-cart"></i>
-          <span v-if="cartItemCount > 0" class="cart-count">
-      {{ cartItemCount }}
-    </span>
+          <span v-if="cartItemCount > 0" class="cart-count">{{ cartItemCount }}</span>
         </router-link>
       </nav>
-
     </div>
   </header>
 </template>
 
 <script>
-
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
@@ -95,80 +88,29 @@ export default {
     const store = useStore()
     const router = useRouter()
 
+    // Reactive State
     const isMenuOpen = ref(false)
     const isCategoryOpen = ref(false)
     const searchKeyword = ref('')
     const categories = ref([])
 
+    // Computed Properties
     const isLoggedIn = computed(() => store.getters['auth/isAuthenticated'])
     const currentUser = computed(() => store.getters['auth/currentUser'])
     const cartItemCount = computed(() => store.getters['cart/itemCount'])
 
-    // 監聽登入狀態變化
-    watch(isLoggedIn, (newValue) => {
-      if (newValue) {
-        initializeHeader()
-      } else {
-        // 登出時清理相關數據
-        store.commit('cart/CLEAR_CART')
-      }
-    })
-
-    // 獲取商品分類
+    // Methods
     const fetchCategories = async () => {
       try {
         const response = await store.dispatch('product/getCategories')
-        categories.value = response
+        if (response) {
+          categories.value = response
+        }
       } catch (error) {
-        console.error('獲取分類失敗:', error)
         store.dispatch('app/setError', {
           message: '獲取分類失敗，請重新整理頁面',
-          type: 'error'
-        })
-      }
-    }
-
-    const toggleMenu = () => {
-      isMenuOpen.value = !isMenuOpen.value
-      if (!isMenuOpen.value) {
-        isCategoryOpen.value = false
-      }
-      document.body.style.overflow = isMenuOpen.value ? 'hidden' : ''
-    }
-
-    const toggleCategory = () => {
-      isCategoryOpen.value = !isCategoryOpen.value
-    }
-
-    const handleSearch = () => {
-      if (searchKeyword.value.trim()) {
-        router.push({
-          path: '/products',
-          query: {
-            search: searchKeyword.value.trim(),
-            page: 1
-          }
-        })
-        searchKeyword.value = ''
-        if (isMenuOpen.value) {
-          toggleMenu()
-        }
-      }
-    }
-
-    const handleLogout = async () => {
-      try {
-        await store.dispatch('auth/logout')
-        router.push('/login')
-        store.dispatch('app/setSuccess', {
-          message: '已成功登出',
-          duration: 2000
-        })
-      } catch (error) {
-        console.error('登出失敗:', error)
-        store.dispatch('app/setError', {
-          message: '登出失敗，請稍後再試',
-          type: 'error'
+          type: 'error',
+          duration: 3000
         })
       }
     }
@@ -189,6 +131,49 @@ export default {
       }
     }
 
+    const handleLogout = async () => {
+      try {
+        await store.dispatch('auth/logout')
+        router.push('/login')
+        store.dispatch('app/setSuccess', {
+          message: '已成功登出',
+          duration: 2000
+        })
+      } catch (error) {
+        store.dispatch('app/setError', {
+          message: '登出失敗，請稍後再試',
+          type: 'error',
+          duration: 3000
+        })
+      }
+    }
+
+    const handleSearch = () => {
+      const trimmedKeyword = searchKeyword.value.trim()
+      if (trimmedKeyword) {
+        router.push({
+          path: '/products',
+          query: { search: trimmedKeyword, page: 1 }
+        })
+        searchKeyword.value = ''
+        if (isMenuOpen.value) {
+          toggleMenu()
+        }
+      }
+    }
+
+    const toggleMenu = () => {
+      isMenuOpen.value = !isMenuOpen.value
+      if (!isMenuOpen.value) {
+        isCategoryOpen.value = false
+      }
+      document.body.style.overflow = isMenuOpen.value ? 'hidden' : ''
+    }
+
+    const toggleCategory = () => {
+      isCategoryOpen.value = !isCategoryOpen.value
+    }
+
     const handleResize = () => {
       if (window.innerWidth > 768 && isMenuOpen.value) {
         isMenuOpen.value = false
@@ -196,13 +181,22 @@ export default {
       }
     }
 
-    // 監聽路由變化
+    // Watchers
+    watch(isLoggedIn, (newValue) => {
+      if (newValue) {
+        initializeHeader()
+      } else {
+        store.commit('cart/CLEAR_CART')
+      }
+    })
+
     watch(() => router.currentRoute.value.path, () => {
       if (isMenuOpen.value) {
         toggleMenu()
       }
     })
 
+    // Lifecycle Hooks
     onMounted(() => {
       initializeHeader()
       window.addEventListener('resize', handleResize)
@@ -228,8 +222,6 @@ export default {
     }
   }
 }
-
-
 </script>
 
 
