@@ -13,9 +13,8 @@ const API_CONFIG = {
     withCredentials: true
 }
 
-// 修正 API 路徑,將認證相關路徑統一到 /users
 const API_PATHS = {
-    AUTH: '/users',  // 改回原來的路徑
+    AUTH: '/users',
     USERS: '/users',
     PRODUCTS: '/products',
     CART: '/cart',
@@ -25,7 +24,6 @@ const API_PATHS = {
 
 const api = axios.create(API_CONFIG)
 
-// 請求攔截器
 api.interceptors.request.use(
     config => {
         const token = localStorage.getItem(import.meta.env.VITE_JWT_TOKEN_KEY)
@@ -33,7 +31,6 @@ api.interceptors.request.use(
             config.headers['Authorization'] = `Bearer ${token}`
         }
 
-        // 添加時間戳防止緩存
         if (config.method?.toLowerCase() === 'get') {
             config.params = {
                 ...config.params,
@@ -50,7 +47,6 @@ api.interceptors.request.use(
     }
 )
 
-// 響應攔截器
 api.interceptors.response.use(
     response => {
         store.dispatch('app/setLoading', false)
@@ -60,7 +56,6 @@ api.interceptors.response.use(
         store.dispatch('app/setLoading', false)
         const originalRequest = error.config
 
-        // Token 過期處理
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true
 
@@ -71,19 +66,18 @@ api.interceptors.response.use(
                 }
 
                 const response = await api.post(`${API_PATHS.AUTH}/refresh-token`, { refreshToken })
-                if (!response.accessToken) {
+                if (!response?.accessToken) {
                     throw new Error('重新整理令牌響應無效')
                 }
 
-                // 更新 token
                 localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, response.accessToken)
                 localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, response.refreshToken)
 
-                // 更新請求頭
                 originalRequest.headers['Authorization'] = `Bearer ${response.accessToken}`
                 return api(originalRequest)
             } catch (refreshError) {
-                // 清除認證狀態
+                localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+                localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
                 await store.dispatch('auth/logout')
                 router.push({
                     path: '/login',
@@ -98,7 +92,6 @@ api.interceptors.response.use(
     }
 )
 
-// 認證相關 API
 export const authApi = {
     login: (credentials) => api.post(`${API_PATHS.AUTH}/login`, credentials),
     register: (userData) => api.post(`${API_PATHS.AUTH}/register`, userData),
@@ -112,10 +105,9 @@ export const authApi = {
     updateProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data)
 }
 
-// 用戶相關 API
 export const userApi = {
-    getProfile: () => api.get(`${API_PATHS.USERS}/profile`),
-    updateProfile: (data) => api.put(`${API_PATHS.USERS}/profile`, data),
+    getProfile: () => authApi.getProfile(),
+    updateProfile: (data) => authApi.updateProfile(data),
     changePassword: (data) => api.put(`${API_PATHS.USERS}/password`, data),
     uploadAvatar: (formData) => api.post(`${API_PATHS.USERS}/avatar`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -128,7 +120,6 @@ export const userApi = {
     getPreferences: () => api.get(`${API_PATHS.USERS}/preferences`)
 }
 
-// 其他 API 保持不變
 export const productApi = {
     getList: (params) => api.get(API_PATHS.PRODUCTS, { params }),
     getById: (id) => api.get(`${API_PATHS.PRODUCTS}/${id}`),

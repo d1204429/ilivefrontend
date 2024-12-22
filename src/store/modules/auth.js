@@ -60,12 +60,14 @@ const mutations = {
         state.authStatus = status
     },
     SET_TOKENS(state, { accessToken, refreshToken }) {
-        state.token = accessToken
-        state.refreshToken = refreshToken
-        if (accessToken) {
+        if (accessToken && refreshToken) {
+            state.token = accessToken
+            state.refreshToken = refreshToken
             localStorage.setItem(TOKEN_KEY, accessToken)
             localStorage.setItem(REFRESH_KEY, refreshToken)
         } else {
+            state.token = null
+            state.refreshToken = null
             localStorage.removeItem(TOKEN_KEY)
             localStorage.removeItem(REFRESH_KEY)
         }
@@ -92,30 +94,33 @@ const mutations = {
 }
 
 const actions = {
-    async login({ commit, dispatch }, credentials) {
+    async login({ commit }, credentials) {
         if (state.isLocked && new Date(state.lockUntil) > new Date()) {
             throw new Error('帳號已被鎖定，請稍後再試')
         }
 
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
+        commit('SET_SUCCESS_MESSAGE', null)
 
         try {
             const response = await authApi.login(credentials)
+
             if (!response?.accessToken || !response?.user) {
                 throw new Error('無效的登入回應')
             }
 
+            // 先設置 token,再設置用戶資訊
             commit('SET_TOKENS', {
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken
             })
+
             commit('SET_USER', response.user)
             commit('SET_AUTH_STATUS', 'authenticated')
             commit('RESET_LOGIN_ATTEMPTS')
             commit('SET_SUCCESS_MESSAGE', '登入成功')
 
-            await dispatch('getProfile')
             return response
         } catch (error) {
             commit('INCREMENT_LOGIN_ATTEMPTS')
@@ -157,7 +162,11 @@ const actions = {
         }
     },
 
-    async getProfile({ commit }) {
+    async getProfile({ commit, state }) {
+        if (!state.token) {
+            return null
+        }
+
         try {
             const response = await authApi.getProfile()
             if (response) {
@@ -175,6 +184,7 @@ const actions = {
 
     async updateProfile({ commit }, userData) {
         commit('SET_LOADING', true)
+        commit('SET_ERROR', null)
 
         try {
             const response = await authApi.updateProfile(userData)
@@ -192,11 +202,13 @@ const actions = {
 
     async refreshToken({ commit, state }) {
         if (!state.refreshToken) {
+            commit('CLEAR_AUTH')
             throw new Error('無可用的重新整理權杖')
         }
 
         try {
             const response = await authApi.refreshToken(state.refreshToken)
+
             if (!response?.accessToken) {
                 throw new Error('重新整理權杖響應無效')
             }
@@ -205,6 +217,7 @@ const actions = {
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken
             })
+
             return response
         } catch (error) {
             commit('CLEAR_AUTH')
@@ -214,19 +227,23 @@ const actions = {
     },
 
     async checkAuth({ commit, dispatch }) {
-        try {
-            const token = localStorage.getItem(TOKEN_KEY)
-            const user = JSON.parse(localStorage.getItem('user'))
+        const token = localStorage.getItem(TOKEN_KEY)
+        const user = JSON.parse(localStorage.getItem('user'))
 
-            if (token && user) {
-                commit('SET_TOKENS', {
-                    accessToken: token,
-                    refreshToken: localStorage.getItem(REFRESH_KEY)
-                })
-                commit('SET_USER', user)
-                commit('SET_AUTH_STATUS', 'authenticated')
-                await dispatch('getProfile')
-            }
+        if (!token || !user) {
+            commit('CLEAR_AUTH')
+            return
+        }
+
+        try {
+            commit('SET_TOKENS', {
+                accessToken: token,
+                refreshToken: localStorage.getItem(REFRESH_KEY)
+            })
+            commit('SET_USER', user)
+            commit('SET_AUTH_STATUS', 'authenticated')
+
+            await dispatch('getProfile')
         } catch (error) {
             handleError(error)
             commit('CLEAR_AUTH')

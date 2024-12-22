@@ -32,7 +32,9 @@ export const handleError = async (error) => {
                 case 401:
                     errorType = ErrorTypes.AUTH
                     errorMessage = '身份驗證已過期，請重新登入'
-                    await handleAuthError(error)
+                    if (!error.config?.skipAuthError) {
+                        await handleAuthError(error)
+                    }
                     break
 
                 case 403:
@@ -45,6 +47,7 @@ export const handleError = async (error) => {
                 case 404:
                     errorType = ErrorTypes.VALIDATION
                     errorMessage = '請求的資源不存在'
+                    shouldRedirect = false
                     break
 
                 case 422:
@@ -57,9 +60,18 @@ export const handleError = async (error) => {
                     errorMessage = '請求過於頻繁，請稍後再試'
                     break
 
+                case 500:
+                case 502:
+                case 503:
+                    errorType = ErrorTypes.SERVER
+                    errorMessage = '伺服器暫時無法處理請求，請稍後再試'
+                    shouldRedirect = true
+                    redirectPath = '/500'
+                    break
+
                 default:
                     errorType = ErrorTypes.UNKNOWN
-                    errorMessage = data.message || `未知錯誤 (${status})`
+                    errorMessage = data?.message || `未知錯誤 (${status})`
             }
         } else if (error.code === 'ECONNABORTED') {
             errorType = ErrorTypes.TIMEOUT
@@ -87,7 +99,7 @@ export const handleError = async (error) => {
             showErrorMessage(errorMessage, errorType)
         }
 
-        if (shouldRedirect) {
+        if (shouldRedirect && !error.config?.skipRedirect) {
             await handleRedirect(redirectPath)
         }
 
@@ -126,14 +138,13 @@ const handleAuthError = async (error) => {
 }
 
 const handleRedirect = async (path) => {
-    const currentPath = router.currentRoute.value.path
-    if (currentPath === path) return
+    if (!path || router.currentRoute.value.path === path) return
 
     try {
         await router.push({
             path,
             query: path === '/login' ? {
-                redirect: currentPath,
+                redirect: router.currentRoute.value.fullPath,
                 timestamp: Date.now()
             } : undefined
         })
@@ -146,14 +157,14 @@ const showErrorMessage = (message, type) => {
     store.dispatch('app/setError', {
         message,
         type,
-        duration: 3000
+        duration: import.meta.env.VITE_ERROR_SHOW_DURATION || 3000
     }).catch(console.error)
 }
 
 const formatValidationErrors = (errors) => {
     if (!errors) return null
     if (typeof errors === 'string') return errors
-    if (Array.isArray(errors)) return errors.join(', ')
+    if (Array.isArray(errors)) return errors.filter(Boolean).join(', ')
 
     return typeof errors === 'object'
         ? Object.values(errors).flat().filter(Boolean).join(', ')
@@ -175,7 +186,8 @@ export const logError = async (errorInfo) => {
         request: {
             url: error?.config?.url,
             method: error?.config?.method,
-            params: error?.config?.params
+            params: error?.config?.params,
+            data: error?.config?.data
         }
     }
 

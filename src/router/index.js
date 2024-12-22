@@ -5,7 +5,9 @@ const ROUTE_CONSTANTS = {
     TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
     APP_NAME: import.meta.env.VITE_APP_NAME || 'iLive',
-    DEFAULT_TITLE: '首頁'
+    DEFAULT_TITLE: '首頁',
+    LOGIN_PATH: '/login',
+    HOME_PATH: '/'
 }
 
 const routes = [
@@ -143,44 +145,70 @@ const router = createRouter({
     routes,
     scrollBehavior(to, from, savedPosition) {
         if (savedPosition) {
-            return savedPosition
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    resolve(savedPosition)
+                }, 300)
+            })
         }
-        return { top: 0 }
+        return { top: 0, behavior: 'smooth' }
     }
 })
 
 const checkAuthentication = async () => {
-    const token = localStorage.getItem(ROUTE_CONSTANTS.TOKEN_KEY)
-    const refreshToken = localStorage.getItem(ROUTE_CONSTANTS.REFRESH_KEY)
-    const isAuthenticated = store.getters['auth/isAuthenticated']
+    try {
+        const token = localStorage.getItem(ROUTE_CONSTANTS.TOKEN_KEY)
+        const refreshToken = localStorage.getItem(ROUTE_CONSTANTS.REFRESH_KEY)
+        const isAuthenticated = store.getters['auth/isAuthenticated']
 
-    if (token && !isAuthenticated && refreshToken) {
-        try {
-            await store.dispatch('auth/refreshToken', refreshToken)
-            return true
-        } catch (error) {
-            await store.dispatch('auth/logout')
-            return false
+        if (!token) return false
+
+        if (!isAuthenticated && refreshToken) {
+            try {
+                await store.dispatch('auth/refreshToken', refreshToken)
+                await store.dispatch('auth/getProfile')
+                return true
+            } catch (error) {
+                await store.dispatch('auth/logout')
+                return false
+            }
         }
+
+        return isAuthenticated
+    } catch (error) {
+        console.error('認證檢查失敗:', error)
+        return false
     }
-    return isAuthenticated
 }
 
 const handleAuthRedirect = (to) => {
+    const currentPath = to.fullPath
+    const isLoginPage = currentPath === ROUTE_CONSTANTS.LOGIN_PATH
+
+    if (isLoginPage) return { path: ROUTE_CONSTANTS.HOME_PATH }
+
     return {
-        path: '/login',
-        query: { redirect: to.fullPath }
+        path: ROUTE_CONSTANTS.LOGIN_PATH,
+        query: {
+            redirect: currentPath,
+            timestamp: Date.now()
+        }
     }
+}
+
+const setDocumentTitle = (to) => {
+    document.title = to.meta.title
+        ? `${to.meta.title} - ${ROUTE_CONSTANTS.APP_NAME}`
+        : ROUTE_CONSTANTS.APP_NAME
 }
 
 router.beforeEach(async (to, from, next) => {
     try {
-        document.title = to.meta.title
-            ? `${to.meta.title} - ${ROUTE_CONSTANTS.APP_NAME}`
-            : ROUTE_CONSTANTS.APP_NAME
+        setDocumentTitle(to)
 
         const isAuthenticated = await checkAuthentication()
 
+        // 需要認證但未登入
         if (to.meta.requiresAuth && !isAuthenticated) {
             store.dispatch('app/setError', {
                 message: '請先登入以繼續操作',
@@ -190,17 +218,23 @@ router.beforeEach(async (to, from, next) => {
             return next(handleAuthRedirect(to))
         }
 
+        // 已登入訪問登入/註冊頁
         if (to.meta.hideForAuth && isAuthenticated) {
-            return next('/')
+            store.dispatch('app/setSuccess', {
+                message: '您已經登入',
+                duration: 2000
+            })
+            return next(ROUTE_CONSTANTS.HOME_PATH)
         }
 
+        // 保存導航歷史
         if (!to.meta.hideForAuth && from.name) {
             localStorage.setItem('previousPath', from.fullPath)
         }
 
         next()
     } catch (error) {
-        console.error('路由錯誤:', error)
+        console.error('路由守衛錯誤:', error)
         store.dispatch('app/setError', {
             message: '系統錯誤，請稍後再試',
             type: 'error',

@@ -93,6 +93,7 @@ export default {
     const isCategoryOpen = ref(false)
     const searchKeyword = ref('')
     const categories = ref([])
+    const isInitialized = ref(false)
 
     // Computed Properties
     const isLoggedIn = computed(() => store.getters['auth/isAuthenticated'])
@@ -115,19 +116,37 @@ export default {
       }
     }
 
-    const initializeHeader = async () => {
+    const fetchUserData = async () => {
       try {
+        if (isLoggedIn.value && !currentUser.value) {
+          await store.dispatch('auth/getProfile')
+        }
         if (isLoggedIn.value) {
-          await Promise.all([
-            store.dispatch('cart/fetchCartItems'),
-            store.dispatch('auth/getProfile'),
-            fetchCategories()
-          ])
-        } else {
-          await fetchCategories()
+          await store.dispatch('cart/fetchCartItems')
         }
       } catch (error) {
+        if (error.response?.status === 401) {
+          await store.dispatch('auth/logout')
+          router.push('/login')
+        }
+        console.error('獲取用戶數據失敗:', error)
+      }
+    }
+
+    const initializeHeader = async () => {
+      if (isInitialized.value) return
+
+      try {
+        await fetchCategories()
+        await fetchUserData()
+        isInitialized.value = true
+      } catch (error) {
         console.error('初始化頁面失敗:', error)
+        store.dispatch('app/setError', {
+          message: '初始化失敗，請重新整理頁面',
+          type: 'error',
+          duration: 3000
+        })
       }
     }
 
@@ -153,7 +172,10 @@ export default {
       if (trimmedKeyword) {
         router.push({
           path: '/products',
-          query: { search: trimmedKeyword, page: 1 }
+          query: {
+            search: trimmedKeyword,
+            page: 1
+          }
         })
         searchKeyword.value = ''
         if (isMenuOpen.value) {
@@ -182,10 +204,10 @@ export default {
     }
 
     // Watchers
-    watch(isLoggedIn, (newValue) => {
-      if (newValue) {
-        initializeHeader()
-      } else {
+    watch(isLoggedIn, async (newValue, oldValue) => {
+      if (newValue && newValue !== oldValue) {
+        await fetchUserData()
+      } else if (!newValue) {
         store.commit('cart/CLEAR_CART')
       }
     })
@@ -197,8 +219,8 @@ export default {
     })
 
     // Lifecycle Hooks
-    onMounted(() => {
-      initializeHeader()
+    onMounted(async () => {
+      await initializeHeader()
       window.addEventListener('resize', handleResize)
     })
 
@@ -223,6 +245,7 @@ export default {
   }
 }
 </script>
+
 
 
 <style scoped>
