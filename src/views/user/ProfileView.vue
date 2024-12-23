@@ -193,7 +193,7 @@ export default {
         loading.value = true
         globalError.value = ''
 
-        const response = await store.dispatch('auth/updateUserInfo', editedProfile.value)
+        const response = await store.dispatch('auth/updateProfile', editedProfile.value)
         if (response) {
           isEditing.value = false
           originalProfile.value = { ...response }
@@ -205,7 +205,7 @@ export default {
           try {
             await store.dispatch('auth/refreshToken')
             // 重試更新操作
-            await store.dispatch('auth/updateUserInfo', editedProfile.value)
+            await store.dispatch('auth/updateProfile', editedProfile.value)
           } catch (refreshError) {
             globalError.value = '登入已過期，請重新登入'
             await store.dispatch('auth/logout')
