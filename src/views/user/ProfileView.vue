@@ -170,16 +170,13 @@ export default {
     const handleAuthError = async (error) => {
       if (error.response?.status === 401) {
         try {
-          await store.dispatch('auth/refreshToken')
-          return true
+          const refreshed = await store.dispatch('auth/refreshToken')
+          if (refreshed) {
+            return true
+          }
+          return false
         } catch (refreshError) {
-          router.push({
-            name: 'login',
-            query: {
-              redirect: router.currentRoute.value.fullPath,
-              error: 'session_expired'
-            }
-          })
+          console.error('Token refresh failed:', refreshError)
           return false
         }
       }
@@ -201,24 +198,29 @@ export default {
       try {
         loading.value = true
         globalError.value = ''
-        const response = await apiService.user.getProfile()
+
+        if (!isAuthenticated.value) {
+          const authChecked = await store.dispatch('auth/checkAuth')
+          if (!authChecked) {
+            throw new Error('未登入或登入已過期')
+          }
+        }
+
+        const response = await store.dispatch('auth/getProfile')
         if (response) {
-          await store.commit('auth/SET_USER', response)
           originalProfile.value = { ...response }
           editedProfile.value = { ...response }
+          retryCount.value = 0
         }
-        retryCount.value = 0
       } catch (error) {
-        if (await handleAuthError(error)) {
-          if (retryCount.value < MAX_RETRIES) {
+        if (error.response?.status === 401) {
+          const refreshed = await handleAuthError(error)
+          if (refreshed && retryCount.value < MAX_RETRIES) {
             retryCount.value++
-            await fetchUserProfile()
-          } else {
-            handleError(error)
+            return fetchUserProfile()
           }
-        } else {
-          handleError(error)
         }
+        handleError(error)
       } finally {
         loading.value = false
       }
@@ -232,9 +234,8 @@ export default {
       try {
         loading.value = true
         globalError.value = ''
-        const response = await apiService.user.updateProfile(editedProfile.value)
+        const response = await store.dispatch('auth/updateProfile', editedProfile.value)
         if (response) {
-          await store.commit('auth/SET_USER', response)
           await fetchUserProfile()
           isEditing.value = false
           store.dispatch('app/setSuccess', {
@@ -275,14 +276,22 @@ export default {
 
     // Auth Check & Initial Data Load
     const checkAuthAndLoadData = async () => {
-      if (!isAuthenticated.value) {
-        router.push({
-          name: 'login',
-          query: { redirect: router.currentRoute.value.fullPath }
-        })
-        return
+      try {
+        if (!isAuthenticated.value) {
+          const authChecked = await store.dispatch('auth/checkAuth')
+          if (!authChecked) {
+            router.push({
+              name: 'login',
+              query: { redirect: router.currentRoute.value.fullPath }
+            })
+            return
+          }
+        }
+        await fetchUserProfile()
+      } catch (error) {
+        console.error('Auth check failed:', error)
+        handleError(error)
       }
-      await fetchUserProfile()
     }
 
     // Watchers
@@ -296,7 +305,9 @@ export default {
     }, { deep: true })
 
     // Lifecycle Hooks
-    onMounted(checkAuthAndLoadData)
+    onMounted(async () => {
+      await checkAuthAndLoadData()
+    })
 
     return {
       isEditing,
@@ -317,7 +328,6 @@ export default {
   }
 }
 </script>
-
 
 <style scoped>
 .profile-container {

@@ -8,7 +8,8 @@ const TOKEN_CONSTANTS = {
     ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
     TOKEN_PREFIX: 'Bearer',
-    TOKEN_EXPIRY_MARGIN: 60000 // 1分鐘提前更新
+    TOKEN_EXPIRY_MARGIN: 60000, // 1分鐘提前更新
+    REFRESH_INTERVAL: parseInt(import.meta.env.VITE_TOKEN_REFRESH_INTERVAL) || 840000
 }
 
 // API 配置常量
@@ -70,7 +71,7 @@ const api = axios.create(API_CONFIG)
 // 請求隊列和刷新標記
 let isRefreshing = false
 let failedQueue = []
-let lastTokenRefresh = 0
+let lastTokenRefresh = Date.now()
 
 // 請求重試配置
 const retryConfig = {
@@ -91,17 +92,27 @@ const tokenManager = {
     getAccessToken: () => localStorage.getItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY),
     getRefreshToken: () => localStorage.getItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY),
     setTokens: (accessToken, refreshToken) => {
-        localStorage.setItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY, accessToken)
-        localStorage.setItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY, refreshToken)
+        if (accessToken) {
+            localStorage.setItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY, accessToken)
+            api.defaults.headers.common.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${accessToken}`
+        }
+        if (refreshToken) {
+            localStorage.setItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY, refreshToken)
+        }
         lastTokenRefresh = Date.now()
     },
     removeTokens: () => {
         localStorage.removeItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY)
         localStorage.removeItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY)
+        delete api.defaults.headers.common.Authorization
         lastTokenRefresh = 0
     },
     shouldRefreshToken: () => {
-        return Date.now() - lastTokenRefresh >= (import.meta.env.VITE_TOKEN_REFRESH_INTERVAL || 840000)
+        return Date.now() - lastTokenRefresh >= TOKEN_CONSTANTS.REFRESH_INTERVAL
+    },
+    isTokenValid: () => {
+        const token = localStorage.getItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY)
+        return !!token && !tokenManager.shouldRefreshToken()
     }
 }
 
@@ -117,6 +128,29 @@ const processQueue = (error, token = null) => {
     failedQueue = []
 }
 
+// 刷新 Token
+const refreshToken = async () => {
+    try {
+        const refreshToken = tokenManager.getRefreshToken()
+        if (!refreshToken) {
+            throw new Error('No refresh token available')
+        }
+
+        const response = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
+            { refreshToken },
+            { skipAuth: true }
+        )
+
+        if (response?.data?.accessToken) {
+            tokenManager.setTokens(response.data.accessToken, response.data.refreshToken)
+            return response.data.accessToken
+        }
+        throw new Error('Invalid token refresh response')
+    } catch (error) {
+        throw error
+    }
+}
+
 // 請求攔截器
 api.interceptors.request.use(
     async config => {
@@ -124,26 +158,22 @@ api.interceptors.request.use(
             store.dispatch('app/setLoading', true)
         }
 
-        let token = tokenManager.getAccessToken()
-        if (token && !config.skipAuth) {
-            if (tokenManager.shouldRefreshToken() && !config.url.includes(API_PATHS.AUTH.REFRESH_TOKEN)) {
-                try {
-                    const refreshToken = tokenManager.getRefreshToken()
-                    if (refreshToken) {
-                        const { data } = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
-                            { refreshToken },
-                            { skipAuth: true }
-                        )
-                        if (data.accessToken) {
-                            tokenManager.setTokens(data.accessToken, data.refreshToken)
-                            token = data.accessToken
-                        }
+        if (!config.skipAuth && !config.url?.includes(API_PATHS.AUTH.REFRESH_TOKEN)) {
+            const token = tokenManager.getAccessToken()
+            if (token) {
+                if (tokenManager.shouldRefreshToken()) {
+                    try {
+                        const newToken = await refreshToken()
+                        config.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${newToken}`
+                    } catch (error) {
+                        console.error('Token refresh failed:', error)
+                        await handleLogout()
+                        return Promise.reject(error)
                     }
-                } catch (error) {
-                    console.error('Token refresh failed:', error)
+                } else {
+                    config.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
                 }
             }
-            config.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
         }
 
         if (config.method?.toLowerCase() === 'get' && !config.noCache) {
@@ -176,48 +206,28 @@ api.interceptors.response.use(
 
         const originalRequest = error.config
 
+        // 處理 401 錯誤
         if (error.response?.status === 401 && !originalRequest._retry) {
             if (isRefreshing) {
-                return new Promise((resolve, reject) => {
-                    failedQueue.push({ resolve, reject })
-                }).then(token => {
+                try {
+                    const token = await new Promise((resolve, reject) => {
+                        failedQueue.push({ resolve, reject })
+                    })
                     originalRequest.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
                     return api(originalRequest)
-                }).catch(err => {
-                    if (err.response?.status === 401) {
-                        return handleLogout()
-                    }
+                } catch (err) {
                     return Promise.reject(err)
-                })
+                }
             }
 
             originalRequest._retry = true
             isRefreshing = true
 
             try {
-                const refreshToken = tokenManager.getRefreshToken()
-                if (!refreshToken) {
-                    throw new Error('No refresh token available')
-                }
-
-                const { data } = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
-                    { refreshToken },
-                    {
-                        skipAuth: true,
-                        _retry: true
-                    }
-                )
-
-                if (data.accessToken && data.refreshToken) {
-                    tokenManager.setTokens(data.accessToken, data.refreshToken)
-                    api.defaults.headers.common.Authorization =
-                        `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${data.accessToken}`
-
-                    processQueue(null, data.accessToken)
-                    return api(originalRequest)
-                } else {
-                    throw new Error('Invalid token refresh response')
-                }
+                const newToken = await refreshToken()
+                processQueue(null, newToken)
+                originalRequest.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${newToken}`
+                return api(originalRequest)
             } catch (refreshError) {
                 processQueue(refreshError, null)
                 await handleLogout()
@@ -227,31 +237,29 @@ api.interceptors.response.use(
             }
         }
 
+        // 處理請求重試
         if (shouldRetryRequest(error)) {
             return handleRequestRetry(error)
         }
 
-        const errorInfo = await handleError(error)
-        return Promise.reject(errorInfo)
+        return Promise.reject(error)
     }
 )
 
 // 處理登出
 const handleLogout = async () => {
     try {
-        await store.dispatch('auth/logout')
-        tokenManager.removeTokens()
-        if (router.currentRoute.value.meta.requiresAuth) {
-            router.push({
-                path: '/login',
-                query: {
-                    redirect: router.currentRoute.value.fullPath,
-                    reason: 'session_expired'
-                }
-            })
+        const token = tokenManager.getAccessToken()
+        if (token) {
+            try {
+                await api.post(API_PATHS.AUTH.LOGOUT, null, { skipAuth: true })
+            } catch (error) {
+                console.error('Logout request failed:', error)
+            }
         }
-    } catch (error) {
-        console.error('Logout failed:', error)
+    } finally {
+        tokenManager.removeTokens()
+        await store.dispatch('auth/logout', null, { root: true })
     }
 }
 
@@ -327,7 +335,7 @@ const apiService = {
         getById: id => api.get(`${API_PATHS.ORDERS.BASE}/${id}`),
         cancel: id => api.put(`${API_PATHS.ORDERS.BASE}/${id}/cancel`),
         pay: (id, data) => api.post(`${API_PATHS.ORDERS.BASE}/${id}/payment`, data),
-        getPaymentMethods: () => api.post(API_PATHS.ORDERS.PAYMENT),
+        getPaymentMethods: () => api.get(API_PATHS.ORDERS.PAYMENT),
         confirmReceipt: id => api.put(`${API_PATHS.ORDERS.BASE}/${id}/confirm-receipt`),
         getShipmentTracking: id => api.get(`${API_PATHS.ORDERS.BASE}/${id}/tracking`)
     }
