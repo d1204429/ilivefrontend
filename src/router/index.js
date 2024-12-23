@@ -1,4 +1,3 @@
-// src/router/index.js
 import { createRouter, createWebHistory } from 'vue-router'
 import store from '@/store'
 
@@ -27,21 +26,30 @@ const routes = [
         path: '/products',
         name: 'Products',
         component: () => import('@/views/product/ProductListView.vue'),
-        meta: { title: '商品列表' }
+        meta: {
+            title: '商品列表',
+            keepAlive: true
+        }
     },
     {
         path: '/product/:id',
         name: 'ProductDetail',
         component: () => import('@/views/product/ProductDetailView.vue'),
         props: true,
-        meta: { title: '商品詳情' }
+        meta: {
+            title: '商品詳情',
+            keepAlive: true
+        }
     },
     {
         path: '/category/:id',
         name: 'Category',
         component: () => import('@/views/product/ProductListView.vue'),
         props: true,
-        meta: { title: '商品分類' }
+        meta: {
+            title: '商品分類',
+            keepAlive: true
+        }
     },
     {
         path: '/cart',
@@ -104,7 +112,8 @@ const routes = [
         component: () => import('@/views/user/ProfileView.vue'),
         meta: {
             requiresAuth: true,
-            title: '會員資料'
+            title: '會員資料',
+            keepAlive: true
         }
     },
     {
@@ -169,14 +178,12 @@ const checkAuthentication = async () => {
 
         if (!token && !refreshToken) return false
 
-        if (!isAuthenticated && refreshToken) {
+        if (!isAuthenticated && token && refreshToken) {
             try {
-                await store.dispatch('auth/refreshToken', refreshToken)
-                await store.dispatch('auth/getProfile')
+                await store.dispatch('auth/checkAuth')
                 return true
             } catch (error) {
-                console.error('Token更新失敗:', error)
-                await handleLogout()
+                console.error('認證檢查失敗:', error)
                 return false
             }
         }
@@ -184,15 +191,8 @@ const checkAuthentication = async () => {
         return isAuthenticated
     } catch (error) {
         console.error('認證檢查失敗:', error)
-        await handleLogout()
         return false
     }
-}
-
-const handleLogout = async () => {
-    localStorage.removeItem(ROUTE_CONSTANTS.TOKEN_KEY)
-    localStorage.removeItem(ROUTE_CONSTANTS.REFRESH_KEY)
-    await store.dispatch('auth/logout')
 }
 
 const handleAuthRedirect = (to) => {
@@ -205,10 +205,7 @@ const handleAuthRedirect = (to) => {
 
     return {
         path: ROUTE_CONSTANTS.LOGIN_PATH,
-        query: {
-            redirect: currentPath,
-            timestamp: Date.now()
-        }
+        query: { redirect: currentPath }
     }
 }
 
@@ -217,18 +214,16 @@ const setDocumentTitle = (to) => {
     document.title = `${title} - ${ROUTE_CONSTANTS.APP_NAME}`
 }
 
-const saveNavigationHistory = (from) => {
-    if (from.name && !from.meta.hideForAuth) {
-        localStorage.setItem('previousPath', from.fullPath)
-    }
-}
-
 router.beforeEach(async (to, from, next) => {
     try {
         setDocumentTitle(to)
-        saveNavigationHistory(from)
 
         const isAuthenticated = await checkAuthentication()
+
+        // 特殊處理 Profile 和 Products 頁面
+        if ((to.name === 'Profile' || to.name === 'Products') && !isAuthenticated) {
+            await store.dispatch('auth/checkAuth')
+        }
 
         if (to.meta.requiresAuth && !isAuthenticated) {
             store.dispatch('app/setError', {
@@ -240,32 +235,23 @@ router.beforeEach(async (to, from, next) => {
         }
 
         if (to.meta.hideForAuth && isAuthenticated) {
-            store.dispatch('app/setSuccess', {
-                message: '您已經登入',
-                duration: 2000
-            })
             return next(ROUTE_CONSTANTS.HOME_PATH)
         }
 
         next()
     } catch (error) {
         console.error('路由守衛錯誤:', error)
-        store.dispatch('app/setError', {
-            message: '系統發生錯誤，請稍後再試',
-            type: 'error',
-            duration: 3000
-        })
-        next(ROUTE_CONSTANTS.ERROR_PATHS.SERVER_ERROR)
+        next()
     }
 })
 
-router.onError((error) => {
-    console.error('路由載入錯誤:', error)
-    store.dispatch('app/setError', {
-        message: '頁面載入失敗，請重新整理',
-        type: 'error',
-        duration: 3000
-    })
+router.afterEach((to, from) => {
+    if (to.meta.keepAlive) {
+        const instance = router.currentRoute.value.matched[0].instances.default
+        if (instance && instance.activatedCache) {
+            instance.activatedCache()
+        }
+    }
 })
 
 export default router

@@ -1,4 +1,4 @@
-import { authApi } from '@/services/api'
+import { apiService } from '@/utils/axios'
 import { handleError } from '@/utils/errorHandler'
 import router from '@/router'
 
@@ -189,7 +189,7 @@ const actions = {
         commit('SET_SUCCESS_MESSAGE', null)
 
         try {
-            const response = await authApi.login(credentials)
+            const response = await apiService.auth.login(credentials)
             if (!response?.accessToken || !response?.user) {
                 throw new Error('無效的登入回應')
             }
@@ -267,7 +267,7 @@ const actions = {
         commit('SET_REFRESH_STATE', { isRefreshing: true })
 
         try {
-            const response = await authApi.refreshToken(state.refreshToken)
+            const response = await apiService.auth.refreshToken(state.refreshToken)
             if (!response?.accessToken) {
                 throw new Error('無效的token刷新響應')
             }
@@ -293,28 +293,35 @@ const actions = {
     async logout({ commit, dispatch }) {
         try {
             if (state.token) {
-                await authApi.logout()
+                await apiService.auth.logout()
             }
         } catch (error) {
             console.error('Logout error:', error)
         } finally {
             commit('CLEAR_AUTH')
             await dispatch('cart/clearCart', null, { root: true })
-            router.push('/login')
+            router.push('/')
         }
     },
-
     async getProfile({ commit, dispatch }) {
         if (!state.token) return null
 
         try {
-            const response = await authApi.getProfile()
-            commit('SET_USER', response)
-            commit('UPDATE_ACTIVITY_TIME')
-            return response
+            const response = await apiService.user.getProfile()
+            if (response) {
+                commit('SET_USER', response)
+                commit('UPDATE_ACTIVITY_TIME')
+                return response
+            }
+            throw new Error('獲取用戶資料失敗')
         } catch (error) {
             if (error.response?.status === 401) {
-                await dispatch('handleAuthError', error)
+                try {
+                    await dispatch('refreshToken')
+                    return dispatch('getProfile')
+                } catch (refreshError) {
+                    await dispatch('handleAuthError', error)
+                }
             }
             throw error
         }
@@ -326,7 +333,9 @@ const actions = {
                 await dispatch('refreshToken')
                 return true
             } catch (refreshError) {
-                await dispatch('logout')
+                if (router.currentRoute.value.meta.requiresAuth) {
+                    await dispatch('logout')
+                }
                 return false
             }
         }
@@ -337,24 +346,77 @@ const actions = {
         const { accessToken, refreshToken } = tokenManager.getTokens()
         const user = JSON.parse(localStorage.getItem('user'))
 
-        if (!accessToken || !user) {
+        if (!accessToken && !user) {
             commit('CLEAR_AUTH')
             return false
         }
 
         try {
-            commit('SET_TOKENS', { accessToken, refreshToken })
-            commit('SET_USER', user)
-            commit('SET_AUTH_STATUS', 'authenticated')
-            commit('UPDATE_ACTIVITY_TIME')
+            if (accessToken) {
+                commit('SET_TOKENS', { accessToken, refreshToken })
+                if (user) {
+                    commit('SET_USER', user)
+                    commit('SET_AUTH_STATUS', 'authenticated')
+                    commit('UPDATE_ACTIVITY_TIME')
 
-            await dispatch('getProfile')
-            await dispatch('setupAuthRefresh')
-            await dispatch('setupIdleTimeout')
-            return true
+                    // 只在需要身份驗證的頁面才自動獲取用戶資料
+                    if (router.currentRoute.value.meta.requiresAuth) {
+                        await dispatch('getProfile')
+                    }
+
+                    await dispatch('setupAuthRefresh')
+                    await dispatch('setupIdleTimeout')
+                    return true
+                }
+            }
+
+            // 如果沒有 token 但有用戶資料，清除用戶資料
+            if (!accessToken && user) {
+                commit('CLEAR_AUTH')
+            }
+
+            return false
         } catch (error) {
+            console.error('Check auth error:', error)
             commit('CLEAR_AUTH')
             return false
+        }
+    },
+
+    async initializeAuth({ dispatch }) {
+        try {
+            const isAuthenticated = await dispatch('checkAuth')
+            if (!isAuthenticated && router.currentRoute.value.meta.requiresAuth) {
+                const currentPath = router.currentRoute.value.fullPath
+                router.push({
+                    path: '/login',
+                    query: { redirect: currentPath }
+                })
+            }
+        } catch (error) {
+            console.error('Initialize auth error:', error)
+        }
+    },
+
+    async updateProfile({ commit, dispatch }, profileData) {
+        try {
+            const response = await apiService.user.updateProfile(profileData)
+            if (response) {
+                commit('SET_USER', response)
+                commit('UPDATE_ACTIVITY_TIME')
+                return response
+            }
+            throw new Error('更新用戶資料失敗')
+        } catch (error) {
+            if (error.response?.status === 401) {
+                try {
+                    await dispatch('refreshToken')
+                    return dispatch('updateProfile', profileData)
+                } catch (refreshError) {
+                    await dispatch('handleAuthError', error)
+                }
+            }
+            throw error
         }
     }
 }
@@ -379,6 +441,11 @@ const getters = {
     isSessionExpired: state => {
         if (!state.lastActivityTime) return true
         return Date.now() - state.lastActivityTime >= SECURITY_CONFIG.AUTO_LOGOUT_IDLE_TIME
+    },
+    isTokenExpired: state => {
+        if (!state.token) return true
+        const lastRefresh = state.lastActivityTime || Date.now()
+        return Date.now() - lastRefresh >= TOKEN_CONFIG.REFRESH_INTERVAL
     }
 }
 

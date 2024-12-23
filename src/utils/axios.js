@@ -124,9 +124,8 @@ api.interceptors.request.use(
             store.dispatch('app/setLoading', true)
         }
 
-        const token = tokenManager.getAccessToken()
+        let token = tokenManager.getAccessToken()
         if (token && !config.skipAuth) {
-            // 檢查是否需要提前刷新 token
             if (tokenManager.shouldRefreshToken() && !config.url.includes(API_PATHS.AUTH.REFRESH_TOKEN)) {
                 try {
                     const refreshToken = tokenManager.getRefreshToken()
@@ -147,12 +146,10 @@ api.interceptors.request.use(
             config.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
         }
 
-        // 添加防緩存參數
         if (config.method?.toLowerCase() === 'get' && !config.noCache) {
             config.params = { ...config.params, _t: Date.now() }
         }
 
-        // 請求標識
         config.requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         config.metadata = { startTime: Date.now() }
 
@@ -179,7 +176,6 @@ api.interceptors.response.use(
 
         const originalRequest = error.config
 
-        // 處理 401 錯誤
         if (error.response?.status === 401 && !originalRequest._retry) {
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
@@ -231,7 +227,6 @@ api.interceptors.response.use(
             }
         }
 
-        // 處理請求重試
         if (shouldRetryRequest(error)) {
             return handleRequestRetry(error)
         }
@@ -277,6 +272,65 @@ const handleRequestRetry = (error) => {
     return new Promise(resolve => {
         setTimeout(() => resolve(api(config)), delayTime)
     })
+}
+
+// API 服務
+const apiService = {
+    auth: {
+        login: credentials => api.post(API_PATHS.AUTH.LOGIN, credentials),
+        register: userData => api.post(API_PATHS.AUTH.REGISTER, userData),
+        logout: () => api.post(API_PATHS.AUTH.LOGOUT),
+        refreshToken: refreshToken => api.post(API_PATHS.AUTH.REFRESH_TOKEN, { refreshToken }),
+        verifyEmail: token => api.post(API_PATHS.AUTH.VERIFY_EMAIL, { token }),
+        forgotPassword: email => api.post(API_PATHS.AUTH.FORGOT_PASSWORD, { email }),
+        resetPassword: (token, password) => api.post(API_PATHS.AUTH.RESET_PASSWORD, { token, password })
+    },
+    user: {
+        getProfile: () => api.get(API_PATHS.USERS.PROFILE),
+        updateProfile: data => api.put(API_PATHS.USERS.PROFILE, data),
+        changePassword: data => api.put(API_PATHS.USERS.PASSWORD, data),
+        uploadAvatar: formData => api.post(API_PATHS.USERS.AVATAR, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        }),
+        getPreferences: () => api.get(API_PATHS.USERS.PREFERENCES),
+        updatePreferences: data => api.put(API_PATHS.USERS.PREFERENCES, data),
+        getAddresses: () => api.get(API_PATHS.USERS.ADDRESSES),
+        addAddress: data => api.post(API_PATHS.USERS.ADDRESSES, data),
+        updateAddress: (id, data) => api.put(`${API_PATHS.USERS.ADDRESSES}/${id}`, data),
+        deleteAddress: id => api.delete(`${API_PATHS.USERS.ADDRESSES}/${id}`)
+    },
+    product: {
+        getList: params => api.get(API_PATHS.PRODUCTS.BASE, { params }),
+        getById: id => api.get(`${API_PATHS.PRODUCTS.BASE}/${id}`),
+        search: params => api.get(API_PATHS.PRODUCTS.SEARCH, { params }),
+        getNewArrivals: () => api.get(API_PATHS.PRODUCTS.NEW_ARRIVALS),
+        getRecommended: () => api.get(API_PATHS.PRODUCTS.RECOMMENDED),
+        getReviews: productId => api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}/reviews`),
+        addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS.BASE}/${productId}/reviews`, data),
+        getCategories: () => api.get(API_PATHS.CATEGORIES)
+    },
+    cart: {
+        getItems: () => api.get(API_PATHS.CART.ITEMS),
+        addItem: data => api.post(API_PATHS.CART.ITEMS, data),
+        updateItem: (id, data) => api.put(`${API_PATHS.CART.ITEMS}/${id}`, data),
+        removeItem: id => api.delete(`${API_PATHS.CART.ITEMS}/${id}`),
+        clear: () => api.delete(API_PATHS.CART.BASE),
+        applyCoupon: code => api.post(API_PATHS.CART.COUPON, { code }),
+        removeCoupon: () => api.delete(API_PATHS.CART.COUPON),
+        getShippingMethods: () => api.get(API_PATHS.CART.SHIPPING),
+        setShippingMethod: methodId => api.put(API_PATHS.CART.SHIPPING, { methodId }),
+        checkout: data => api.post(API_PATHS.CART.CHECKOUT, data)
+    },
+    order: {
+        create: data => api.post(API_PATHS.ORDERS.BASE, data),
+        getList: params => api.get(API_PATHS.ORDERS.BASE, { params }),
+        getById: id => api.get(`${API_PATHS.ORDERS.BASE}/${id}`),
+        cancel: id => api.put(`${API_PATHS.ORDERS.BASE}/${id}/cancel`),
+        pay: (id, data) => api.post(`${API_PATHS.ORDERS.BASE}/${id}/payment`, data),
+        getPaymentMethods: () => api.post(API_PATHS.ORDERS.PAYMENT),
+        confirmReceipt: id => api.put(`${API_PATHS.ORDERS.BASE}/${id}/confirm-receipt`),
+        getShipmentTracking: id => api.get(`${API_PATHS.ORDERS.BASE}/${id}/tracking`)
+    }
 }
 
 export { api as default, apiService }
