@@ -1,22 +1,23 @@
+// src/store/modules/user.js
 import { userApi } from '@/services/api'
 import authService from '@/services/auth.service'
 import router from '@/router'
 
-// Token相關常量
 const TOKEN_CONFIG = {
     ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
-    TOKEN_PREFIX: 'Bearer'
+    TOKEN_PREFIX: 'Bearer',
+    TOKEN_EXPIRY: parseInt(import.meta.env.VITE_JWT_EXPIRY) || 30 * 60 * 1000 // 30分鐘
 }
 
-// 安全相關常量
 const SECURITY_CONFIG = {
     MAX_LOGIN_ATTEMPTS: parseInt(import.meta.env.VITE_MAX_LOGIN_ATTEMPTS) || 5,
     LOCK_DURATION: parseInt(import.meta.env.VITE_LOCK_DURATION) || 30 * 60 * 1000,
-    SESSION_TIMEOUT: parseInt(import.meta.env.VITE_SESSION_TIMEOUT) || 60 * 60 * 1000
+    SESSION_TIMEOUT: parseInt(import.meta.env.VITE_SESSION_TIMEOUT) || 60 * 60 * 1000,
+    PASSWORD_MIN_LENGTH: 8,
+    REFRESH_THRESHOLD: 5 * 60 * 1000 // Token刷新閾值
 }
 
-// 初始狀態
 const state = {
     userInfo: JSON.parse(localStorage.getItem('user')) || null,
     isAuthenticated: !!localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY),
@@ -32,7 +33,8 @@ const state = {
     sessionTimeout: null,
     tokenRefreshTimeout: null,
     isRefreshing: false,
-    refreshSubscribers: []
+    refreshSubscribers: [],
+    userPreferences: JSON.parse(localStorage.getItem('userPreferences')) || {}
 }
 
 const mutations = {
@@ -41,9 +43,19 @@ const mutations = {
     },
     SET_ERROR(state, error) {
         state.error = error || null
+        if (error) {
+            setTimeout(() => {
+                state.error = null
+            }, 3000)
+        }
     },
     SET_SUCCESS_MESSAGE(state, message) {
         state.successMessage = message
+        if (message) {
+            setTimeout(() => {
+                state.successMessage = null
+            }, 3000)
+        }
     },
     SET_USER_INFO(state, userInfo) {
         state.userInfo = userInfo
@@ -55,6 +67,10 @@ const mutations = {
             localStorage.removeItem('user')
             localStorage.removeItem('lastLoginTime')
         }
+    },
+    SET_USER_PREFERENCES(state, preferences) {
+        state.userPreferences = { ...state.userPreferences, ...preferences }
+        localStorage.setItem('userPreferences', JSON.stringify(state.userPreferences))
     },
     SET_AUTH_STATUS(state, status) {
         state.isAuthenticated = status
@@ -113,12 +129,9 @@ const mutations = {
         state.tokenRefreshTimeout = timeout
     },
     CLEAR_USER_STATE(state) {
-        if (state.sessionTimeout) {
-            clearTimeout(state.sessionTimeout)
-        }
-        if (state.tokenRefreshTimeout) {
-            clearTimeout(state.tokenRefreshTimeout)
-        }
+        if (state.sessionTimeout) clearTimeout(state.sessionTimeout)
+        if (state.tokenRefreshTimeout) clearTimeout(state.tokenRefreshTimeout)
+
         Object.assign(state, {
             userInfo: null,
             isAuthenticated: false,
@@ -133,15 +146,22 @@ const mutations = {
             sessionTimeout: null,
             tokenRefreshTimeout: null,
             isRefreshing: false,
-            refreshSubscribers: []
+            refreshSubscribers: [],
+            userPreferences: {}
         })
-        localStorage.removeItem('user')
-        localStorage.removeItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
-        localStorage.removeItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
-        localStorage.removeItem('lastLoginTime')
-        localStorage.removeItem('loginAttempts')
-        localStorage.removeItem('isLocked')
-        localStorage.removeItem('lockUntil')
+
+        const keysToRemove = [
+            'user',
+            TOKEN_CONFIG.ACCESS_TOKEN_KEY,
+            TOKEN_CONFIG.REFRESH_TOKEN_KEY,
+            'lastLoginTime',
+            'loginAttempts',
+            'isLocked',
+            'lockUntil',
+            'userPreferences'
+        ]
+
+        keysToRemove.forEach(key => localStorage.removeItem(key))
     }
 }
 
@@ -154,10 +174,9 @@ const actions = {
 
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
-        commit('SET_SUCCESS_MESSAGE', null)
 
         try {
-            const response = await authService.login(credentials.username, credentials.password)
+            const response = await authService.login(credentials)
             commit('SET_TOKENS', {
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken
@@ -165,6 +184,7 @@ const actions = {
             commit('SET_USER_INFO', response.user)
             commit('SET_AUTH_STATUS', true)
             commit('RESET_LOGIN_ATTEMPTS')
+            commit('SET_SUCCESS_MESSAGE', '登入成功')
             await dispatch('setupAuthRefresh')
             return response
         } catch (error) {
@@ -176,10 +196,17 @@ const actions = {
     },
 
     async setupAuthRefresh({ dispatch, commit }) {
-        const setupTokenRefresh = () => {
+        const refreshToken = () => {
             const timeout = setTimeout(
-                () => dispatch('refreshToken').catch(() => dispatch('logout')),
-                SECURITY_CONFIG.SESSION_TIMEOUT / 2
+                async () => {
+                    try {
+                        await dispatch('refreshToken')
+                        refreshToken()
+                    } catch {
+                        await dispatch('logout')
+                    }
+                },
+                TOKEN_CONFIG.TOKEN_EXPIRY - SECURITY_CONFIG.REFRESH_THRESHOLD
             )
             commit('SET_TOKEN_REFRESH_TIMEOUT', timeout)
         }
@@ -192,7 +219,7 @@ const actions = {
             commit('SET_SESSION_TIMEOUT', timeout)
         }
 
-        setupTokenRefresh()
+        refreshToken()
         setupSessionTimeout()
     },
 
@@ -200,11 +227,8 @@ const actions = {
         if (state.isRefreshing) {
             return new Promise((resolve, reject) => {
                 commit('ADD_REFRESH_SUBSCRIBER', token => {
-                    if (token) {
-                        resolve(token)
-                    } else {
-                        reject(new Error('Token refresh failed'))
-                    }
+                    if (token) resolve(token)
+                    else reject(new Error('Token refresh failed'))
                 })
             })
         }
@@ -242,37 +266,6 @@ const actions = {
         }
     },
 
-    async fetchUserInfo({ commit, dispatch }) {
-        if (!state.isAuthenticated) return null
-
-        commit('SET_LOADING', true)
-        try {
-            const response = await userApi.getProfile()
-            commit('SET_USER_INFO', response)
-            return response
-        } catch (error) {
-            if (error.response?.status === 401) {
-                await dispatch('handleAuthError', error)
-            }
-            throw error
-        } finally {
-            commit('SET_LOADING', false)
-        }
-    },
-
-    async handleAuthError({ dispatch }, error) {
-        if (error.response?.status === 401) {
-            try {
-                await dispatch('refreshToken')
-                return true
-            } catch (refreshError) {
-                await dispatch('logout')
-                return false
-            }
-        }
-        return false
-    },
-
     async updateUserInfo({ commit }, userData) {
         commit('SET_LOADING', true)
         try {
@@ -285,6 +278,17 @@ const actions = {
             throw error
         } finally {
             commit('SET_LOADING', false)
+        }
+    },
+
+    async updateUserPreferences({ commit }, preferences) {
+        commit('SET_USER_PREFERENCES', preferences)
+        try {
+            await userApi.updatePreferences(preferences)
+            commit('SET_SUCCESS_MESSAGE', '偏好設定已更新')
+        } catch (error) {
+            commit('SET_ERROR', error.message)
+            throw error
         }
     },
 
@@ -304,7 +308,6 @@ const actions = {
             })
             commit('SET_USER_INFO', user)
             commit('SET_AUTH_STATUS', true)
-            await dispatch('fetchUserInfo')
             await dispatch('setupAuthRefresh')
             return true
         } catch (error) {
@@ -333,7 +336,8 @@ const getters = {
     remainingLockTime: state => {
         if (!state.lockUntil) return 0
         return Math.max(0, new Date(state.lockUntil) - new Date())
-    }
+    },
+    userPreferences: state => state.userPreferences
 }
 
 export default {
@@ -343,3 +347,12 @@ export default {
     actions,
     getters
 }
+
+
+//
+
+
+//
+
+
+

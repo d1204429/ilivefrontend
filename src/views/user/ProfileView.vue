@@ -82,13 +82,13 @@
   </div>
 </template>
 
+
 <script>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import BaseLoading from '@/components/common/BaseLoading.vue'
 import { fullName, email, phoneNumber, address } from '@/utils/validators'
-import { apiService } from '@/utils/axios'
 
 export default {
   name: 'ProfileView',
@@ -112,19 +112,19 @@ export default {
     const loading = ref(false)
     const editedProfile = ref({})
     const errors = ref({})
-    const originalProfile = ref({})
     const globalError = ref('')
-    const retryCount = ref(0)
-    const MAX_RETRIES = 3
+    const originalProfile = ref({})
 
     // Computed Properties
     const currentUser = computed(() => store.getters['auth/currentUser'])
     const isAuthenticated = computed(() => store.getters['auth/isAuthenticated'])
+
     const isFormValid = computed(() => {
       return !Object.keys(errors.value).length &&
           Object.keys(editedProfile.value).length > 0 &&
           hasChanges.value
     })
+
     const hasChanges = computed(() => {
       return Object.keys(editedProfile.value).some(key =>
           editedProfile.value[key] !== originalProfile.value[key]
@@ -132,133 +132,41 @@ export default {
     })
 
     // Validation Functions
-    const validation = {
-      getValidationError: (field, value) => {
-        const validationMap = {
-          username: () => value?.length >= 3 ? null : '使用者名稱至少需要3個字元',
-          email: () => email(value) === true ? null : '請輸入有效的電子郵件',
-          fullName: () => fullName(value) === true ? null : '請輸入有效的全名',
-          phoneNumber: () => phoneNumber(value) === true ? null : '請輸入有效的電話號碼',
-          address: () => address(value) === true ? null : '請輸入有效的地址'
-        }
-        return validationMap[field]?.() || null
-      },
-      validateField: (field) => {
-        if (!field || !editedProfile.value[field]) return
-        const error = validation.getValidationError(field, editedProfile.value[field])
-        if (error) {
-          errors.value = { ...errors.value, [field]: error }
-        } else {
-          const { [field]: removed, ...rest } = errors.value
-          errors.value = rest
-        }
-      },
-      validateForm: () => {
-        const newErrors = {}
-        formFields.forEach(({ name }) => {
-          if (editedProfile.value[name]) {
-            const error = validation.getValidationError(name, editedProfile.value[name])
-            if (error) newErrors[name] = error
-          }
-        })
-        errors.value = newErrors
-        return Object.keys(newErrors).length === 0
+    const validateField = (fieldName) => {
+      const value = editedProfile.value[fieldName]
+      let error = null
+
+      switch(fieldName) {
+        case 'username':
+          error = value?.length >= 3 ? null : '使用者名稱至少需要3個字元'
+          break
+        case 'email':
+          error = email(value) ? null : '請輸入有效的電子郵件'
+          break
+        case 'fullName':
+          error = fullName(value) ? null : '請輸入有效的全名'
+          break
+        case 'phoneNumber':
+          error = phoneNumber(value) ? null : '請輸入有效的電話號碼'
+          break
+        case 'address':
+          error = address(value) ? null : '請輸入有效的地址'
+          break
+      }
+
+      if (error) {
+        errors.value[fieldName] = error
+      } else {
+        delete errors.value[fieldName]
       }
     }
 
-    // Error Handling
-    const handleAuthError = async (error) => {
-      if (error.response?.status === 401) {
-        try {
-          const refreshed = await store.dispatch('auth/refreshToken')
-          if (refreshed) {
-            return true
-          }
-          return false
-        } catch (refreshError) {
-          console.error('Token refresh failed:', refreshError)
-          return false
-        }
-      }
-      return false
-    }
-
-    const handleError = async (error) => {
-      const message = error.response?.data?.message || '操作失敗，請稍後再試'
-      globalError.value = message
-      await store.dispatch('app/setError', {
-        message,
-        type: 'error',
-        duration: 3000
-      })
-    }
-
-    // Data Management
-    const fetchUserProfile = async () => {
-      try {
-        loading.value = true
-        globalError.value = ''
-
-        if (!isAuthenticated.value) {
-          const authChecked = await store.dispatch('auth/checkAuth')
-          if (!authChecked) {
-            throw new Error('未登入或登入已過期')
-          }
-        }
-
-        const response = await store.dispatch('auth/getProfile')
-        if (response) {
-          originalProfile.value = { ...response }
-          editedProfile.value = { ...response }
-          retryCount.value = 0
-        }
-      } catch (error) {
-        if (error.response?.status === 401) {
-          const refreshed = await handleAuthError(error)
-          if (refreshed && retryCount.value < MAX_RETRIES) {
-            retryCount.value++
-            return fetchUserProfile()
-          }
-        }
-        handleError(error)
-      } finally {
-        loading.value = false
-      }
+    const validateForm = () => {
+      formFields.forEach(field => validateField(field.name))
+      return Object.keys(errors.value).length === 0
     }
 
     // Form Actions
-    const handleSave = async (e) => {
-      e.preventDefault()
-      if (!validation.validateForm() || !hasChanges.value) return
-
-      try {
-        loading.value = true
-        globalError.value = ''
-        const response = await store.dispatch('auth/updateProfile', editedProfile.value)
-        if (response) {
-          await fetchUserProfile()
-          isEditing.value = false
-          store.dispatch('app/setSuccess', {
-            message: '個人資料更新成功',
-            duration: 2000
-          })
-        }
-      } catch (error) {
-        if (!(await handleAuthError(error))) {
-          handleError(error)
-        }
-      } finally {
-        loading.value = false
-      }
-    }
-
-    const handleCancel = () => {
-      if (hasChanges.value && !confirm('確定要取消編輯？未儲存的變更將會遺失。')) {
-        return
-      }
-      resetForm()
-    }
-
     const startEditing = () => {
       editedProfile.value = { ...currentUser.value }
       originalProfile.value = { ...currentUser.value }
@@ -267,49 +175,92 @@ export default {
       globalError.value = ''
     }
 
-    const resetForm = () => {
+    const handleCancel = () => {
+      if (hasChanges.value) {
+        const confirmed = window.confirm('確定要取消編輯？未儲存的變更將會遺失。')
+        if (!confirmed) return
+      }
       isEditing.value = false
       editedProfile.value = { ...originalProfile.value }
       errors.value = {}
       globalError.value = ''
     }
 
-    // Auth Check & Initial Data Load
-    const checkAuthAndLoadData = async () => {
+    const handleSave = async () => {
+      if (!validateForm()) return
+
       try {
+        loading.value = true
+        globalError.value = ''
+
+        const response = await store.dispatch('auth/updateUserInfo', editedProfile.value)
+        if (response) {
+          isEditing.value = false
+          originalProfile.value = { ...response }
+          editedProfile.value = { ...response }
+          store.commit('auth/SET_SUCCESS_MESSAGE', '個人資料更新成功')
+        }
+      } catch (error) {
+        if (error.response?.status === 401) {
+          try {
+            await store.dispatch('auth/refreshToken')
+            // 重試更新操作
+            await store.dispatch('auth/updateUserInfo', editedProfile.value)
+          } catch (refreshError) {
+            globalError.value = '登入已過期，請重新登入'
+            await store.dispatch('auth/logout')
+            router.push('/login')
+          }
+        } else {
+          globalError.value = error.message || '更新失敗，請稍後再試'
+        }
+      } finally {
+        loading.value = false
+      }
+    }
+
+    // Initial Data Load
+    const initializeProfile = async () => {
+      try {
+        loading.value = true
+        globalError.value = ''
+
         if (!isAuthenticated.value) {
           const authChecked = await store.dispatch('auth/checkAuth')
           if (!authChecked) {
-            router.push({
-              name: 'login',
-              query: { redirect: router.currentRoute.value.fullPath }
-            })
+            router.push('/login')
             return
           }
         }
-        await fetchUserProfile()
+
+        const userData = await store.dispatch('auth/fetchUserInfo')
+        if (userData) {
+          originalProfile.value = { ...userData }
+          editedProfile.value = { ...userData }
+        }
       } catch (error) {
-        console.error('Auth check failed:', error)
-        handleError(error)
+        globalError.value = '無法載入用戶資料'
+      } finally {
+        loading.value = false
       }
     }
 
     // Watchers
-    watch(() => editedProfile.value, (newValue) => {
-      if (isEditing.value) {
-        const changedField = Object.keys(newValue).find(key =>
-            newValue[key] !== originalProfile.value[key]
-        )
-        if (changedField) validation.validateField(changedField)
+    watch(() => editedProfile.value, (newValue, oldValue) => {
+      if (isEditing.value && oldValue) {
+        Object.keys(newValue).forEach(key => {
+          if (newValue[key] !== oldValue[key]) {
+            validateField(key)
+          }
+        })
       }
     }, { deep: true })
 
     // Lifecycle Hooks
-    onMounted(async () => {
-      await checkAuthAndLoadData()
-    })
+    onMounted(initializeProfile)
 
     return {
+      // State
       isEditing,
       loading,
       currentUser,
@@ -320,14 +271,17 @@ export default {
       hasChanges,
       formFields,
       isAuthenticated,
+
+      // Methods
       startEditing,
       handleSave,
       handleCancel,
-      validateField: validation.validateField
+      validateField
     }
   }
 }
 </script>
+
 
 <style scoped>
 .profile-container {
