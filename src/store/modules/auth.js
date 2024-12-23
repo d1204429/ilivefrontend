@@ -8,13 +8,36 @@ const TOKEN_CONFIG = {
     REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
     TOKEN_PREFIX: 'Bearer',
     REFRESH_INTERVAL: parseInt(import.meta.env.VITE_TOKEN_REFRESH_INTERVAL) || 15 * 60 * 1000,
-    SESSION_TIMEOUT: parseInt(import.meta.env.VITE_SESSION_TIMEOUT) || 60 * 60 * 1000
+    SESSION_TIMEOUT: parseInt(import.meta.env.VITE_SESSION_TIMEOUT) || 60 * 60 * 1000,
+    TOKEN_EXPIRY_MARGIN: 5 * 60 * 1000 // 5分鐘提前更新
 }
 
 const SECURITY_CONFIG = {
     MAX_LOGIN_ATTEMPTS: parseInt(import.meta.env.VITE_MAX_LOGIN_ATTEMPTS) || 5,
     LOCK_DURATION: parseInt(import.meta.env.VITE_LOCK_DURATION) || 30 * 60 * 1000,
-    PASSWORD_MIN_LENGTH: parseInt(import.meta.env.VITE_PASSWORD_MIN_LENGTH) || 8
+    PASSWORD_MIN_LENGTH: parseInt(import.meta.env.VITE_PASSWORD_MIN_LENGTH) || 8,
+    AUTO_LOGOUT_IDLE_TIME: parseInt(import.meta.env.VITE_AUTO_LOGOUT_IDLE_TIME) || 30 * 60 * 1000
+}
+
+// Token 管理器
+const tokenManager = {
+    getTokens() {
+        return {
+            accessToken: localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY),
+            refreshToken: localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
+        }
+    },
+    setTokens(accessToken, refreshToken) {
+        if (accessToken) localStorage.setItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY, accessToken)
+        if (refreshToken) localStorage.setItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY, refreshToken)
+    },
+    removeTokens() {
+        localStorage.removeItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
+        localStorage.removeItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
+    },
+    getAuthHeader(token) {
+        return token ? `${TOKEN_CONFIG.TOKEN_PREFIX} ${token}` : null
+    }
 }
 
 // 初始狀態
@@ -27,22 +50,24 @@ const INITIAL_STATE = {
     authStatus: null,
     successMessage: null,
     lastLoginTime: null,
+    lastActivityTime: null,
     loginAttempts: 0,
     isLocked: false,
     lockUntil: null,
     sessionTimeout: null,
     tokenRefreshTimeout: null,
     isRefreshing: false,
-    refreshSubscribers: []
+    refreshSubscribers: [],
+    idleTimeout: null
 }
 
 // State
 const state = {
     ...INITIAL_STATE,
     user: JSON.parse(localStorage.getItem('user')),
-    token: localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY),
-    refreshToken: localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY),
+    ...tokenManager.getTokens(),
     lastLoginTime: localStorage.getItem('lastLoginTime'),
+    lastActivityTime: Date.now(),
     loginAttempts: parseInt(localStorage.getItem('loginAttempts')) || 0,
     isLocked: localStorage.getItem('isLocked') === 'true',
     lockUntil: localStorage.getItem('lockUntil')
@@ -78,14 +103,15 @@ const mutations = {
         if (accessToken && refreshToken) {
             state.token = accessToken
             state.refreshToken = refreshToken
-            localStorage.setItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY, accessToken)
-            localStorage.setItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY, refreshToken)
+            tokenManager.setTokens(accessToken, refreshToken)
         } else {
             state.token = null
             state.refreshToken = null
-            localStorage.removeItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
-            localStorage.removeItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
+            tokenManager.removeTokens()
         }
+    },
+    UPDATE_ACTIVITY_TIME(state) {
+        state.lastActivityTime = Date.now()
     },
     SET_REFRESH_STATE(state, { isRefreshing, subscribers = [] }) {
         state.isRefreshing = isRefreshing
@@ -130,17 +156,19 @@ const mutations = {
         }
         state.tokenRefreshTimeout = timeout
     },
+    SET_IDLE_TIMEOUT(state, timeout) {
+        if (state.idleTimeout) {
+            clearTimeout(state.idleTimeout)
+        }
+        state.idleTimeout = timeout
+    },
     CLEAR_AUTH(state) {
-        if (state.sessionTimeout) {
-            clearTimeout(state.sessionTimeout)
-        }
-        if (state.tokenRefreshTimeout) {
-            clearTimeout(state.tokenRefreshTimeout)
-        }
+        [state.sessionTimeout, state.tokenRefreshTimeout, state.idleTimeout].forEach(timeout => {
+            if (timeout) clearTimeout(timeout)
+        })
         Object.assign(state, { ...INITIAL_STATE })
         localStorage.removeItem('user')
-        localStorage.removeItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
-        localStorage.removeItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
+        tokenManager.removeTokens()
         localStorage.removeItem('lastLoginTime')
         localStorage.removeItem('loginAttempts')
         localStorage.removeItem('isLocked')
@@ -173,9 +201,11 @@ const actions = {
             commit('SET_USER', response.user)
             commit('SET_AUTH_STATUS', 'authenticated')
             commit('RESET_LOGIN_ATTEMPTS')
+            commit('UPDATE_ACTIVITY_TIME')
             commit('SET_SUCCESS_MESSAGE', '登入成功')
 
             await dispatch('setupAuthRefresh')
+            await dispatch('setupIdleTimeout')
             return response
         } catch (error) {
             commit('INCREMENT_LOGIN_ATTEMPTS')
@@ -191,7 +221,7 @@ const actions = {
         const setupTokenRefresh = () => {
             const timeout = setTimeout(
                 () => dispatch('refreshToken').catch(() => dispatch('logout')),
-                TOKEN_CONFIG.REFRESH_INTERVAL
+                TOKEN_CONFIG.REFRESH_INTERVAL - TOKEN_CONFIG.TOKEN_EXPIRY_MARGIN
             )
             commit('SET_TOKEN_REFRESH_TIMEOUT', timeout)
         }
@@ -206,6 +236,19 @@ const actions = {
 
         setupTokenRefresh()
         setupSessionTimeout()
+    },
+
+    setupIdleTimeout({ commit, dispatch }) {
+        const timeout = setTimeout(
+            () => dispatch('logout'),
+            SECURITY_CONFIG.AUTO_LOGOUT_IDLE_TIME
+        )
+        commit('SET_IDLE_TIMEOUT', timeout)
+    },
+
+    updateActivity({ commit, dispatch }) {
+        commit('UPDATE_ACTIVITY_TIME')
+        dispatch('setupIdleTimeout')
     },
 
     async refreshToken({ commit, state }) {
@@ -233,6 +276,7 @@ const actions = {
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken
             })
+            commit('UPDATE_ACTIVITY_TIME')
 
             state.refreshSubscribers.forEach(callback => callback(response.accessToken))
             commit('CLEAR_REFRESH_SUBSCRIBERS')
@@ -266,6 +310,7 @@ const actions = {
         try {
             const response = await authApi.getProfile()
             commit('SET_USER', response)
+            commit('UPDATE_ACTIVITY_TIME')
             return response
         } catch (error) {
             if (error.response?.status === 401) {
@@ -289,24 +334,23 @@ const actions = {
     },
 
     async checkAuth({ commit, dispatch }) {
-        const token = localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
+        const { accessToken, refreshToken } = tokenManager.getTokens()
         const user = JSON.parse(localStorage.getItem('user'))
 
-        if (!token || !user) {
+        if (!accessToken || !user) {
             commit('CLEAR_AUTH')
             return false
         }
 
         try {
-            commit('SET_TOKENS', {
-                accessToken: token,
-                refreshToken: localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
-            })
+            commit('SET_TOKENS', { accessToken, refreshToken })
             commit('SET_USER', user)
             commit('SET_AUTH_STATUS', 'authenticated')
+            commit('UPDATE_ACTIVITY_TIME')
 
             await dispatch('getProfile')
             await dispatch('setupAuthRefresh')
+            await dispatch('setupIdleTimeout')
             return true
         } catch (error) {
             commit('CLEAR_AUTH')
@@ -325,11 +369,16 @@ const getters = {
     authStatus: state => state.authStatus,
     token: state => state.token,
     lastLoginTime: state => state.lastLoginTime,
+    lastActivityTime: state => state.lastActivityTime,
     hasRefreshToken: state => !!state.refreshToken,
     isAccountLocked: state => state.isLocked,
     remainingLockTime: state => {
         if (!state.lockUntil) return 0
         return Math.max(0, new Date(state.lockUntil) - new Date())
+    },
+    isSessionExpired: state => {
+        if (!state.lastActivityTime) return true
+        return Date.now() - state.lastActivityTime >= SECURITY_CONFIG.AUTO_LOGOUT_IDLE_TIME
     }
 }
 

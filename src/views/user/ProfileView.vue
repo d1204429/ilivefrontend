@@ -88,6 +88,7 @@ import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import BaseLoading from '@/components/common/BaseLoading.vue'
 import { fullName, email, phoneNumber, address } from '@/utils/validators'
+import { apiService } from '@/utils/axios'
 
 export default {
   name: 'ProfileView',
@@ -172,7 +173,6 @@ export default {
           await store.dispatch('auth/refreshToken')
           return true
         } catch (refreshError) {
-          await store.dispatch('auth/logout')
           router.push({
             name: 'login',
             query: {
@@ -201,9 +201,12 @@ export default {
       try {
         loading.value = true
         globalError.value = ''
-        await store.dispatch('auth/getProfile')
-        originalProfile.value = { ...currentUser.value }
-        editedProfile.value = { ...currentUser.value }
+        const response = await apiService.user.getProfile()
+        if (response) {
+          await store.commit('auth/SET_USER', response)
+          originalProfile.value = { ...response }
+          editedProfile.value = { ...response }
+        }
         retryCount.value = 0
       } catch (error) {
         if (await handleAuthError(error)) {
@@ -229,13 +232,16 @@ export default {
       try {
         loading.value = true
         globalError.value = ''
-        await store.dispatch('auth/updateProfile', editedProfile.value)
-        await fetchUserProfile()
-        isEditing.value = false
-        store.dispatch('app/setSuccess', {
-          message: '個人資料更新成功',
-          duration: 2000
-        })
+        const response = await apiService.user.updateProfile(editedProfile.value)
+        if (response) {
+          await store.commit('auth/SET_USER', response)
+          await fetchUserProfile()
+          isEditing.value = false
+          store.dispatch('app/setSuccess', {
+            message: '個人資料更新成功',
+            duration: 2000
+          })
+        }
       } catch (error) {
         if (!(await handleAuthError(error))) {
           handleError(error)
@@ -311,7 +317,6 @@ export default {
   }
 }
 </script>
-
 
 
 <style scoped>

@@ -7,7 +7,8 @@ import { handleError } from '@/utils/errorHandler'
 const TOKEN_CONSTANTS = {
     ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
-    TOKEN_PREFIX: 'Bearer'
+    TOKEN_PREFIX: 'Bearer',
+    TOKEN_EXPIRY_MARGIN: 60000 // 1分鐘提前更新
 }
 
 // API 配置常量
@@ -69,10 +70,11 @@ const api = axios.create(API_CONFIG)
 // 請求隊列和刷新標記
 let isRefreshing = false
 let failedQueue = []
+let lastTokenRefresh = 0
 
 // 請求重試配置
 const retryConfig = {
-    retries: 2,
+    retries: 3,
     retryDelay: 1000,
     retryCondition: (error) => {
         return (
@@ -91,10 +93,15 @@ const tokenManager = {
     setTokens: (accessToken, refreshToken) => {
         localStorage.setItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY, accessToken)
         localStorage.setItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY, refreshToken)
+        lastTokenRefresh = Date.now()
     },
     removeTokens: () => {
         localStorage.removeItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY)
         localStorage.removeItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY)
+        lastTokenRefresh = 0
+    },
+    shouldRefreshToken: () => {
+        return Date.now() - lastTokenRefresh >= (import.meta.env.VITE_TOKEN_REFRESH_INTERVAL || 840000)
     }
 }
 
@@ -119,13 +126,33 @@ api.interceptors.request.use(
 
         const token = tokenManager.getAccessToken()
         if (token && !config.skipAuth) {
+            // 檢查是否需要提前刷新 token
+            if (tokenManager.shouldRefreshToken() && !config.url.includes(API_PATHS.AUTH.REFRESH_TOKEN)) {
+                try {
+                    const refreshToken = tokenManager.getRefreshToken()
+                    if (refreshToken) {
+                        const { data } = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
+                            { refreshToken },
+                            { skipAuth: true }
+                        )
+                        if (data.accessToken) {
+                            tokenManager.setTokens(data.accessToken, data.refreshToken)
+                            token = data.accessToken
+                        }
+                    }
+                } catch (error) {
+                    console.error('Token refresh failed:', error)
+                }
+            }
             config.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
         }
 
+        // 添加防緩存參數
         if (config.method?.toLowerCase() === 'get' && !config.noCache) {
             config.params = { ...config.params, _t: Date.now() }
         }
 
+        // 請求標識
         config.requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         config.metadata = { startTime: Date.now() }
 
@@ -160,7 +187,12 @@ api.interceptors.response.use(
                 }).then(token => {
                     originalRequest.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
                     return api(originalRequest)
-                }).catch(err => Promise.reject(err))
+                }).catch(err => {
+                    if (err.response?.status === 401) {
+                        return handleLogout()
+                    }
+                    return Promise.reject(err)
+                })
             }
 
             originalRequest._retry = true
@@ -168,11 +200,16 @@ api.interceptors.response.use(
 
             try {
                 const refreshToken = tokenManager.getRefreshToken()
-                if (!refreshToken) throw new Error('No refresh token available')
+                if (!refreshToken) {
+                    throw new Error('No refresh token available')
+                }
 
                 const { data } = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
                     { refreshToken },
-                    { skipAuth: true }
+                    {
+                        skipAuth: true,
+                        _retry: true
+                    }
                 )
 
                 if (data.accessToken && data.refreshToken) {
@@ -182,6 +219,8 @@ api.interceptors.response.use(
 
                     processQueue(null, data.accessToken)
                     return api(originalRequest)
+                } else {
+                    throw new Error('Invalid token refresh response')
                 }
             } catch (refreshError) {
                 processQueue(refreshError, null)
@@ -207,10 +246,15 @@ const handleLogout = async () => {
     try {
         await store.dispatch('auth/logout')
         tokenManager.removeTokens()
-        router.push({
-            path: '/login',
-            query: { redirect: router.currentRoute.value.fullPath }
-        })
+        if (router.currentRoute.value.meta.requiresAuth) {
+            router.push({
+                path: '/login',
+                query: {
+                    redirect: router.currentRoute.value.fullPath,
+                    reason: 'session_expired'
+                }
+            })
+        }
     } catch (error) {
         console.error('Logout failed:', error)
     }
@@ -219,7 +263,9 @@ const handleLogout = async () => {
 // 判斷是否應該重試請求
 const shouldRetryRequest = (error) => {
     const { retries = 0 } = error.config
-    return retries < retryConfig.retries && retryConfig.retryCondition(error)
+    return retries < retryConfig.retries &&
+        retryConfig.retryCondition(error) &&
+        !error.config._retry
 }
 
 // 處理請求重試
@@ -233,63 +279,4 @@ const handleRequestRetry = (error) => {
     })
 }
 
-// API 服務
-export const apiService = {
-    auth: {
-        login: credentials => api.post(API_PATHS.AUTH.LOGIN, credentials),
-        register: userData => api.post(API_PATHS.AUTH.REGISTER, userData),
-        logout: () => api.post(API_PATHS.AUTH.LOGOUT),
-        refreshToken: refreshToken => api.post(API_PATHS.AUTH.REFRESH_TOKEN, { refreshToken }),
-        verifyEmail: token => api.post(API_PATHS.AUTH.VERIFY_EMAIL, { token }),
-        forgotPassword: email => api.post(API_PATHS.AUTH.FORGOT_PASSWORD, { email }),
-        resetPassword: (token, password) => api.post(API_PATHS.AUTH.RESET_PASSWORD, { token, password })
-    },
-    user: {
-        getProfile: () => api.get(API_PATHS.USERS.PROFILE),
-        updateProfile: data => api.put(API_PATHS.USERS.PROFILE, data),
-        changePassword: data => api.put(API_PATHS.USERS.PASSWORD, data),
-        uploadAvatar: formData => api.post(API_PATHS.USERS.AVATAR, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-        }),
-        getPreferences: () => api.get(API_PATHS.USERS.PREFERENCES),
-        updatePreferences: data => api.put(API_PATHS.USERS.PREFERENCES, data),
-        getAddresses: () => api.get(API_PATHS.USERS.ADDRESSES),
-        addAddress: data => api.post(API_PATHS.USERS.ADDRESSES, data),
-        updateAddress: (id, data) => api.put(`${API_PATHS.USERS.ADDRESSES}/${id}`, data),
-        deleteAddress: id => api.delete(`${API_PATHS.USERS.ADDRESSES}/${id}`)
-    },
-    product: {
-        getList: params => api.get(API_PATHS.PRODUCTS.BASE, { params }),
-        getById: id => api.get(`${API_PATHS.PRODUCTS.BASE}/${id}`),
-        search: params => api.get(API_PATHS.PRODUCTS.SEARCH, { params }),
-        getNewArrivals: () => api.get(API_PATHS.PRODUCTS.NEW_ARRIVALS),
-        getRecommended: () => api.get(API_PATHS.PRODUCTS.RECOMMENDED),
-        getReviews: productId => api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}/reviews`),
-        addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS.BASE}/${productId}/reviews`, data),
-        getCategories: () => api.get(API_PATHS.CATEGORIES)
-    },
-    cart: {
-        getItems: () => api.get(API_PATHS.CART.ITEMS),
-        addItem: data => api.post(API_PATHS.CART.ITEMS, data),
-        updateItem: (id, data) => api.put(`${API_PATHS.CART.ITEMS}/${id}`, data),
-        removeItem: id => api.delete(`${API_PATHS.CART.ITEMS}/${id}`),
-        clear: () => api.delete(API_PATHS.CART.BASE),
-        applyCoupon: code => api.post(API_PATHS.CART.COUPON, { code }),
-        removeCoupon: () => api.delete(API_PATHS.CART.COUPON),
-        getShippingMethods: () => api.get(API_PATHS.CART.SHIPPING),
-        setShippingMethod: methodId => api.put(API_PATHS.CART.SHIPPING, { methodId }),
-        checkout: data => api.post(API_PATHS.CART.CHECKOUT, data)
-    },
-    order: {
-        create: data => api.post(API_PATHS.ORDERS.BASE, data),
-        getList: params => api.get(API_PATHS.ORDERS.BASE, { params }),
-        getById: id => api.get(`${API_PATHS.ORDERS.BASE}/${id}`),
-        cancel: id => api.put(`${API_PATHS.ORDERS.BASE}/${id}/cancel`),
-        pay: (id, data) => api.post(`${API_PATHS.ORDERS.BASE}/${id}/payment`, data),
-        getPaymentMethods: () => api.get(API_PATHS.ORDERS.PAYMENT),
-        confirmReceipt: id => api.put(`${API_PATHS.ORDERS.BASE}/${id}/confirm-receipt`),
-        getShipmentTracking: id => api.get(`${API_PATHS.ORDERS.BASE}/${id}/tracking`)
-    }
-}
-
-export default api
+export { api as default, apiService }

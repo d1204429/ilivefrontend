@@ -1,6 +1,7 @@
 import api from '@/utils/axios'
 import { handleError } from '@/utils/errorHandler'
 import router from '@/router'
+import store from '@/store'
 
 class AuthService {
     constructor() {
@@ -10,12 +11,24 @@ class AuthService {
         this.tokenRefreshTimeout = null
         this.isRefreshing = false
         this.refreshSubscribers = []
+        this.tokenExpirationTime = null
+
+        // 初始化時檢查並設置 token 刷新
+        if (this.token) {
+            this.setupTokenRefresh()
+        }
     }
 
     setAuthData(data) {
         if (data.accessToken) {
             localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, data.accessToken)
             this.token = data.accessToken
+
+            // 設置 token 過期時間
+            const tokenExpiration = parseInt(import.meta.env.VITE_TOKEN_EXPIRATION) || 3600
+            this.tokenExpirationTime = Date.now() + tokenExpiration * 1000
+            localStorage.setItem('tokenExpirationTime', this.tokenExpirationTime)
+
             this.setupTokenRefresh()
         }
         if (data.refreshToken) {
@@ -25,6 +38,11 @@ class AuthService {
         if (data.user) {
             localStorage.setItem('user', JSON.stringify(data.user))
             this.user = data.user
+        }
+
+        // 更新 axios 默認請求頭
+        if (data.accessToken) {
+            api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`
         }
     }
 
@@ -36,12 +54,17 @@ class AuthService {
         localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
         localStorage.removeItem('user')
         localStorage.removeItem('rememberedUsername')
+        localStorage.removeItem('tokenExpirationTime')
+
+        delete api.defaults.headers.common['Authorization']
+
         this.token = null
         this.refreshToken = null
         this.user = null
         this.tokenRefreshTimeout = null
         this.isRefreshing = false
         this.refreshSubscribers = []
+        this.tokenExpirationTime = null
     }
 
     setupTokenRefresh() {
@@ -49,12 +72,18 @@ class AuthService {
             clearTimeout(this.tokenRefreshTimeout)
         }
 
-        const refreshInterval = parseInt(import.meta.env.VITE_TOKEN_REFRESH_INTERVAL) || 15 * 60 * 1000
+        const currentTime = Date.now()
+        const expirationTime = this.tokenExpirationTime || parseInt(localStorage.getItem('tokenExpirationTime'))
+
+        if (!expirationTime || currentTime >= expirationTime) {
+            this.refreshAccessToken().catch(() => this.handleAuthError())
+            return
+        }
+
+        const timeUntilRefresh = expirationTime - currentTime - (5 * 60 * 1000) // 提前5分鐘刷新
         this.tokenRefreshTimeout = setTimeout(() => {
-            this.refreshAccessToken().catch(() => {
-                this.handleAuthError()
-            })
-        }, refreshInterval)
+            this.refreshAccessToken().catch(() => this.handleAuthError())
+        }, Math.max(0, timeUntilRefresh))
     }
 
     onTokenRefreshed(token) {
@@ -71,7 +100,9 @@ class AuthService {
     }
 
     isAuthenticated() {
-        return !!this.token && !!this.user
+        const currentTime = Date.now()
+        const expirationTime = this.tokenExpirationTime || parseInt(localStorage.getItem('tokenExpirationTime'))
+        return !!this.token && !!this.user && expirationTime && currentTime < expirationTime
     }
 
     async login(username, password, rememberMe = false) {
@@ -92,34 +123,14 @@ class AuthService {
                     localStorage.setItem('rememberedUsername', username)
                 }
 
+                await store.dispatch('auth/loginSuccess', response)
                 return response
             }
             throw new Error('登入失敗：未收到有效的認證資料')
         } catch (error) {
+            await store.dispatch('auth/loginFailure', error)
             if (error.response?.status === 401) {
                 throw new Error('用戶名或密碼錯誤')
-            }
-            throw handleError(error)
-        }
-    }
-
-    async register(userData) {
-        try {
-            const response = await api.post('/users/register', userData)
-            return response
-        } catch (error) {
-            const errorMessage = error.response?.data?.message
-            if (errorMessage) {
-                if (errorMessage.includes('用戶名已存在')) {
-                    throw new Error('此用戶名已被使用')
-                }
-                if (errorMessage.includes('電子郵件已存在')) {
-                    throw new Error('此電子郵件已被註冊')
-                }
-                if (errorMessage.includes('手機號碼已存在')) {
-                    throw new Error('此手機號碼已被註冊')
-                }
-                throw new Error(errorMessage)
             }
             throw handleError(error)
         }
@@ -147,7 +158,10 @@ class AuthService {
 
             const response = await api.post('/users/refresh-token', {
                 refreshToken: this.refreshToken
-            }, { skipAuth: true })
+            }, {
+                skipAuth: true,
+                retry: false
+            })
 
             if (response?.accessToken) {
                 this.setAuthData({
@@ -168,14 +182,18 @@ class AuthService {
     }
 
     async handleAuthError() {
+        await store.dispatch('auth/logout')
         this.clearAuthData()
-        router.push({
-            path: '/login',
-            query: {
-                redirect: router.currentRoute.value.fullPath,
-                error: 'session_expired'
-            }
-        })
+        const currentRoute = router.currentRoute.value
+        if (currentRoute.name !== 'login') {
+            router.push({
+                path: '/login',
+                query: {
+                    redirect: currentRoute.fullPath,
+                    error: 'session_expired'
+                }
+            })
+        }
     }
 
     async getProfile() {
@@ -184,12 +202,18 @@ class AuthService {
             if (response) {
                 const updatedUserData = { ...this.user, ...response }
                 this.setAuthData({ user: updatedUserData })
+                await store.dispatch('auth/updateUserProfile', updatedUserData)
                 return response
             }
             throw new Error('獲取用戶資料失敗')
         } catch (error) {
             if (error.response?.status === 401) {
-                await this.handleAuthError()
+                try {
+                    await this.refreshAccessToken()
+                    return await this.getProfile()
+                } catch (refreshError) {
+                    await this.handleAuthError()
+                }
             }
             throw handleError(error)
         }
@@ -201,21 +225,10 @@ class AuthService {
             if (response) {
                 const updatedUserData = { ...this.user, ...response }
                 this.setAuthData({ user: updatedUserData })
+                await store.dispatch('auth/updateUserProfile', updatedUserData)
                 return response
             }
             throw new Error('更新用戶資料失敗')
-        } catch (error) {
-            throw handleError(error)
-        }
-    }
-
-    async changePassword(oldPassword, newPassword) {
-        try {
-            const response = await api.put('/users/password', {
-                oldPassword,
-                newPassword
-            })
-            return response
         } catch (error) {
             throw handleError(error)
         }
@@ -229,6 +242,7 @@ class AuthService {
         } catch (error) {
             console.error('登出時發生錯誤:', error)
         } finally {
+            await store.dispatch('auth/logout')
             this.clearAuthData()
             router.push('/login')
         }
