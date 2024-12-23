@@ -8,8 +8,10 @@ const TOKEN_CONSTANTS = {
     ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
     TOKEN_PREFIX: 'Bearer',
-    TOKEN_EXPIRY_MARGIN: 60000, // 1分鐘提前更新
-    REFRESH_INTERVAL: parseInt(import.meta.env.VITE_TOKEN_REFRESH_INTERVAL) || 840000
+    TOKEN_EXPIRY_MARGIN: 5 * 60 * 1000, // 5分鐘提前更新
+    REFRESH_INTERVAL: parseInt(import.meta.env.VITE_TOKEN_REFRESH_INTERVAL) || 15 * 60 * 1000,
+    REFRESH_RETRY_DELAY: 1000, // 1秒重試延遲
+    MAX_REFRESH_RETRIES: 3 // 最大重試次數
 }
 
 // API 配置常量
@@ -72,20 +74,7 @@ const api = axios.create(API_CONFIG)
 let isRefreshing = false
 let failedQueue = []
 let lastTokenRefresh = Date.now()
-
-// 請求重試配置
-const retryConfig = {
-    retries: 3,
-    retryDelay: 1000,
-    retryCondition: (error) => {
-        return (
-            error.code === 'ECONNABORTED' ||
-            error.response?.status === 408 ||
-            error.response?.status === 429 ||
-            error.response?.status >= 500
-        )
-    }
-}
+let refreshRetryCount = 0
 
 // Token 管理
 const tokenManager = {
@@ -100,19 +89,21 @@ const tokenManager = {
             localStorage.setItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY, refreshToken)
         }
         lastTokenRefresh = Date.now()
+        refreshRetryCount = 0
     },
     removeTokens: () => {
         localStorage.removeItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY)
         localStorage.removeItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY)
         delete api.defaults.headers.common.Authorization
         lastTokenRefresh = 0
+        refreshRetryCount = 0
     },
     shouldRefreshToken: () => {
-        return Date.now() - lastTokenRefresh >= TOKEN_CONSTANTS.REFRESH_INTERVAL
+        const tokenAge = Date.now() - lastTokenRefresh
+        return tokenAge >= (TOKEN_CONSTANTS.REFRESH_INTERVAL - TOKEN_CONSTANTS.TOKEN_EXPIRY_MARGIN)
     },
-    isTokenValid: () => {
-        const token = localStorage.getItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY)
-        return !!token && !tokenManager.shouldRefreshToken()
+    canRetryRefresh: () => {
+        return refreshRetryCount < TOKEN_CONSTANTS.MAX_REFRESH_RETRIES
     }
 }
 
@@ -129,9 +120,21 @@ const processQueue = (error, token = null) => {
 }
 
 // 刷新 Token
-const refreshToken = async () => {
+const refreshToken = async (forceRefresh = false) => {
     try {
+        if (!forceRefresh && !tokenManager.shouldRefreshToken()) {
+            return { success: true, token: tokenManager.getAccessToken() }
+        }
+
+        if (isRefreshing) {
+            return new Promise((resolve, reject) => {
+                failedQueue.push({ resolve, reject })
+            })
+        }
+
+        isRefreshing = true
         const refreshToken = tokenManager.getRefreshToken()
+
         if (!refreshToken) {
             throw new Error('No refresh token available')
         }
@@ -143,54 +146,18 @@ const refreshToken = async () => {
 
         if (response?.data?.accessToken) {
             tokenManager.setTokens(response.data.accessToken, response.data.refreshToken)
-            return response.data.accessToken
+            processQueue(null, response.data.accessToken)
+            return { success: true, token: response.data.accessToken }
         }
+
         throw new Error('Invalid token refresh response')
     } catch (error) {
+        processQueue(error, null)
         throw error
+    } finally {
+        isRefreshing = false
     }
 }
-
-// 請求攔截器
-api.interceptors.request.use(
-    async config => {
-        if (!config.hideLoading) {
-            store.dispatch('app/setLoading', true)
-        }
-
-        if (!config.skipAuth && !config.url?.includes(API_PATHS.AUTH.REFRESH_TOKEN)) {
-            const token = tokenManager.getAccessToken()
-            if (token) {
-                if (tokenManager.shouldRefreshToken()) {
-                    try {
-                        const newToken = await refreshToken()
-                        config.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${newToken}`
-                    } catch (error) {
-                        console.error('Token refresh failed:', error)
-                        await handleLogout()
-                        return Promise.reject(error)
-                    }
-                } else {
-                    config.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
-                }
-            }
-        }
-
-        if (config.method?.toLowerCase() === 'get' && !config.noCache) {
-            config.params = { ...config.params, _t: Date.now() }
-        }
-
-        config.requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-        config.metadata = { startTime: Date.now() }
-
-        return config
-    },
-    error => {
-        store.dispatch('app/setLoading', false)
-        return Promise.reject(error)
-    }
-)
-
 // 響應攔截器
 api.interceptors.response.use(
     response => {
@@ -216,6 +183,9 @@ api.interceptors.response.use(
                     originalRequest.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
                     return api(originalRequest)
                 } catch (err) {
+                    if (err.response?.status === 401) {
+                        await handleLogout()
+                    }
                     return Promise.reject(err)
                 }
             }
@@ -224,13 +194,34 @@ api.interceptors.response.use(
             isRefreshing = true
 
             try {
-                const newToken = await refreshToken()
-                processQueue(null, newToken)
-                originalRequest.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${newToken}`
-                return api(originalRequest)
+                const refreshToken = tokenManager.getRefreshToken()
+                if (!refreshToken) {
+                    throw new Error('No refresh token available')
+                }
+
+                const { data } = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
+                    { refreshToken },
+                    {
+                        skipAuth: true,
+                        _retry: true
+                    }
+                )
+
+                if (data.accessToken && data.refreshToken) {
+                    tokenManager.setTokens(data.accessToken, data.refreshToken)
+                    api.defaults.headers.common.Authorization =
+                        `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${data.accessToken}`
+
+                    processQueue(null, data.accessToken)
+                    return api(originalRequest)
+                }
+
+                throw new Error('Invalid token refresh response')
             } catch (refreshError) {
                 processQueue(refreshError, null)
-                await handleLogout()
+                if (refreshError.response?.status === 401) {
+                    await handleLogout()
+                }
                 return Promise.reject(refreshError)
             } finally {
                 isRefreshing = false
@@ -249,37 +240,15 @@ api.interceptors.response.use(
 // 處理登出
 const handleLogout = async () => {
     try {
-        const token = tokenManager.getAccessToken()
-        if (token) {
-            try {
-                await api.post(API_PATHS.AUTH.LOGOUT, null, { skipAuth: true })
-            } catch (error) {
-                console.error('Logout request failed:', error)
-            }
+        if (tokenManager.getAccessToken()) {
+            await api.post(API_PATHS.AUTH.LOGOUT, null, { skipAuth: true })
         }
+    } catch (error) {
+        console.error('Logout request failed:', error)
     } finally {
         tokenManager.removeTokens()
         await store.dispatch('auth/logout', null, { root: true })
     }
-}
-
-// 判斷是否應該重試請求
-const shouldRetryRequest = (error) => {
-    const { retries = 0 } = error.config
-    return retries < retryConfig.retries &&
-        retryConfig.retryCondition(error) &&
-        !error.config._retry
-}
-
-// 處理請求重試
-const handleRequestRetry = (error) => {
-    const config = error.config
-    config.retries = (config.retries || 0) + 1
-    const delayTime = config.retries * retryConfig.retryDelay
-
-    return new Promise(resolve => {
-        setTimeout(() => resolve(api(config)), delayTime)
-    })
 }
 
 // API 服務
