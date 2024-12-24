@@ -82,13 +82,13 @@
   </div>
 </template>
 
-
 <script>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import BaseLoading from '@/components/common/BaseLoading.vue'
 import { fullName, email, phoneNumber, address } from '@/utils/validators'
+import AuthService from '@/services/auth.service'
 
 export default {
   name: 'ProfileView',
@@ -114,12 +114,12 @@ export default {
     const errors = ref({})
     const globalError = ref('')
     const originalProfile = ref({})
+    const currentUser = ref(AuthService.getCurrentUser())
     const retryCount = ref(0)
     const MAX_RETRIES = 3
 
     // Computed Properties
-    const currentUser = computed(() => store.getters['auth/currentUser'])
-    const isAuthenticated = computed(() => store.getters['auth/isAuthenticated'])
+    const isAuthenticated = computed(() => AuthService.isAuthenticated())
 
     const isFormValid = computed(() => {
       return !Object.keys(errors.value).length &&
@@ -195,27 +195,24 @@ export default {
         loading.value = true
         globalError.value = ''
 
-        const response = await store.dispatch('auth/updateProfile', editedProfile.value)
+        const response = await AuthService.updateProfile(editedProfile.value)
         if (response) {
           isEditing.value = false
           originalProfile.value = { ...response }
           editedProfile.value = { ...response }
+          currentUser.value = response
           store.commit('auth/SET_SUCCESS_MESSAGE', '個人資料更新成功')
-
-          // 更新用戶資料後重新獲取最新資料
-          await store.dispatch('auth/getProfile')
         }
       } catch (error) {
         if (error.response?.status === 401) {
           try {
-            const refreshed = await store.dispatch('auth/refreshToken')
-            if (refreshed && retryCount.value < MAX_RETRIES) {
+            await AuthService.refreshAccessToken()
+            if (retryCount.value < MAX_RETRIES) {
               retryCount.value++
               return handleSave()
             }
           } catch (refreshError) {
             globalError.value = '登入已過期，請重新登入'
-            await store.dispatch('auth/logout')
             router.push('/login')
           }
         } else {
@@ -226,28 +223,49 @@ export default {
       }
     }
 
-    // Initial Data Load
+    // Initialize Profile Data
     const initializeProfile = async () => {
       try {
         loading.value = true
         globalError.value = ''
 
-        if (!isAuthenticated.value) {
-          const authChecked = await store.dispatch('auth/checkAuth')
-          if (!authChecked) {
-            router.push('/login')
-            return
-          }
+        if (!AuthService.isAuthenticated()) {
+          router.push({
+            path: '/login',
+            query: { redirect: router.currentRoute.value.fullPath }
+          })
+          return
         }
 
-        const userData = await store.dispatch('auth/getProfile')
+        const userData = AuthService.getCurrentUser()
         if (userData) {
+          currentUser.value = userData
           originalProfile.value = { ...userData }
           editedProfile.value = { ...userData }
           retryCount.value = 0
+        } else {
+          // 如果本地沒有資料，則從伺服器獲取
+          const profileData = await AuthService.getProfile()
+          if (profileData) {
+            currentUser.value = profileData
+            originalProfile.value = { ...profileData }
+            editedProfile.value = { ...profileData }
+            retryCount.value = 0
+          }
         }
       } catch (error) {
-        globalError.value = '無法載入用戶資料'
+        console.error('載入個人資料時發生錯誤:', error)
+        globalError.value = error.message || '無法載入用戶資料'
+
+        if (error.response?.status === 401) {
+          router.push({
+            path: '/login',
+            query: {
+              redirect: router.currentRoute.value.fullPath,
+              error: 'session_expired'
+            }
+          })
+        }
       } finally {
         loading.value = false
       }
@@ -263,6 +281,12 @@ export default {
         })
       }
     }, { deep: true })
+
+    watch(() => AuthService.getCurrentUser(), (newUser) => {
+      if (newUser) {
+        currentUser.value = newUser
+      }
+    })
 
     // Lifecycle Hooks
     onMounted(initializeProfile)
@@ -289,7 +313,6 @@ export default {
   }
 }
 </script>
-
 
 <style scoped>
 .profile-container {

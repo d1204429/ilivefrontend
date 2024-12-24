@@ -11,60 +11,70 @@ class AuthService {
         this.tokenRefreshTimeout = null
         this.isRefreshing = false
         this.refreshSubscribers = []
-        this.tokenExpirationTime = null
+        this.tokenExpirationTime = parseInt(localStorage.getItem('tokenExpirationTime'))
 
         // 初始化時檢查並設置 token 刷新
-        if (this.token) {
+        if (this.token && this.tokenExpirationTime) {
             this.setupTokenRefresh()
         }
     }
 
     setAuthData(data) {
-        if (data.accessToken) {
-            localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, data.accessToken)
-            this.token = data.accessToken
+        try {
+            if (data.accessToken) {
+                localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, data.accessToken)
+                this.token = data.accessToken
 
-            // 設置 token 過期時間
-            const tokenExpiration = parseInt(import.meta.env.VITE_TOKEN_EXPIRATION) || 3600
-            this.tokenExpirationTime = Date.now() + tokenExpiration * 1000
-            localStorage.setItem('tokenExpirationTime', this.tokenExpirationTime)
+                // 設置 token 過期時間
+                const tokenExpiration = parseInt(import.meta.env.VITE_TOKEN_EXPIRATION) || 3600
+                this.tokenExpirationTime = Date.now() + tokenExpiration * 1000
+                localStorage.setItem('tokenExpirationTime', this.tokenExpirationTime.toString())
 
-            this.setupTokenRefresh()
-        }
-        if (data.refreshToken) {
-            localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, data.refreshToken)
-            this.refreshToken = data.refreshToken
-        }
-        if (data.user) {
-            localStorage.setItem('user', JSON.stringify(data.user))
-            this.user = data.user
-        }
+                this.setupTokenRefresh()
+            }
+            if (data.refreshToken) {
+                localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, data.refreshToken)
+                this.refreshToken = data.refreshToken
+            }
+            if (data.user) {
+                const userStr = JSON.stringify(data.user)
+                localStorage.setItem('user', userStr)
+                this.user = data.user
+            }
 
-        // 更新 axios 默認請求頭
-        if (data.accessToken) {
-            api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`
+            // 更新 axios 默認請求頭
+            if (data.accessToken) {
+                api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`
+            }
+        } catch (error) {
+            console.error('設置認證數據時發生錯誤:', error)
+            throw error
         }
     }
 
     clearAuthData() {
-        if (this.tokenRefreshTimeout) {
-            clearTimeout(this.tokenRefreshTimeout)
+        try {
+            if (this.tokenRefreshTimeout) {
+                clearTimeout(this.tokenRefreshTimeout)
+            }
+            localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
+            localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
+            localStorage.removeItem('user')
+            localStorage.removeItem('rememberedUsername')
+            localStorage.removeItem('tokenExpirationTime')
+
+            delete api.defaults.headers.common['Authorization']
+
+            this.token = null
+            this.refreshToken = null
+            this.user = null
+            this.tokenRefreshTimeout = null
+            this.isRefreshing = false
+            this.refreshSubscribers = []
+            this.tokenExpirationTime = null
+        } catch (error) {
+            console.error('清除認證數據時發生錯誤:', error)
         }
-        localStorage.removeItem(import.meta.env.VITE_JWT_TOKEN_KEY)
-        localStorage.removeItem(import.meta.env.VITE_JWT_REFRESH_KEY)
-        localStorage.removeItem('user')
-        localStorage.removeItem('rememberedUsername')
-        localStorage.removeItem('tokenExpirationTime')
-
-        delete api.defaults.headers.common['Authorization']
-
-        this.token = null
-        this.refreshToken = null
-        this.user = null
-        this.tokenRefreshTimeout = null
-        this.isRefreshing = false
-        this.refreshSubscribers = []
-        this.tokenExpirationTime = null
     }
 
     setupTokenRefresh() {
@@ -73,14 +83,13 @@ class AuthService {
         }
 
         const currentTime = Date.now()
-        const expirationTime = this.tokenExpirationTime || parseInt(localStorage.getItem('tokenExpirationTime'))
 
-        if (!expirationTime || currentTime >= expirationTime) {
+        if (!this.tokenExpirationTime || currentTime >= this.tokenExpirationTime) {
             this.refreshAccessToken().catch(() => this.handleAuthError())
             return
         }
 
-        const timeUntilRefresh = expirationTime - currentTime - (5 * 60 * 1000) // 提前5分鐘刷新
+        const timeUntilRefresh = this.tokenExpirationTime - currentTime - (5 * 60 * 1000) // 提前5分鐘刷新
         this.tokenRefreshTimeout = setTimeout(() => {
             this.refreshAccessToken().catch(() => this.handleAuthError())
         }, Math.max(0, timeUntilRefresh))
@@ -96,13 +105,28 @@ class AuthService {
     }
 
     getCurrentUser() {
-        return this.user
+        try {
+            // 確保返回的是深拷貝，避免外部修改影響內部狀態
+            return this.user ? JSON.parse(JSON.stringify(this.user)) : null
+        } catch (error) {
+            console.error('獲取當前用戶數據時發生錯誤:', error)
+            return null
+        }
     }
 
     isAuthenticated() {
-        const currentTime = Date.now()
-        const expirationTime = this.tokenExpirationTime || parseInt(localStorage.getItem('tokenExpirationTime'))
-        return !!this.token && !!this.user && expirationTime && currentTime < expirationTime
+        try {
+            const currentTime = Date.now()
+            return (
+                !!this.token &&
+                !!this.user &&
+                !!this.tokenExpirationTime &&
+                currentTime < this.tokenExpirationTime
+            )
+        } catch (error) {
+            console.error('檢查認證狀態時發生錯誤:', error)
+            return false
+        }
     }
 
     async login(username, password, rememberMe = false) {
@@ -203,7 +227,7 @@ class AuthService {
                 const updatedUserData = { ...this.user, ...response }
                 this.setAuthData({ user: updatedUserData })
                 await store.dispatch('auth/updateUserProfile', updatedUserData)
-                return response
+                return updatedUserData
             }
             throw new Error('獲取用戶資料失敗')
         } catch (error) {
@@ -226,7 +250,7 @@ class AuthService {
                 const updatedUserData = { ...this.user, ...response }
                 this.setAuthData({ user: updatedUserData })
                 await store.dispatch('auth/updateUserProfile', updatedUserData)
-                return response
+                return updatedUserData
             }
             throw new Error('更新用戶資料失敗')
         } catch (error) {
