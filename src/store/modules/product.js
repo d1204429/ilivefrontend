@@ -1,4 +1,6 @@
 import axios from '@/utils/axios'
+import { productApi } from '@/services/api'
+import { handleError } from '@/utils/errorHandler'
 
 const state = {
     products: [],
@@ -9,56 +11,64 @@ const state = {
     filters: {
         category: null,
         priceRange: null,
-        sortBy: null
+        sortBy: null,
+        keyword: null
     },
     pagination: {
         currentPage: 1,
         totalPages: 1,
-        pageSize: 12
-    }
+        pageSize: 12,
+        total: 0
+    },
+    featuredProducts: [],
+    newArrivals: [],
+    recommendedProducts: []
 }
 
 const getters = {
-    getAllProducts: (state) => state.products,
-    getCategories: (state) => state.categories,
-    getCurrentProduct: (state) => state.currentProduct,
-    getLoading: (state) => state.loading,
-    getError: (state) => state.error,
-    getFilters: (state) => state.filters,
-    getPagination: (state) => state.pagination,
+    getAllProducts: state => state.products,
+    getCategories: state => state.categories,
+    getCurrentProduct: state => state.currentProduct,
+    getLoading: state => state.loading,
+    getError: state => state.error,
+    getFilters: state => state.filters,
+    getPagination: state => state.pagination,
+    getFeaturedProducts: state => state.featuredProducts,
+    getNewArrivals: state => state.newArrivals,
+    getRecommendedProducts: state => state.recommendedProducts,
 
-    getProductById: (state) => (id) => {
-        return state.products.find(product => product.id === id)
+    getProductById: state => id => {
+        return state.products.find(product => product.productId === id)
     },
 
-    getProductsByCategory: (state) => (categoryId) => {
+    getProductsByCategory: state => categoryId => {
         return state.products.filter(product => product.categoryId === categoryId)
     },
 
-    getFeaturedProducts: (state) => {
-        return state.products.filter(product => product.isFeatured)
-    },
-
-    getNewArrivals: (state) => {
-        return [...state.products]
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-            .slice(0, 8)
-    },
-
-    getFilteredProducts: (state) => {
+    getFilteredProducts: state => {
         let filtered = [...state.products]
 
-        if (state.filters.category) {
-            filtered = filtered.filter(p => p.categoryId === state.filters.category)
+        const { category, priceRange, sortBy, keyword } = state.filters
+
+        if (category) {
+            filtered = filtered.filter(p => p.categoryId === category)
         }
 
-        if (state.filters.priceRange) {
-            const [min, max] = state.filters.priceRange
+        if (priceRange) {
+            const [min, max] = priceRange
             filtered = filtered.filter(p => p.price >= min && p.price <= max)
         }
 
-        if (state.filters.sortBy) {
-            switch(state.filters.sortBy) {
+        if (keyword) {
+            const search = keyword.toLowerCase()
+            filtered = filtered.filter(p =>
+                p.name.toLowerCase().includes(search) ||
+                p.description.toLowerCase().includes(search)
+            )
+        }
+
+        if (sortBy) {
+            switch(sortBy) {
                 case 'price-asc':
                     filtered.sort((a, b) => a.price - b.price)
                     break
@@ -70,6 +80,9 @@ const getters = {
                     break
                 case 'name-desc':
                     filtered.sort((a, b) => b.name.localeCompare(a.name))
+                    break
+                case 'newest':
+                    filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
                     break
             }
         }
@@ -83,21 +96,29 @@ const actions = {
         try {
             commit('SET_LOADING', true)
             const { currentPage, pageSize } = state.pagination
-            const response = await axios.get('/api/products', {
-                params: {
-                    page: currentPage,
-                    size: pageSize,
-                    ...state.filters
-                }
-            })
-            commit('SET_PRODUCTS', response.data.content)
+            const { category, priceRange, sortBy, keyword } = state.filters
+
+            const params = {
+                page: currentPage,
+                limit: pageSize,
+                categoryId: category,
+                minPrice: priceRange?.[0],
+                maxPrice: priceRange?.[1],
+                sortBy,
+                keyword
+            }
+
+            const response = await productApi.getList(params)
+
+            commit('SET_PRODUCTS', response.items)
             commit('SET_PAGINATION', {
-                currentPage: response.data.number + 1,
-                totalPages: response.data.totalPages,
-                pageSize: response.data.size
+                currentPage: response.currentPage,
+                totalPages: response.totalPages,
+                pageSize: response.pageSize,
+                total: response.total
             })
         } catch (error) {
-            commit('SET_ERROR', error.message)
+            commit('SET_ERROR', handleError(error))
         } finally {
             commit('SET_LOADING', false)
         }
@@ -106,10 +127,10 @@ const actions = {
     async fetchProductById({ commit }, id) {
         try {
             commit('SET_LOADING', true)
-            const response = await axios.get(`/api/products/${id}`)
-            commit('SET_CURRENT_PRODUCT', response.data)
+            const response = await productApi.getById(id)
+            commit('SET_CURRENT_PRODUCT', response)
         } catch (error) {
-            commit('SET_ERROR', error.message)
+            commit('SET_ERROR', handleError(error))
         } finally {
             commit('SET_LOADING', false)
         }
@@ -117,22 +138,48 @@ const actions = {
 
     async fetchCategories({ commit }) {
         try {
-            const response = await axios.get('/api/categories')
-            commit('SET_CATEGORIES', response.data)
+            const response = await productApi.getCategories()
+            commit('SET_CATEGORIES', response)
         } catch (error) {
-            commit('SET_ERROR', error.message)
+            commit('SET_ERROR', handleError(error))
         }
     },
 
-    async searchProducts({ commit }, searchTerm) {
+    async fetchFeaturedProducts({ commit }) {
+        try {
+            const response = await productApi.getFeaturedProducts()
+            commit('SET_FEATURED_PRODUCTS', response)
+        } catch (error) {
+            commit('SET_ERROR', handleError(error))
+        }
+    },
+
+    async fetchNewArrivals({ commit }) {
+        try {
+            const response = await productApi.getNewArrivals()
+            commit('SET_NEW_ARRIVALS', response)
+        } catch (error) {
+            commit('SET_ERROR', handleError(error))
+        }
+    },
+
+    async fetchRecommendedProducts({ commit }) {
+        try {
+            const response = await productApi.getRecommended()
+            commit('SET_RECOMMENDED_PRODUCTS', response)
+        } catch (error) {
+            commit('SET_ERROR', handleError(error))
+        }
+    },
+
+    async searchProducts({ commit }, keyword) {
         try {
             commit('SET_LOADING', true)
-            const response = await axios.get('/api/products/search', {
-                params: { query: searchTerm }
-            })
-            commit('SET_PRODUCTS', response.data)
+            const response = await productApi.search({ keyword })
+            commit('SET_PRODUCTS', response.items)
+            commit('SET_FILTERS', { keyword })
         } catch (error) {
-            commit('SET_ERROR', error.message)
+            commit('SET_ERROR', handleError(error))
         } finally {
             commit('SET_LOADING', false)
         }
@@ -192,11 +239,24 @@ const mutations = {
         state.pagination = { ...state.pagination, ...pagination }
     },
 
+    SET_FEATURED_PRODUCTS(state, products) {
+        state.featuredProducts = products
+    },
+
+    SET_NEW_ARRIVALS(state, products) {
+        state.newArrivals = products
+    },
+
+    SET_RECOMMENDED_PRODUCTS(state, products) {
+        state.recommendedProducts = products
+    },
+
     RESET_FILTERS(state) {
         state.filters = {
             category: null,
             priceRange: null,
-            sortBy: null
+            sortBy: null,
+            keyword: null
         }
     }
 }
