@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import store from '@/store'
+import { handleError } from '@/utils/errorHandler'
 
+// 路由常量配置
 const ROUTE_CONSTANTS = {
     TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
@@ -15,12 +17,16 @@ const ROUTE_CONSTANTS = {
     }
 }
 
+// 路由配置
 const routes = [
     {
         path: '/',
         name: 'Home',
         component: () => import('@/views/home/HomeView.vue'),
-        meta: { title: '首頁' }
+        meta: {
+            title: '首頁',
+            keepAlive: true
+        }
     },
     {
         path: '/products',
@@ -44,7 +50,7 @@ const routes = [
     {
         path: '/category/:id',
         name: 'Category',
-        component: () => import('@/views/product/ProductListView.vue'),
+        component: () => import('@/views/product/ProductListWithCategory.vue'),
         props: true,
         meta: {
             title: '商品分類',
@@ -66,7 +72,8 @@ const routes = [
         component: () => import('@/views/cart/CheckoutView.vue'),
         meta: {
             requiresAuth: true,
-            title: '結帳'
+            title: '結帳',
+            validateCart: true
         }
     },
     {
@@ -138,8 +145,7 @@ const routes = [
     {
         path: '/404',
         name: 'NotFound',
-        component: () => import('@/views/ErrorView.vue'),
-        props: { code: 404, message: '找不到此頁面' },
+        component: () => import('@/views/NotFoundView.vue'),
         meta: { title: '404 頁面不存在' }
     },
     {
@@ -155,6 +161,7 @@ const routes = [
     }
 ]
 
+// 創建路由實例
 const router = createRouter({
     history: createWebHistory(),
     routes,
@@ -170,6 +177,7 @@ const router = createRouter({
     }
 })
 
+// 檢查認證狀態
 const checkAuthentication = async () => {
     try {
         const token = localStorage.getItem(ROUTE_CONSTANTS.TOKEN_KEY)
@@ -184,6 +192,7 @@ const checkAuthentication = async () => {
                 return true
             } catch (error) {
                 console.error('認證檢查失敗:', error)
+                await handleAuthError(error)
                 return false
             }
         }
@@ -195,6 +204,17 @@ const checkAuthentication = async () => {
     }
 }
 
+// 處理認證錯誤
+const handleAuthError = async (error) => {
+    await store.dispatch('auth/logout')
+    store.dispatch('app/showNotification', {
+        type: 'error',
+        message: error.message || '認證失敗，請重新登入',
+        duration: 3000
+    })
+}
+
+// 處理認證重定向
 const handleAuthRedirect = (to) => {
     const currentPath = to.fullPath
     const isLoginPage = currentPath === ROUTE_CONSTANTS.LOGIN_PATH
@@ -205,53 +225,84 @@ const handleAuthRedirect = (to) => {
 
     return {
         path: ROUTE_CONSTANTS.LOGIN_PATH,
-        query: { redirect: currentPath }
+        query: {
+            redirect: currentPath,
+            message: '請先登入以繼續操作'
+        }
     }
 }
 
+// 設置文檔標題
 const setDocumentTitle = (to) => {
     const title = to.meta.title || ROUTE_CONSTANTS.DEFAULT_TITLE
     document.title = `${title} - ${ROUTE_CONSTANTS.APP_NAME}`
 }
 
+// 驗證購物車
+const validateCart = async () => {
+    try {
+        await store.dispatch('cart/validateCart')
+        return true
+    } catch (error) {
+        store.dispatch('app/showNotification', {
+            type: 'error',
+            message: error.message || '購物車驗證失敗',
+            duration: 3000
+        })
+        return false
+    }
+}
+
+// 路由守衛
 router.beforeEach(async (to, from, next) => {
     try {
         setDocumentTitle(to)
 
         const isAuthenticated = await checkAuthentication()
 
-        // 特殊處理 Profile 和 Products 頁面
-        if ((to.name === 'Profile' || to.name === 'Products') && !isAuthenticated) {
-            await store.dispatch('auth/checkAuth')
-        }
-
+        // 處理需要認證的路由
         if (to.meta.requiresAuth && !isAuthenticated) {
-            store.dispatch('app/setError', {
-                message: '請先登入以繼續操作',
+            store.dispatch('app/showNotification', {
                 type: 'warning',
+                message: '請先登入以繼續操作',
                 duration: 2000
             })
             return next(handleAuthRedirect(to))
         }
 
+        // 處理已認證用戶訪問登入/註冊頁面
         if (to.meta.hideForAuth && isAuthenticated) {
             return next(ROUTE_CONSTANTS.HOME_PATH)
+        }
+
+        // 驗證購物車（結帳頁面）
+        if (to.meta.validateCart && isAuthenticated) {
+            const isValid = await validateCart()
+            if (!isValid) {
+                return next('/cart')
+            }
         }
 
         next()
     } catch (error) {
         console.error('路由守衛錯誤:', error)
-        next()
+        handleError(error)
+        next(ROUTE_CONSTANTS.ERROR_PATHS.SERVER_ERROR)
     }
 })
 
+// 路由後置守衛
 router.afterEach((to, from) => {
+    // 處理頁面快取
     if (to.meta.keepAlive) {
         const instance = router.currentRoute.value.matched[0].instances.default
         if (instance && instance.activatedCache) {
             instance.activatedCache()
         }
     }
+
+    // 關閉載入狀態
+    store.dispatch('app/setLoading', false)
 })
 
 export default router

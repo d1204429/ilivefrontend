@@ -5,129 +5,155 @@
       <h1>商品列表</h1>
       <div class="filter-controls">
         <BaseInput
-            v-model="searchKeyword"
-            placeholder="        搜尋商品..."
+            v-model="filters.keyword"
+            placeholder="搜尋商品..."
             prefix-icon="fas fa-search"
             @input="handleSearch"
         />
-        <select v-model="selectedCategory" @change="handleCategoryChange">
+        <select v-model="filters.categoryId" @change="handleCategoryChange">
           <option value="">全部分類</option>
-          <option v-for="category in categories"
-                  :key="category.categoryId"
-                  :value="category.categoryId">
+          <option
+              v-for="category in categories"
+              :key="category.categoryId"
+              :value="category.categoryId"
+          >
             {{ category.categoryName }}
           </option>
+        </select>
+        <select v-model="filters.sortBy" @change="handleSort">
+          <option value="">排序方式</option>
+          <option value="price-asc">價格由低到高</option>
+          <option value="price-desc">價格由高到低</option>
+          <option value="newest">最新上架</option>
         </select>
       </div>
     </div>
 
     <!-- 商品列表區 -->
     <div class="products-container">
-      <div v-if="loading" class="loading-spinner">
-        <i class="fas fa-spinner fa-spin"></i>
-        載入中...
-      </div>
+      <BaseLoading v-if="loading"/>
 
-      <div v-else-if="filteredProducts.length === 0" class="no-products">
+      <div v-else-if="!products.length" class="no-products">
         <i class="fas fa-box-open"></i>
-        <p>沒有找到相關商品</p>
+        <p>{{ noProductsMessage }}</p>
       </div>
 
       <div v-else class="products-grid">
         <ProductCard
-            v-for="product in paginatedProducts"
+            v-for="product in products"
             :key="product.productId"
             :product="product"
-            @add-to-cart="addToCart"
+            @add-to-cart="handleAddToCart"
+            @view-detail="handleViewDetail"
         />
       </div>
 
       <!-- 分頁控制 -->
-      <div class="pagination" v-if="totalPages > 1">
+      <div class="pagination" v-if="pagination.totalPages > 1">
         <button
             class="page-btn"
-            :disabled="currentPage === 1"
-            @click="changePage(currentPage - 1)"
+            :disabled="pagination.currentPage === 1"
+            @click="handlePageChange(pagination.currentPage - 1)"
         >
           <i class="fas fa-chevron-left"></i>
         </button>
 
-        <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
+        <span class="page-info">
+          {{ pagination.currentPage }} / {{ pagination.totalPages }}
+        </span>
 
         <button
             class="page-btn"
-            :disabled="currentPage === totalPages"
-            @click="changePage(currentPage + 1)"
+            :disabled="pagination.currentPage === pagination.totalPages"
+            @click="handlePageChange(pagination.currentPage + 1)"
         >
           <i class="fas fa-chevron-right"></i>
         </button>
       </div>
     </div>
+
+    <!-- 錯誤提示 -->
+    <BaseAlert
+        v-if="error"
+        :message="error"
+        type="error"
+        @close="error = null"
+    />
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useStore } from 'vuex'
+import { useRouter } from 'vue-router'
 import ProductCard from '@/components/product/ProductCard.vue'
 import BaseInput from '@/components/common/BaseInput.vue'
+import BaseLoading from '@/components/common/BaseLoading.vue'
+import BaseAlert from '@/components/common/BaseAlert.vue'
+import { debounce } from '@/utils/helpers'
 
 export default {
   name: 'ProductListView',
 
   components: {
     ProductCard,
-    BaseInput
+    BaseInput,
+    BaseLoading,
+    BaseAlert
   },
 
   setup() {
     const store = useStore()
-    const loading = ref(true)
+    const router = useRouter()
+
+    // 狀態
+    const loading = ref(false)
+    const error = ref(null)
     const products = ref([])
     const categories = ref([])
-    const searchKeyword = ref('')
-    const selectedCategory = ref('')
-    const currentPage = ref(1)
-    const itemsPerPage = 12
 
-    // 過濾商品
-    const filteredProducts = computed(() => {
-      let result = products.value
-
-      if (selectedCategory.value) {
-        result = result.filter(p => p.categoryId === selectedCategory.value)
-      }
-
-      if (searchKeyword.value) {
-        const keyword = searchKeyword.value.toLowerCase()
-        result = result.filter(p =>
-            p.name.toLowerCase().includes(keyword) ||
-            p.description.toLowerCase().includes(keyword)
-        )
-      }
-
-      return result
+    // 過濾和分頁
+    const filters = reactive({
+      keyword: '',
+      categoryId: '',
+      sortBy: '',
+      minPrice: null,
+      maxPrice: null
     })
 
-    // 分頁商品
-    const paginatedProducts = computed(() => {
-      const start = (currentPage.value - 1) * itemsPerPage
-      const end = start + itemsPerPage
-      return filteredProducts.value.slice(start, end)
+    const pagination = reactive({
+      currentPage: 1,
+      pageSize: 12,
+      totalPages: 1,
+      total: 0
     })
 
-    // 總頁數
-    const totalPages = computed(() =>
-        Math.ceil(filteredProducts.value.length / itemsPerPage)
-    )
+    // 計算屬性
+    const noProductsMessage = computed(() => {
+      if (filters.keyword) {
+        return `沒有找到與 "${filters.keyword}" 相關的商品`
+      }
+      return '暫無商品'
+    })
 
     // 方法
-    const fetchProducts = async () => {
+    const fetchData = async () => {
+      loading.value = true
+      error.value = null
+
       try {
-        const response = await store.dispatch('product/fetchProducts')
-        products.value = response.data
-      } catch (error) {
-        console.error('獲取商品失敗:', error)
+        const params = {
+          page: pagination.currentPage,
+          limit: pagination.pageSize,
+          ...filters
+        }
+
+        const response = await store.dispatch('product/fetchProducts', params)
+        products.value = response.items
+        pagination.total = response.total
+        pagination.totalPages = response.totalPages
+      } catch (err) {
+        error.value = err.message
       } finally {
         loading.value = false
       }
@@ -136,54 +162,73 @@ export default {
     const fetchCategories = async () => {
       try {
         const response = await store.dispatch('product/fetchCategories')
-        categories.value = response.data
-      } catch (error) {
-        console.error('獲取分類失敗:', error)
+        categories.value = response
+      } catch (err) {
+        error.value = err.message
       }
     }
 
-    const handleSearch = () => {
-      currentPage.value = 1
-    }
+    const handleSearch = debounce(() => {
+      pagination.currentPage = 1
+      fetchData()
+    }, 500)
 
     const handleCategoryChange = () => {
-      currentPage.value = 1
+      pagination.currentPage = 1
+      fetchData()
     }
 
-    const changePage = (page) => {
-      currentPage.value = page
+    const handleSort = () => {
+      fetchData()
     }
 
-    const addToCart = async (product) => {
+    const handlePageChange = (page) => {
+      pagination.currentPage = page
+      fetchData()
+    }
+
+    const handleAddToCart = async (product) => {
       try {
         await store.dispatch('cart/addToCart', {
           productId: product.productId,
           quantity: 1
         })
-      } catch (error) {
-        console.error('加入購物車失敗:', error)
+        store.dispatch('app/showNotification', {
+          type: 'success',
+          message: '已加入購物車'
+        })
+      } catch (err) {
+        error.value = err.message
       }
     }
 
+    const handleViewDetail = (productId) => {
+      router.push(`/products/${productId}`)
+    }
+
+    // 生命週期
     onMounted(() => {
-      fetchProducts()
+      fetchData()
       fetchCategories()
     })
 
     return {
+      // 狀態
       loading,
+      error,
       products,
       categories,
-      searchKeyword,
-      selectedCategory,
-      currentPage,
-      filteredProducts,
-      paginatedProducts,
-      totalPages,
+      filters,
+      pagination,
+      noProductsMessage,
+
+      // 方法
       handleSearch,
       handleCategoryChange,
-      changePage,
-      addToCart
+      handleSort,
+      handlePageChange,
+      handleAddToCart,
+      handleViewDetail
     }
   }
 }
@@ -217,6 +262,7 @@ export default {
   border: 1px solid var(--border-color);
   border-radius: 4px;
   min-width: 150px;
+  background-color: white;
 }
 
 .products-grid {
@@ -226,17 +272,16 @@ export default {
   margin-bottom: 2rem;
 }
 
-.loading-spinner,
 .no-products {
   text-align: center;
   padding: 3rem;
-  color: #666;
+  color: var(--text-secondary);
 }
 
-.loading-spinner i,
 .no-products i {
   font-size: 3rem;
   margin-bottom: 1rem;
+  color: var(--text-muted);
 }
 
 .pagination {
@@ -253,6 +298,13 @@ export default {
   background: white;
   border-radius: 4px;
   cursor: pointer;
+  transition: all 0.2s;
+}
+
+.page-btn:hover:not(:disabled) {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
 }
 
 .page-btn:disabled {
@@ -262,7 +314,7 @@ export default {
 
 .page-info {
   font-size: 1.1rem;
-  color: var(--primary-color);
+  color: var(--text-primary);
 }
 
 @media (max-width: 768px) {

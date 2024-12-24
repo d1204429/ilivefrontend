@@ -30,27 +30,31 @@ const API_CONFIG = {
 // API 路徑常量
 export const API_PATHS = {
     AUTH: {
+        BASE: '/users',
         LOGIN: '/users/login',
         REGISTER: '/users/register',
         LOGOUT: '/users/logout',
         REFRESH_TOKEN: '/users/refresh-token',
         VERIFY_EMAIL: '/users/verify-email',
         FORGOT_PASSWORD: '/users/forgot-password',
-        RESET_PASSWORD: '/users/reset-password'
+        RESET_PASSWORD: '/users/reset-password',
+        CHECK_EMAIL: '/users/check-email'
     },
     USERS: {
+        BASE: '/users',
         PROFILE: '/users/profile',
         PASSWORD: '/users/password',
         AVATAR: '/users/avatar',
-        PREFERENCES: '/users/preferences',
-        ADDRESSES: '/users/addresses'
+        ADDRESSES: '/users/addresses',
+        PREFERENCES: '/users/preferences'
     },
     PRODUCTS: {
         BASE: '/products',
         SEARCH: '/products/search',
         NEW_ARRIVALS: '/products/new-arrivals',
         RECOMMENDED: '/products/recommended',
-        REVIEWS: '/reviews'
+        REVIEWS: '/reviews',
+        CATEGORIES: '/categories'
     },
     CART: {
         BASE: '/cart',
@@ -61,10 +65,9 @@ export const API_PATHS = {
     },
     ORDERS: {
         BASE: '/orders',
-        PAYMENT: '/orders/payment-methods',
-        TRACKING: '/orders/tracking'
-    },
-    CATEGORIES: '/categories'
+        PAYMENT: '/payment',
+        TRACKING: '/tracking'
+    }
 }
 
 // 創建 axios 實例
@@ -106,64 +109,66 @@ const tokenManager = {
         return refreshRetryCount < TOKEN_CONSTANTS.MAX_REFRESH_RETRIES
     }
 }
-
-// 處理請求隊列
-const processQueue = (error, token = null) => {
-    failedQueue.forEach(prom => {
-        if (error) {
-            prom.reject(error)
-        } else {
-            prom.resolve(token)
-        }
-    })
-    failedQueue = []
-}
-
-// 刷新 Token
-const refreshToken = async (forceRefresh = false) => {
-    try {
-        if (!forceRefresh && !tokenManager.shouldRefreshToken()) {
-            return { success: true, token: tokenManager.getAccessToken() }
+// 請求攔截器
+api.interceptors.request.use(
+    async config => {
+        if (!config.hideLoading) {
+            store.dispatch('app/setLoading', true)
         }
 
-        if (isRefreshing) {
-            return new Promise((resolve, reject) => {
-                failedQueue.push({ resolve, reject })
-            })
+        // 添加認證標頭
+        const token = tokenManager.getAccessToken()
+        if (token && !config.skipAuth) {
+            config.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
         }
 
-        isRefreshing = true
-        const refreshToken = tokenManager.getRefreshToken()
-
-        if (!refreshToken) {
-            throw new Error('No refresh token available')
+        // 添加請求時間戳防止快取
+        if (config.method?.toLowerCase() === 'get' && !config.noCache) {
+            config.params = {
+                ...config.params,
+                _t: Date.now()
+            }
         }
 
-        const response = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
-            { refreshToken },
-            { skipAuth: true }
-        )
-
-        if (response?.data?.accessToken) {
-            tokenManager.setTokens(response.data.accessToken, response.data.refreshToken)
-            processQueue(null, response.data.accessToken)
-            return { success: true, token: response.data.accessToken }
+        // 添加請求元數據
+        config.metadata = {
+            startTime: Date.now()
         }
 
-        throw new Error('Invalid token refresh response')
-    } catch (error) {
-        processQueue(error, null)
-        throw error
-    } finally {
-        isRefreshing = false
+        // 添加請求ID用於追蹤
+        config.requestId = `${Date.now()}-${Math.random().toString(36).substring(7)}`
+
+        // 添加取消令牌
+        const source = axios.CancelToken.source()
+        config.cancelToken = source.token
+        config._cancelSource = source
+
+        return config
+    },
+    error => {
+        store.dispatch('app/setLoading', false)
+        return Promise.reject(error)
     }
-}
+)
+
 // 響應攔截器
 api.interceptors.response.use(
     response => {
         if (!response.config.hideLoading) {
             store.dispatch('app/setLoading', false)
         }
+
+        // 記錄API響應時間
+        if (response.config.metadata) {
+            const responseTime = Date.now() - response.config.metadata.startTime
+            store.dispatch('app/logApiMetrics', {
+                url: response.config.url,
+                method: response.config.method,
+                responseTime,
+                status: response.status
+            })
+        }
+
         return response.config.fullResponse ? response : response.data
     },
     async error => {
@@ -171,9 +176,17 @@ api.interceptors.response.use(
             store.dispatch('app/setLoading', false)
         }
 
+        // 處理請求取消
+        if (axios.isCancel(error)) {
+            return Promise.reject({
+                type: 'cancel',
+                message: '請求已取消'
+            })
+        }
+
         const originalRequest = error.config
 
-        // 處理 401 錯誤
+        // 處理401錯誤和token刷新
         if (error.response?.status === 401 && !originalRequest._retry) {
             if (isRefreshing) {
                 try {
@@ -183,9 +196,6 @@ api.interceptors.response.use(
                     originalRequest.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
                     return api(originalRequest)
                 } catch (err) {
-                    if (err.response?.status === 401) {
-                        await handleLogout()
-                    }
                     return Promise.reject(err)
                 }
             }
@@ -199,33 +209,37 @@ api.interceptors.response.use(
                     throw new Error('No refresh token available')
                 }
 
-                const { data } = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
+                const response = await api.post(
+                    API_PATHS.AUTH.REFRESH_TOKEN,
                     { refreshToken },
-                    {
-                        skipAuth: true,
-                        _retry: true
-                    }
+                    { skipAuth: true }
                 )
 
-                if (data.accessToken && data.refreshToken) {
-                    tokenManager.setTokens(data.accessToken, data.refreshToken)
+                if (response?.accessToken && response?.refreshToken) {
+                    tokenManager.setTokens(response.accessToken, response.refreshToken)
                     api.defaults.headers.common.Authorization =
-                        `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${data.accessToken}`
-
-                    processQueue(null, data.accessToken)
+                        `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${response.accessToken}`
+                    processQueue(null, response.accessToken)
                     return api(originalRequest)
                 }
 
                 throw new Error('Invalid token refresh response')
             } catch (refreshError) {
                 processQueue(refreshError, null)
-                if (refreshError.response?.status === 401) {
-                    await handleLogout()
-                }
+                await handleLogout()
                 return Promise.reject(refreshError)
             } finally {
                 isRefreshing = false
             }
+        }
+
+        // 處理網路錯誤
+        if (!error.response) {
+            store.dispatch('app/setError', {
+                type: 'network',
+                message: '網路連接失敗，請檢查您的網路設置'
+            })
+            return Promise.reject(error)
         }
 
         // 處理請求重試
@@ -233,25 +247,12 @@ api.interceptors.response.use(
             return handleRequestRetry(error)
         }
 
-        return Promise.reject(error)
+        // 處理其他錯誤
+        const errorInfo = await handleError(error)
+        return Promise.reject(errorInfo)
     }
 )
-
-// 處理登出
-const handleLogout = async () => {
-    try {
-        if (tokenManager.getAccessToken()) {
-            await api.post(API_PATHS.AUTH.LOGOUT, null, { skipAuth: true })
-        }
-    } catch (error) {
-        console.error('Logout request failed:', error)
-    } finally {
-        tokenManager.removeTokens()
-        await store.dispatch('auth/logout', null, { root: true })
-    }
-}
-
-// API 服務
+// API 服務導出
 const apiService = {
     auth: {
         login: credentials => api.post(API_PATHS.AUTH.LOGIN, credentials),
@@ -260,8 +261,10 @@ const apiService = {
         refreshToken: refreshToken => api.post(API_PATHS.AUTH.REFRESH_TOKEN, { refreshToken }),
         verifyEmail: token => api.post(API_PATHS.AUTH.VERIFY_EMAIL, { token }),
         forgotPassword: email => api.post(API_PATHS.AUTH.FORGOT_PASSWORD, { email }),
-        resetPassword: (token, password) => api.post(API_PATHS.AUTH.RESET_PASSWORD, { token, password })
+        resetPassword: (token, password) => api.post(API_PATHS.AUTH.RESET_PASSWORD, { token, password }),
+        checkEmailExists: email => api.post(API_PATHS.AUTH.CHECK_EMAIL, { email })
     },
+
     user: {
         getProfile: () => api.get(API_PATHS.USERS.PROFILE),
         updateProfile: data => api.put(API_PATHS.USERS.PROFILE, data),
@@ -269,23 +272,30 @@ const apiService = {
         uploadAvatar: formData => api.post(API_PATHS.USERS.AVATAR, formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
         }),
-        getPreferences: () => api.get(API_PATHS.USERS.PREFERENCES),
-        updatePreferences: data => api.put(API_PATHS.USERS.PREFERENCES, data),
         getAddresses: () => api.get(API_PATHS.USERS.ADDRESSES),
-        addAddress: data => api.post(API_PATHS.USERS.ADDRESSES, data),
-        updateAddress: (id, data) => api.put(`${API_PATHS.USERS.ADDRESSES}/${id}`, data),
-        deleteAddress: id => api.delete(`${API_PATHS.USERS.ADDRESSES}/${id}`)
+        addAddress: address => api.post(API_PATHS.USERS.ADDRESSES, address),
+        updateAddress: (id, address) => api.put(`${API_PATHS.USERS.ADDRESSES}/${id}`, address),
+        deleteAddress: id => api.delete(`${API_PATHS.USERS.ADDRESSES}/${id}`),
+        getPreferences: () => api.get(API_PATHS.USERS.PREFERENCES),
+        updatePreferences: data => api.put(API_PATHS.USERS.PREFERENCES, data)
     },
+
     product: {
         getList: params => api.get(API_PATHS.PRODUCTS.BASE, { params }),
         getById: id => api.get(`${API_PATHS.PRODUCTS.BASE}/${id}`),
         search: params => api.get(API_PATHS.PRODUCTS.SEARCH, { params }),
         getNewArrivals: () => api.get(API_PATHS.PRODUCTS.NEW_ARRIVALS),
         getRecommended: () => api.get(API_PATHS.PRODUCTS.RECOMMENDED),
-        getReviews: productId => api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}/reviews`),
-        addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS.BASE}/${productId}/reviews`, data),
-        getCategories: () => api.get(API_PATHS.CATEGORIES)
+        getCategories: () => api.get(API_PATHS.CATEGORIES),
+        getReviews: productId => api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}`),
+        addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}`, data),
+        updateReview: (productId, reviewId, data) =>
+            api.put(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/${reviewId}`, data),
+        deleteReview: (productId, reviewId) =>
+            api.delete(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/${reviewId}`),
+        getReviewStats: productId => api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/stats`)
     },
+
     cart: {
         getItems: () => api.get(API_PATHS.CART.ITEMS),
         addItem: data => api.post(API_PATHS.CART.ITEMS, data),
@@ -298,16 +308,18 @@ const apiService = {
         setShippingMethod: methodId => api.put(API_PATHS.CART.SHIPPING, { methodId }),
         checkout: data => api.post(API_PATHS.CART.CHECKOUT, data)
     },
+
     order: {
         create: data => api.post(API_PATHS.ORDERS.BASE, data),
         getList: params => api.get(API_PATHS.ORDERS.BASE, { params }),
         getById: id => api.get(`${API_PATHS.ORDERS.BASE}/${id}`),
         cancel: id => api.put(`${API_PATHS.ORDERS.BASE}/${id}/cancel`),
-        pay: (id, data) => api.post(`${API_PATHS.ORDERS.BASE}/${id}/payment`, data),
-        getPaymentMethods: () => api.get(API_PATHS.ORDERS.PAYMENT),
+        pay: (id, data) => api.post(`${API_PATHS.ORDERS.BASE}/${id}${API_PATHS.ORDERS.PAYMENT}`, data),
+        getPaymentMethods: () => api.get(`${API_PATHS.ORDERS.BASE}${API_PATHS.ORDERS.PAYMENT}`),
         confirmReceipt: id => api.put(`${API_PATHS.ORDERS.BASE}/${id}/confirm-receipt`),
-        getShipmentTracking: id => api.get(`${API_PATHS.ORDERS.BASE}/${id}/tracking`)
+        getShipmentTracking: id => api.get(`${API_PATHS.ORDERS.BASE}/${id}${API_PATHS.ORDERS.TRACKING}`)
     }
 }
 
+// 導出
 export { api as default, apiService }
