@@ -27,6 +27,8 @@ class UserService {
         if (userData.phoneNumber && !/^\d{10}$/.test(userData.phoneNumber)) {
             throw new Error('無效的電話號碼格式')
         }
+
+        return true
     }
 
     // 獲取用戶資料
@@ -92,7 +94,7 @@ class UserService {
                 headers: {
                     'Content-Type': 'multipart/form-data'
                 },
-                timeout: 30000 // 30秒超時
+                timeout: 30000
             })
             return this.processResponse(response)
         } catch (error) {
@@ -119,30 +121,12 @@ class UserService {
         return { isValid: true }
     }
 
-    // 刪除帳號
-    async deleteAccount(confirmationData) {
-        try {
-            if (!confirmationData.password) {
-                throw new Error('請提供密碼以確認刪除')
-            }
-
-            const response = await api.delete(`${this.baseUrl}/account`, {
-                data: confirmationData,
-                headers: this.defaultHeaders
-            })
-            return this.processResponse(response)
-        } catch (error) {
-            throw this.handleServiceError(error, '刪除帳號失敗')
-        }
-    }
-
     // 處理響應數據
     processResponse(response) {
         if (!response || !response.data) {
             throw new Error('無效的響應數據')
         }
 
-        // 特殊狀態處理
         if (response.status === 204) {
             return { success: true }
         }
@@ -156,11 +140,9 @@ class UserService {
             message: error.response?.data?.message || error.message || defaultMessage,
             code: error.response?.status || 500,
             timestamp: new Date().toISOString(),
-            details: error.response?.data?.details || {},
-            originalError: error
+            details: error.response?.data?.details || {}
         }
 
-        // 特定錯誤碼處理
         switch (errorData.code) {
             case 400:
                 errorData.message = '請求參數錯誤，請檢查輸入內容'
@@ -187,7 +169,7 @@ class UserService {
         }
 
         handleError(errorData)
-        return errorData
+        throw errorData
     }
 
     // 檢查用戶會話狀態

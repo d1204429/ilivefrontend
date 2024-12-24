@@ -1,17 +1,19 @@
+// src/store/modules/auth.js - Part 1/3
 import { apiService } from '@/utils/axios'
 import { handleError } from '@/utils/errorHandler'
 import router from '@/router'
 
-// 常量配置
+// Token配置
 const TOKEN_CONFIG = {
     ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
     TOKEN_PREFIX: 'Bearer',
     REFRESH_INTERVAL: parseInt(import.meta.env.VITE_TOKEN_REFRESH_INTERVAL) || 15 * 60 * 1000,
     SESSION_TIMEOUT: parseInt(import.meta.env.VITE_SESSION_TIMEOUT) || 60 * 60 * 1000,
-    TOKEN_EXPIRY_MARGIN: 5 * 60 * 1000 // 5分鐘提前更新
+    TOKEN_EXPIRY_MARGIN: 5 * 60 * 1000
 }
 
+// 安全配置
 const SECURITY_CONFIG = {
     MAX_LOGIN_ATTEMPTS: parseInt(import.meta.env.VITE_MAX_LOGIN_ATTEMPTS) || 5,
     LOCK_DURATION: parseInt(import.meta.env.VITE_LOCK_DURATION) || 30 * 60 * 1000,
@@ -19,7 +21,7 @@ const SECURITY_CONFIG = {
     AUTO_LOGOUT_IDLE_TIME: parseInt(import.meta.env.VITE_AUTO_LOGOUT_IDLE_TIME) || 30 * 60 * 1000
 }
 
-// Token 管理器
+// Token管理器
 const tokenManager = {
     getTokens() {
         return {
@@ -128,7 +130,6 @@ const mutations = {
     INCREMENT_LOGIN_ATTEMPTS(state) {
         state.loginAttempts++
         localStorage.setItem('loginAttempts', state.loginAttempts)
-
         if (state.loginAttempts >= SECURITY_CONFIG.MAX_LOGIN_ATTEMPTS) {
             state.isLocked = true
             state.lockUntil = new Date(Date.now() + SECURITY_CONFIG.LOCK_DURATION).toISOString()
@@ -145,21 +146,15 @@ const mutations = {
         localStorage.removeItem('lockUntil')
     },
     SET_SESSION_TIMEOUT(state, timeout) {
-        if (state.sessionTimeout) {
-            clearTimeout(state.sessionTimeout)
-        }
+        if (state.sessionTimeout) clearTimeout(state.sessionTimeout)
         state.sessionTimeout = timeout
     },
     SET_TOKEN_REFRESH_TIMEOUT(state, timeout) {
-        if (state.tokenRefreshTimeout) {
-            clearTimeout(state.tokenRefreshTimeout)
-        }
+        if (state.tokenRefreshTimeout) clearTimeout(state.tokenRefreshTimeout)
         state.tokenRefreshTimeout = timeout
     },
     SET_IDLE_TIMEOUT(state, timeout) {
-        if (state.idleTimeout) {
-            clearTimeout(state.idleTimeout)
-        }
+        if (state.idleTimeout) clearTimeout(state.idleTimeout)
         state.idleTimeout = timeout
     },
     CLEAR_AUTH(state) {
@@ -175,6 +170,7 @@ const mutations = {
         localStorage.removeItem('lockUntil')
     }
 }
+// src/store/modules/auth.js - Part 2/3
 
 // Actions
 const actions = {
@@ -302,7 +298,8 @@ const actions = {
             await dispatch('cart/clearCart', null, { root: true })
             router.push('/')
         }
-    },
+    },// src/store/modules/auth.js - Part 3/3
+
     async getProfile({ commit, dispatch }) {
         if (!state.token) return null
 
@@ -359,7 +356,6 @@ const actions = {
                     commit('SET_AUTH_STATUS', 'authenticated')
                     commit('UPDATE_ACTIVITY_TIME')
 
-                    // 只在需要身份驗證的頁面才自動獲取用戶資料
                     if (router.currentRoute.value.meta.requiresAuth) {
                         await dispatch('getProfile')
                     }
@@ -370,7 +366,6 @@ const actions = {
                 }
             }
 
-            // 如果沒有 token 但有用戶資料，清除用戶資料
             if (!accessToken && user) {
                 commit('CLEAR_AUTH')
             }
@@ -383,27 +378,13 @@ const actions = {
         }
     },
 
-    async initializeAuth({ dispatch }) {
-        try {
-            const isAuthenticated = await dispatch('checkAuth')
-            if (!isAuthenticated && router.currentRoute.value.meta.requiresAuth) {
-                const currentPath = router.currentRoute.value.fullPath
-                router.push({
-                    path: '/login',
-                    query: { redirect: currentPath }
-                })
-            }
-        } catch (error) {
-            console.error('Initialize auth error:', error)
-        }
-    },
-
     async updateProfile({ commit, dispatch }, profileData) {
         try {
             const response = await apiService.user.updateProfile(profileData)
             if (response) {
                 commit('SET_USER', response)
                 commit('UPDATE_ACTIVITY_TIME')
+                commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
                 return response
             }
             throw new Error('更新用戶資料失敗')
@@ -456,3 +437,4 @@ export default {
     actions,
     getters
 }
+

@@ -114,6 +114,8 @@ export default {
     const errors = ref({})
     const globalError = ref('')
     const originalProfile = ref({})
+    const retryCount = ref(0)
+    const MAX_RETRIES = 3
 
     // Computed Properties
     const currentUser = computed(() => store.getters['auth/currentUser'])
@@ -199,13 +201,18 @@ export default {
           originalProfile.value = { ...response }
           editedProfile.value = { ...response }
           store.commit('auth/SET_SUCCESS_MESSAGE', '個人資料更新成功')
+
+          // 更新用戶資料後重新獲取最新資料
+          await store.dispatch('auth/getProfile')
         }
       } catch (error) {
         if (error.response?.status === 401) {
           try {
-            await store.dispatch('auth/refreshToken')
-            // 重試更新操作
-            await store.dispatch('auth/updateProfile', editedProfile.value)
+            const refreshed = await store.dispatch('auth/refreshToken')
+            if (refreshed && retryCount.value < MAX_RETRIES) {
+              retryCount.value++
+              return handleSave()
+            }
           } catch (refreshError) {
             globalError.value = '登入已過期，請重新登入'
             await store.dispatch('auth/logout')
@@ -233,10 +240,11 @@ export default {
           }
         }
 
-        const userData = await store.dispatch('auth/fetchUserInfo')
+        const userData = await store.dispatch('auth/getProfile')
         if (userData) {
           originalProfile.value = { ...userData }
           editedProfile.value = { ...userData }
+          retryCount.value = 0
         }
       } catch (error) {
         globalError.value = '無法載入用戶資料'
