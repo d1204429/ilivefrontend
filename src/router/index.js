@@ -29,8 +29,8 @@ const routes = [
         }
     },
     {
-        path: '/category/:id',
-        name: 'Category',
+        path: '/products',
+        name: 'Products',
         component: () => import('@/views/product/ProductListView.vue'),
         meta: {
             title: '商品列表',
@@ -38,10 +38,20 @@ const routes = [
         }
     },
     {
+        path: '/category/:id',
+        name: 'Category',
+        component: () => import('@/views/product/ProductListView.vue'),
+        props: route => ({ categoryId: parseInt(route.params.id) }),
+        meta: {
+            title: '商品分類',
+            keepAlive: true
+        }
+    },
+    {
         path: '/product/:id',
         name: 'ProductDetail',
         component: () => import('@/views/product/ProductDetailView.vue'),
-        props: true,
+        props: route => ({ productId: parseInt(route.params.id) }),
         meta: {
             title: '商品詳情',
             keepAlive: true
@@ -79,7 +89,7 @@ const routes = [
         path: '/order/:id',
         name: 'OrderDetail',
         component: () => import('@/views/order/OrderDetailView.vue'),
-        props: true,
+        props: route => ({ orderId: parseInt(route.params.id) }),
         meta: {
             requiresAuth: true,
             title: '訂單詳情'
@@ -150,7 +160,6 @@ const routes = [
         redirect: ROUTE_CONSTANTS.ERROR_PATHS.NOT_FOUND
     }
 ]
-
 // 創建路由實例
 const router = createRouter({
     history: createWebHistory(),
