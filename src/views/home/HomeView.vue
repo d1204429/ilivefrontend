@@ -55,11 +55,12 @@
 </template>
 
 <script>
+
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import ProductCard from '@/components/product/ProductCard.vue'
-import { productApi, cartApi } from '@/services/api'
+import { productApi, cartApi, promotionApi } from '@/services/api'
 
 export default {
   name: 'HomeView',
@@ -72,33 +73,68 @@ export default {
     const store = useStore()
 
     const currentSlide = ref(0)
-    const carouselSlides = ref([
-      {
-        image: '/images/carousel/slide1.jpg',
-        caption: '新品上市'
-      },
-      {
-        image: '/images/carousel/slide2.jpg',
-        caption: '限時特惠'
-      }
-    ])
-
+    const carouselSlides = ref([])
     const categories = ref([])
     const featuredProducts = ref([])
     const newProducts = ref([])
 
+    // 獲取輪播促銷活動
+    const getCarouselPromotions = async () => {
+      try {
+        const promotions = await promotionApi.getActivePromotions()
+        carouselSlides.value = promotions.map(promotion => ({
+          image: promotion.imageUrl || '/images/carousel/default.jpg',
+          caption: promotion.title,
+          promotionId: promotion.promotionId
+        }))
+      } catch (error) {
+        console.error('獲取促銷活動失敗:', error)
+        // 設置默認輪播圖
+        carouselSlides.value = [
+          {
+            image: '/images/carousel/slide1.jpg',
+            caption: '新品上市'
+          },
+          {
+            image: '/images/carousel/slide2.jpg',
+            caption: '限時特惠'
+          }
+        ]
+      }
+    }
+
+    // 獲取所有數據
     const getProducts = async () => {
       try {
-        // 修改為正確的 API 調用方式
         const [categoriesRes, featuredRes, newProductsRes] = await Promise.all([
           productApi.getList({ type: 'category' }),
-          productApi.getList({ featured: true }),
-          productApi.getList({ sort: 'newest' })
+          productApi.getList({
+            featured: true,
+            withPromotion: true  // 添加促銷信息
+          }),
+          productApi.getList({
+            sort: 'newest',
+            withPromotion: true  // 添加促銷信息
+          })
         ])
 
         categories.value = categoriesRes
-        featuredProducts.value = featuredRes
-        newProducts.value = newProductsRes
+
+        // 處理商品促銷價格
+        featuredProducts.value = featuredRes.map(product => ({
+          ...product,
+          originalPrice: product.price,
+          price: product.promotionalPrice || product.price,
+          hasPromotion: !!product.promotionalPrice
+        }))
+
+        newProducts.value = newProductsRes.map(product => ({
+          ...product,
+          originalPrice: product.price,
+          price: product.promotionalPrice || product.price,
+          hasPromotion: !!product.promotionalPrice
+        }))
+
       } catch (error) {
         console.error('獲取數據失敗:', error)
         store.dispatch('app/setError', error.message || '獲取數據失敗')
@@ -109,7 +145,9 @@ export default {
       try {
         await cartApi.addItem({
           productId: product.productId,
-          quantity: 1
+          quantity: 1,
+          // 如果是促銷商品,添加促銷ID
+          promotionId: product.promotionId
         })
         await store.dispatch('cart/fetchCartItems')
         store.dispatch('app/setSuccess', '成功加入購物車')
@@ -122,8 +160,17 @@ export default {
       router.push(`/category/${categoryId}`)
     }
 
+    // 自動輪播
+    const startCarousel = () => {
+      setInterval(() => {
+        currentSlide.value = (currentSlide.value + 1) % carouselSlides.value.length
+      }, 5000)
+    }
+
     onMounted(() => {
+      getCarouselPromotions()
       getProducts()
+      startCarousel()
     })
 
     return {
@@ -137,6 +184,8 @@ export default {
     }
   }
 }
+
+
 </script>
 
 <style scoped>
