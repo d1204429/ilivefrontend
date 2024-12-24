@@ -314,5 +314,19 @@ export const orderApi = {
     getShipmentTracking: (id) => api.get(`${API_PATHS.ORDERS.BASE}/${id}${API_PATHS.ORDERS.TRACKING}`)
 }
 
+export const promotionApi = {
+    // 獲取所有活動的促銷
+    getActivePromotions: () => api.get(API_PATHS.PRODUCTS.PROMOTIONS),
+
+    // 獲取特定商品的促銷
+    getProductPromotions: (productId) =>
+        api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}/promotions`),
+
+    // 獲取特定促銷活動詳情
+    getPromotionDetails: (promotionId) =>
+        api.get(`${API_PATHS.PRODUCTS.PROMOTIONS}/${promotionId}`)
+}
+
+
 
 export default api
