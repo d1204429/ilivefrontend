@@ -29,8 +29,8 @@ const routes = [
         }
     },
     {
-        path: '/products',
-        name: 'Products',
+        path: '/category/:id',
+        name: 'Category',
         component: () => import('@/views/product/ProductListView.vue'),
         meta: {
             title: '商品列表',
@@ -44,16 +44,6 @@ const routes = [
         props: true,
         meta: {
             title: '商品詳情',
-            keepAlive: true
-        }
-    },
-    {
-        path: '/category/:id',
-        name: 'Category',
-        component: () => import('@/views/product/ProductListWithCategory.vue'),
-        props: true,
-        meta: {
-            title: '商品分類',
             keepAlive: true
         }
     },
@@ -257,10 +247,8 @@ const validateCart = async () => {
 router.beforeEach(async (to, from, next) => {
     try {
         setDocumentTitle(to)
-
         const isAuthenticated = await checkAuthentication()
 
-        // 處理需要認證的路由
         if (to.meta.requiresAuth && !isAuthenticated) {
             store.dispatch('app/showNotification', {
                 type: 'warning',
@@ -270,12 +258,10 @@ router.beforeEach(async (to, from, next) => {
             return next(handleAuthRedirect(to))
         }
 
-        // 處理已認證用戶訪問登入/註冊頁面
         if (to.meta.hideForAuth && isAuthenticated) {
             return next(ROUTE_CONSTANTS.HOME_PATH)
         }
 
-        // 驗證購物車（結帳頁面）
         if (to.meta.validateCart && isAuthenticated) {
             const isValid = await validateCart()
             if (!isValid) {
@@ -293,15 +279,12 @@ router.beforeEach(async (to, from, next) => {
 
 // 路由後置守衛
 router.afterEach((to, from) => {
-    // 處理頁面快取
     if (to.meta.keepAlive) {
         const instance = router.currentRoute.value.matched[0].instances.default
         if (instance && instance.activatedCache) {
             instance.activatedCache()
         }
     }
-
-    // 關閉載入狀態
     store.dispatch('app/setLoading', false)
 })
 

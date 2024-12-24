@@ -9,17 +9,31 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
+    },
+    extensions: ['.js', '.vue', '.json']
   },
   server: {
     port: 8080,
-    host: true, // 新增host設定以允許網路訪問
+    host: true,
+    cors: true,
     proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
+      '/api/v1': {
+        target: 'http://localhost:1988',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-        secure: false // 允許不安全的https
+        rewrite: (path) => path.replace(/^\/api\/v1/, ''),
+        secure: false,
+        ws: true,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            console.log('proxy error', err)
+          })
+          proxy.on('proxyReq', (proxyReq, req, _res) => {
+            console.log('Sending Request:', req.method, req.url)
+          })
+          proxy.on('proxyRes', (proxyRes, req, _res) => {
+            console.log('Received Response:', proxyRes.statusCode, req.url)
+          })
+        }
       }
     }
   },
@@ -40,19 +54,29 @@ export default defineConfig({
           'vendor': [
             'vue',
             'vue-router',
-            'pinia',
+            'vuex',
             'axios'
           ],
           'styles': [
-            'bootstrap',
-            '@fortawesome/fontawesome-free'
+            '@/assets/styles/main.css',
+            '@/assets/styles/variables.scss'
           ]
         },
         chunkFileNames: 'assets/js/[name]-[hash].js',
         entryFileNames: 'assets/js/[name]-[hash].js',
-        assetFileNames: 'assets/[ext]/[name]-[hash].[ext]'
+        assetFileNames: ({name}) => {
+          if (/\.(gif|jpe?g|png|svg)$/.test(name ?? '')) {
+            return 'assets/images/[name]-[hash][extname]'
+          }
+          if (/\.css$/.test(name ?? '')) {
+            return 'assets/css/[name]-[hash][extname]'
+          }
+          return 'assets/[ext]/[name]-[hash][extname]'
+        }
       }
-    }
+    },
+    cssCodeSplit: true,
+    chunkSizeWarningLimit: 2000
   },
   css: {
     preprocessorOptions: {
@@ -63,25 +87,33 @@ export default defineConfig({
         `
       }
     },
-    devSourcemap: true
+    devSourcemap: true,
+    modules: {
+      localsConvention: 'camelCaseOnly'
+    }
   },
   optimizeDeps: {
     include: [
       'vue',
       'vue-router',
-      'pinia',
-      'axios',
-      'bootstrap',
-      '@fortawesome/fontawesome-free'
-    ]
+      'vuex',
+      'axios'
+    ],
+    exclude: ['@fortawesome/fontawesome-free']
   },
-  // 新增環境變量前綴
   envPrefix: 'VITE_',
-  // 新增base URL配置
   base: '/',
-  // 新增預覽配置
   preview: {
     port: 8080,
-    host: true
+    host: true,
+    cors: true
+  },
+  define: {
+    __VUE_OPTIONS_API__: true,
+    __VUE_PROD_DEVTOOLS__: false,
+    'process.env': process.env
+  },
+  esbuild: {
+    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : []
   }
 })
