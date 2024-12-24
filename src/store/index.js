@@ -5,6 +5,7 @@ import product from './modules/product'
 import user from './modules/user'
 import order from './modules/order'
 import app from './modules/app'
+import { handleError } from '@/utils/errorHandler'
 
 // Constants
 const INITIAL_STATE = {
@@ -21,11 +22,31 @@ const INITIAL_STATE = {
         services: {
             api: true,
             database: true,
-            cache: true
+            cache: true,
+            payment: true,
+            shipping: true
+        },
+        performance: {
+            apiLatency: 0,
+            loadTime: 0,
+            resourceUsage: {}
         }
     },
     theme: localStorage.getItem('theme') || 'light',
-    language: localStorage.getItem('language') || 'zh-TW'
+    language: localStorage.getItem('language') || 'zh-TW',
+    deviceInfo: {
+        type: 'desktop',
+        browser: navigator.userAgent,
+        screenSize: {
+            width: window.innerWidth,
+            height: window.innerHeight
+        }
+    },
+    cache: {
+        products: new Map(),
+        categories: new Map(),
+        lastUpdated: null
+    }
 }
 
 // Store Configuration
@@ -51,7 +72,8 @@ export default createStore({
                 type: error.type || 'error',
                 timestamp: new Date().toISOString(),
                 code: error.code,
-                details: error.details
+                details: error.details,
+                stack: import.meta.env.DEV ? error.stack : undefined
             } : null
         },
         SET_SUCCESS(state, message) {
@@ -65,7 +87,8 @@ export default createStore({
             state.notification = notification ? {
                 ...notification,
                 id: Date.now(),
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                read: false
             } : null
         },
         SET_SYSTEM_STATUS(state, status) {
@@ -73,6 +96,12 @@ export default createStore({
                 ...state.systemStatus,
                 ...status,
                 lastChecked: new Date().toISOString()
+            }
+        },
+        UPDATE_SERVICE_STATUS(state, { service, status, details }) {
+            state.systemStatus.services[service] = status
+            if (details) {
+                state.systemStatus.performance[service] = details
             }
         },
         SET_THEME(state, theme) {
@@ -85,6 +114,32 @@ export default createStore({
             localStorage.setItem('language', language)
             document.documentElement.setAttribute('lang', language)
         },
+        UPDATE_DEVICE_INFO(state) {
+            const width = window.innerWidth
+            state.deviceInfo = {
+                type: width < 768 ? 'mobile' : width < 1024 ? 'tablet' : 'desktop',
+                browser: navigator.userAgent,
+                screenSize: {
+                    width,
+                    height: window.innerHeight
+                }
+            }
+        },
+        SET_CACHE(state, { key, data }) {
+            state.cache[key] = data
+            state.cache.lastUpdated = new Date().toISOString()
+        },
+        CLEAR_CACHE(state, key) {
+            if (key) {
+                state.cache[key].clear()
+            } else {
+                Object.keys(state.cache).forEach(k => {
+                    if (state.cache[k] instanceof Map) {
+                        state.cache[k].clear()
+                    }
+                })
+            }
+        },
         RESET_STATE(state) {
             Object.assign(state, { ...INITIAL_STATE })
         }
@@ -93,8 +148,11 @@ export default createStore({
     actions: {
         async initializeApp({ commit, dispatch }) {
             commit('SET_LOADING', true)
+            commit('UPDATE_DEVICE_INFO')
 
             try {
+                const startTime = performance.now()
+
                 await Promise.all([
                     dispatch('auth/checkAuth'),
                     dispatch('checkSystemStatus'),
@@ -102,16 +160,20 @@ export default createStore({
                     dispatch('cart/fetchCartItems')
                 ])
 
+                const loadTime = performance.now() - startTime
+                commit('UPDATE_SERVICE_STATUS', {
+                    service: 'performance',
+                    details: { loadTime }
+                })
+
+                // 事件監聽器
                 window.addEventListener('online', () => dispatch('handleOnline'))
                 window.addEventListener('offline', () => dispatch('handleOffline'))
+                window.addEventListener('resize', () => commit('UPDATE_DEVICE_INFO'))
 
                 return true
             } catch (error) {
-                dispatch('setError', {
-                    message: '系統初始化失敗',
-                    type: 'error',
-                    details: error.message
-                })
+                dispatch('setError', handleError(error))
                 return false
             } finally {
                 commit('SET_LOADING', false)
@@ -120,12 +182,23 @@ export default createStore({
 
         async checkSystemStatus({ commit, dispatch }) {
             try {
+                const startTime = performance.now()
                 const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/system/health`)
                 const status = await response.json()
+                const apiLatency = performance.now() - startTime
 
                 commit('SET_SYSTEM_STATUS', {
                     ...status,
-                    isOnline: true
+                    isOnline: true,
+                    performance: {
+                        ...status.performance,
+                        apiLatency
+                    }
+                })
+
+                // 檢查各項服務狀態
+                Object.entries(status.services || {}).forEach(([service, status]) => {
+                    commit('UPDATE_SERVICE_STATUS', { service, status })
                 })
 
                 if (status.maintenance) {
@@ -169,8 +242,8 @@ export default createStore({
 
         setError({ commit }, error) {
             commit('SET_ERROR', error)
-            if (error) {
-                setTimeout(() => commit('SET_ERROR', null), 3000)
+            if (error && !error.persistent) {
+                setTimeout(() => commit('SET_ERROR', null), error.duration || 3000)
             }
         },
 
@@ -181,10 +254,16 @@ export default createStore({
             }
         },
 
-        showNotification({ commit }, notification) {
+        showNotification({ commit, state }, notification) {
+            // 避免重複通知
+            if (state.notification?.message === notification.message) {
+                return
+            }
+
             commit('SET_NOTIFICATION', notification)
             if (notification?.duration !== 0) {
-                setTimeout(() => commit('SET_NOTIFICATION', null), notification?.duration || 3000)
+                setTimeout(() => commit('SET_NOTIFICATION', null),
+                    notification?.duration || 3000)
             }
         },
 
@@ -194,6 +273,14 @@ export default createStore({
 
         setLanguage({ commit }, language) {
             commit('SET_LANGUAGE', language)
+        },
+
+        updateCache({ commit }, { key, data }) {
+            commit('SET_CACHE', { key, data })
+        },
+
+        clearCache({ commit }, key) {
+            commit('CLEAR_CACHE', key)
         },
 
         resetState({ commit }) {
@@ -210,11 +297,19 @@ export default createStore({
         isOnline: state => state.systemStatus.isOnline,
         isMaintenance: state => state.systemStatus.maintenance,
         isHealthy: state => state.systemStatus.healthy,
+        serviceStatus: state => service => state.systemStatus.services[service],
+        performance: state => state.systemStatus.performance,
         currentTheme: state => state.theme,
         currentLanguage: state => state.language,
+        deviceInfo: state => state.deviceInfo,
+        isMobile: state => state.deviceInfo.type === 'mobile',
+        isTablet: state => state.deviceInfo.type === 'tablet',
+        isDesktop: state => state.deviceInfo.type === 'desktop',
         appVersion: state => state.systemStatus.version,
         hasError: state => !!state.error,
         hasSuccess: state => !!state.success,
-        hasNotification: state => !!state.notification
+        hasNotification: state => !!state.notification,
+        getCached: state => key => state.cache[key],
+        cacheLastUpdated: state => state.cache.lastUpdated
     }
 })
