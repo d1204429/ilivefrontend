@@ -171,11 +171,11 @@ export default {
     }
 
     const formatPrice = (price) => {
-      return price.toLocaleString('zh-TW')
+      return price.toLocaleString('zh-TW', { style: 'currency', currency: 'TWD' });
     }
 
     const calculateSubtotal = (item) => {
-      return item.quantity * item.product.price
+      return item.quantity * item.product.price;
     }
 
     onMounted(() => {
@@ -221,7 +221,6 @@ export default {
 .empty-cart i {
   font-size: 4rem;
   color: #ccc;
-  margin-bottom: 1rem;
 }
 
 .continue-shopping {
@@ -236,90 +235,55 @@ export default {
 
 .cart-item {
   display: grid;
-  grid-template-columns: auto 2fr 1fr 1fr auto;
+  grid-template-columns: auto 2fr auto auto auto; /* 調整列數 */
   gap: 2rem;
   align-items: center;
   padding: 1.5rem;
   background: white;
   border-radius: 8px;
-  margin-bottom: 1rem;
 }
 
 .item-image {
   width: 100px;
-  height: 100px;
 }
 
 .item-image img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 4px;
 }
 
 .quantity-control {
   display: flex;
-  align-items: center;
-  gap: 1rem;
 }
 
 .quantity-control button {
   width: 32px;
-  height: 32px;
-  border: 1px solid #ddd;
-  background: white;
-  border-radius: 4px;
 }
 
 .item-subtotal {
-  font-weight: 600;
-  color: var(--primary-color);
+  font-weight: bold;
 }
 
 .cart-summary {
   margin-top: 2rem;
-  padding: 2rem;
-  background: white;
-  border-radius: 8px;
 }
 
 .summary-row {
   display: flex;
-  justify-content: space-between;
-  margin-bottom: 1rem;
 }
 
 .total-amount {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--primary-color);
+  font-size: larger; /* 增加字體大小 */
 }
 
 .checkout-btn {
-  width: 100%;
-  padding: 1rem;
+  width:100%;
+  padding:1rem;
   background-color: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 1.1rem;
-  cursor: pointer;
+  color:white;
+  border:none;
+  border-radius:.4rem;
 }
-
-.checkout-btn:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-}
-
-@media (max-width: 768px) {
-  .cart-item {
-    grid-template-columns: 1fr;
-    gap: 1rem;
-  }
-
-  .item-image {
-    width: 100%;
-    height: 200px;
-  }
+.checkout-btn[disabled]{
+  background-color:#ccc;
 }
 </style>

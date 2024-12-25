@@ -70,7 +70,7 @@ export default {
     // 計算總金額
     const calculateTotal = computed(() => {
       return cartItems.value.reduce((total, item) => {
-        return total + (item.price * item.quantity)
+        return total + (item.product.price * item.quantity)
       }, 0)
     })
 
@@ -90,7 +90,7 @@ export default {
     const updateQuantity = async (item) => {
       try {
         await store.dispatch('cart/updateCartItem', {
-          cartItemId: item.id,
+          cartItemId: item.cartItemId,
           quantity: item.quantity
         })
         await fetchCartItems()
@@ -167,7 +167,6 @@ export default {
 .empty-cart i {
   font-size: 4rem;
   color: #ccc;
-  margin-bottom: 1rem;
 }
 
 .continue-shopping {
@@ -177,34 +176,32 @@ export default {
   color: white;
   text-decoration: none;
   border-radius: 4px;
-  margin-top: 1rem;
 }
 
 .loading {
   text-align: center;
   padding: 2rem;
-  color: #666;
 }
 
 .loading i {
-  margin-right: 0.5rem;
+  margin-right: .5rem;
 }
 
 @media (max-width: 768px) {
   .cart-view {
-    padding: 1rem;
+    padding:1rem;
   }
 
   .cart-content {
-    grid-template-columns: 1fr;
+    grid-template-columns:1fr;
   }
 
   .cart-summary-container {
-    position: sticky;
-    bottom: 0;
-    background: white;
-    padding: 1rem;
-    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+    position:sticky;
+    bottom:0;
+    background:white;
+    padding:.5rem;
+    box-shadow:0 -2px 4px rgba(0,0,0,.1);
   }
 }
 </style>

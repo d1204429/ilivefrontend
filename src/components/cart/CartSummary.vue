@@ -41,7 +41,7 @@
               v-model="couponCode"
               placeholder="請輸入優惠碼"
               :disabled="appliedCoupon"
-          >
+          />
           <button
               @click="applyCoupon"
               :disabled="!couponCode || appliedCoupon"
@@ -125,7 +125,7 @@ export default {
 
     // 方法
     const formatPrice = (price) => {
-      return price.toLocaleString('zh-TW')
+      return price.toLocaleString('zh-TW', { style: 'currency', currency: 'TWD' });
     }
 
     const applyCoupon = async () => {
@@ -190,7 +190,6 @@ export default {
 
 .summary-header h2 {
   font-size: 1.5rem;
-  margin: 0;
 }
 
 .item-count {
@@ -204,7 +203,6 @@ export default {
 .price-row {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 1rem;
 }
 
 .discount {
@@ -213,14 +211,11 @@ export default {
 
 .shipping-section {
   padding: 1rem 0;
-  border-top: 1px solid #eee;
-  border-bottom: 1px solid #eee;
 }
 
 .shipping-note {
   font-size: 0.9rem;
   color: #2196f3;
-  margin-top: 0.5rem;
 }
 
 .coupon-section {
@@ -229,105 +224,89 @@ export default {
 
 .coupon-input {
   display: flex;
-  gap: 0.5rem;
 }
 
 .coupon-input input {
   flex: 1;
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
 }
 
 .coupon-input button {
-  padding: 0.5rem 1rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+  background-color: var(--primary-color);
+  color:white;
+  border:none;
+  border-radius:.4rem;
+  cursor:pointer;
 }
 
-.coupon-input button:disabled {
-  background: #ccc;
-  cursor: not-allowed;
+.coupon-input button[disabled]{
+  background-color:#ccc;
+  cursor:not-allowed;
 }
 
 .coupon-message {
-  margin-top: 0.5rem;
-  font-size: 0.9rem;
-  color: #4caf50;
+  margin-top:.5rem;
+  font-size:.9rem;
+  color:#4caf50;
 }
 
 .total-section {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid #eee;
+  margin-top:.5rem;
+  padding-top:.5rem;
+  border-top:1px solid #eee;
 }
 
 .total {
-  font-size: 1.2rem;
-  font-weight: bold;
+  font-size:.9rem;
+  font-weight:bold;
 }
 
 .checkout-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-top: 1.5rem;
+  display:flex;
+  flex-direction:column;
+  gap:.5rem;
+  margin-top:.5rem;
 }
 
-.checkout-button,
-.continue-shopping {
-  width: 100%;
-  padding: 1rem;
-  border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background-color 0.3s;
+.checkout-button, .continue-shopping {
+  width:100%;
+  padding:.5rem;
+  border:none;
+  border-radius:.4rem;
+  font-size:.9rem;
+  cursor:pointer;
 }
 
-.checkout-button {
-  background: var(--primary-color);
-  color: white;
+.checkout-button{
+  background-color:var(--primary-color);
+  color:white;
 }
 
-.checkout-button:disabled {
-  background: #ccc;
-  cursor: not-allowed;
+.checkout-button[disabled]{
+  background-color:#ccc;
 }
 
-.continue-shopping {
-  background: white;
-  border: 1px solid var(--primary-color);
-  color: var(--primary-color);
+.continue-shopping{
+  background:white;
+  border:1px solid var(--primary-color);
+  color:var(--primary-color);
 }
 
-.payment-methods {
-  margin-top: 2rem;
-  padding-top: 1rem;
-  border-top: 1px solid #eee;
+.payment-methods{
+  margin-top:2rem;
+  padding-top:.5rem;
+  border-top:1px solid #eee;
 }
 
-.payment-methods h3 {
-  font-size: 1rem;
-  margin-bottom: 1rem;
+.payment-methods h3{
+  font-size:.9rem;
 }
 
-.payment-icons {
-  display: flex;
-  gap: 1rem;
-  color: #666;
+.payment-icons{
+  display:flex;
+  gap:.5rem;
 }
 
-.payment-icons i {
-  font-size: 2rem;
-}
-
-@media (max-width: 768px) {
-  .cart-summary {
-    margin: 1rem;
-  }
+.payment-icons i{
+  font-size:2rem;
 }
 </style>

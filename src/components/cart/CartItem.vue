@@ -23,7 +23,7 @@
         <button
             class="quantity-btn"
             @click="updateQuantity(-1)"
-            :disabled="item.quantity <= 1">
+            :disabled="quantity <= 1">
           <i class="fas fa-minus"></i>
         </button>
         <input
@@ -36,14 +36,14 @@
         <button
             class="quantity-btn"
             @click="updateQuantity(1)"
-            :disabled="item.quantity >= item.stock">
+            :disabled="quantity >= item.stock">
           <i class="fas fa-plus"></i>
         </button>
       </div>
 
       <!-- 小計金額 -->
       <div class="subtotal">
-        小計: ${{ formatPrice(item.price * item.quantity) }}
+        小計: ${{ formatPrice(item.price * quantity) }}
       </div>
     </div>
 
@@ -76,41 +76,41 @@ export default {
 
   methods: {
     formatPrice(price) {
-      return price.toLocaleString('zh-TW')
+      return price.toLocaleString('zh-TW', { style: 'currency', currency: 'TWD' });
     },
 
     updateQuantity(change) {
-      const newQuantity = this.quantity + change
+      const newQuantity = this.quantity + change;
       if (newQuantity >= 1 && newQuantity <= this.item.stock) {
-        this.quantity = newQuantity
-        this.emitUpdate()
+        this.quantity = newQuantity;
+        this.emitUpdate();
       }
     },
 
     handleQuantityChange() {
       if (this.quantity < 1) {
-        this.quantity = 1
+        this.quantity = 1;
       } else if (this.quantity > this.item.stock) {
-        this.quantity = this.item.stock
+        this.quantity = this.item.stock;
       }
-      this.emitUpdate()
+      this.emitUpdate();
     },
 
     emitUpdate() {
       this.$emit('update-quantity', {
         id: this.item.id,
         quantity: this.quantity
-      })
+      });
     },
 
     removeItem() {
-      this.$emit('remove-item', this.item.id)
+      this.$emit('remove-item', this.item.id);
     }
   },
 
   watch: {
     'item.quantity'(newVal) {
-      this.quantity = newVal
+      this.quantity = newVal;
     }
   }
 }
@@ -144,14 +144,11 @@ export default {
 
 .item-name {
   font-size: 1.1rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
+  font-weight: bold;
 }
 
 .item-brand {
   color: #666;
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
 }
 
 .item-price {
@@ -160,90 +157,35 @@ export default {
 
 .current-price {
   font-size: 1.2rem;
-  font-weight: 600;
-  color: var(--primary-color);
+  font-weight: bold;
 }
 
 .original-price {
   font-size: 0.9rem;
   color: #999;
-  text-decoration: line-through;
-  margin-left: 0.5rem;
 }
 
 .quantity-control {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
 }
 
 .quantity-btn {
   width: 32px;
-  height: 32px;
-  border: 1px solid #ddd;
-  background: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.quantity-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .quantity-control input {
-  width: 60px;
-  text-align: center;
-  padding: 0.25rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  width: auto; /* 自動調整寬度 */
 }
 
 .subtotal {
-  font-weight: 600;
-  color: var(--primary-color);
+  font-weight: bold;
 }
 
 .item-actions {
   display: flex;
-  align-items: flex-start;
-  padding: 0 1rem;
 }
 
 .remove-btn {
-  padding: 0.5rem 1rem;
-  background: none;
-  border: 1px solid #dc3545;
-  color: #dc3545;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.remove-btn:hover {
-  background: #dc3545;
-  color: #fff;
-}
-
-.out-of-stock {
-  opacity: 0.7;
-}
-
-@media (max-width: 768px) {
-  .cart-item {
-    flex-direction: column;
-  }
-
-  .item-image {
-    width: 100%;
-    height: 200px;
-    margin-bottom: 1rem;
-  }
-
-  .item-actions {
-    margin-top: 1rem;
-    justify-content: flex-end;
-  }
+  color: #dc3545; /* Bootstrap danger color */
 }
 </style>
