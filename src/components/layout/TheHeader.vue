@@ -2,29 +2,48 @@
   <header class="header">
     <div class="header-container">
       <!-- 漢堡選單按鈕 -->
-      <div class="burger-menu" :class="{ 'active': isMenuOpen }" @click="toggleMenu">
+      <button
+          class="burger-menu"
+          :class="{ 'active': isMenuOpen }"
+          @click="toggleMenu"
+          aria-label="選單"
+      >
         <span class="burger-bar"></span>
         <span class="burger-bar"></span>
         <span class="burger-bar"></span>
-      </div>
+      </button>
 
       <!-- 側邊選單 -->
-      <div class="side-menu" :class="{ 'active': isMenuOpen }">
+      <aside
+          class="side-menu"
+          :class="{ 'active': isMenuOpen }"
+          role="navigation"
+          aria-label="主選單"
+      >
         <nav class="menu-items">
-          <router-link to="/" class="menu-item" @click="toggleMenu">首頁</router-link>
+          <router-link
+              to="/"
+              class="menu-item"
+              @click="toggleMenu"
+          >首頁</router-link>
+
           <div class="menu-item-dropdown">
-            <div class="menu-item" @click="toggleCategory">
+            <button
+                class="menu-item"
+                @click="toggleCategory"
+                aria-expanded="isCategoryOpen"
+            >
               分類
               <i :class="['fas', isCategoryOpen ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
-            </div>
-            <div class="dropdown-content" :class="{ 'show': isCategoryOpen }">
+            </button>
+            <div
+                class="dropdown-content"
+                :class="{ 'show': isCategoryOpen }"
+            >
               <router-link
                   v-for="category in categories"
                   :key="category.id"
-                  :to="{
-              path: '/products',
-              query: { search: category.name }
-            }"
+                  :to="{ path: '/products', query: { search: category.name } }"
                   class="dropdown-item"
                   @click="toggleMenu"
               >
@@ -32,19 +51,34 @@
               </router-link>
             </div>
           </div>
-          <router-link to="/about" class="menu-item" @click="toggleMenu">關於我們</router-link>
-          <router-link to="/contact" class="menu-item" @click="toggleMenu">聯絡我們</router-link>
+
+          <router-link
+              to="/about"
+              class="menu-item"
+              @click="toggleMenu"
+          >關於我們</router-link>
+
+          <router-link
+              to="/contact"
+              class="menu-item"
+              @click="toggleMenu"
+          >聯絡我們</router-link>
         </nav>
-      </div>
+      </aside>
+
       <!-- 搜尋欄 -->
-      <div class="search-box">
+      <div class="search-box" role="search">
         <input
             type="search"
             v-model="searchKeyword"
-            placeholder="搜尋"
+            placeholder="搜尋商品"
             @keyup.enter="handleSearch"
+            aria-label="搜尋"
         >
-        <button @click="handleSearch">
+        <button
+            @click="handleSearch"
+            aria-label="搜尋按鈕"
+        >
           <i class="fas fa-search"></i>
         </button>
       </div>
@@ -60,7 +94,10 @@
             <div class="user-dropdown">
               <router-link to="/profile" class="dropdown-item">個人資料</router-link>
               <router-link to="/orders" class="dropdown-item">訂單記錄</router-link>
-              <a href="#" class="dropdown-item" @click.prevent="handleLogout">登出</a>
+              <button
+                  class="dropdown-item"
+                  @click="handleLogout"
+              >登出</button>
             </div>
           </div>
         </template>
@@ -68,15 +105,19 @@
           <router-link to="/login" class="nav-link">登入</router-link>
           <router-link to="/register" class="nav-link">註冊</router-link>
         </template>
-        <router-link to="/cart" class="cart-link">
+
+        <router-link to="/cart" class="cart-link" aria-label="購物車">
           <i class="fas fa-shopping-cart"></i>
-          <span v-if="cartItemCount > 0" class="cart-count">{{ cartItemCount }}</span>
+          <span
+              v-if="cartItemCount > 0"
+              class="cart-count"
+              role="status"
+          >{{ cartItemCount }}</span>
         </router-link>
       </nav>
     </div>
   </header>
 </template>
-
 <script>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useStore } from 'vuex'
@@ -84,7 +125,6 @@ import { useRouter } from 'vue-router'
 
 export default {
   name: 'TheHeader',
-
   setup() {
     const store = useStore()
     const router = useRouter()
@@ -120,6 +160,7 @@ export default {
         })
       }
     }
+
     const fetchUserData = async () => {
       try {
         if (isLoggedIn.value && !currentUser.value) {
@@ -139,7 +180,6 @@ export default {
 
     const initializeHeader = async () => {
       if (isInitialized.value) return
-
       try {
         await fetchCategories()
         await fetchUserData()
@@ -176,10 +216,7 @@ export default {
       if (trimmedKeyword) {
         router.push({
           path: '/products',
-          query: {
-            search: trimmedKeyword,
-            page: 1
-          }
+          query: { search: trimmedKeyword, page: 1 }
         })
         searchKeyword.value = ''
         if (isMenuOpen.value) {
@@ -249,9 +286,6 @@ export default {
   }
 }
 </script>
-
-
-
 <style scoped>
 .header {
   background: #fff;
@@ -283,6 +317,9 @@ export default {
   height: 20px;
   cursor: pointer;
   z-index: 1001;
+  background: none;
+  border: none;
+  padding: 0;
 }
 
 .burger-bar {
@@ -337,6 +374,11 @@ export default {
   justify-content: space-between;
   align-items: center;
   cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-size: 1rem;
 }
 
 .menu-item:hover {
@@ -372,6 +414,7 @@ export default {
   background-color: #f0f0f0;
 }
 
+/* 搜尋欄樣式 */
 .search-box {
   flex: 1;
   max-width: 600px;
@@ -396,8 +439,10 @@ export default {
   border: none;
   color: #666;
   cursor: pointer;
+  padding: 0.5rem;
 }
 
+/* 用戶導航樣式 */
 .user-nav {
   display: flex;
   align-items: center;
@@ -408,6 +453,8 @@ export default {
   color: #333;
   text-decoration: none;
   font-size: 0.9rem;
+  display: flex;
+  align-items: center;
 }
 
 .nav-link:hover {
@@ -429,13 +476,62 @@ export default {
   font-size: 0.75rem;
   padding: 2px 6px;
   border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
 }
 
+/* 用戶資訊下拉選單 */
+.user-info {
+  position: relative;
+}
+
+.user-info:hover .user-dropdown {
+  display: block;
+}
+
+.username {
+  margin-left: 0.5rem;
+  font-weight: 500;
+}
+
+.user-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 0.5rem 0;
+  min-width: 150px;
+  z-index: 1000;
+}
+
+.user-dropdown .dropdown-item {
+  display: block;
+  padding: 0.5rem 1rem;
+  color: #333;
+  text-decoration: none;
+  font-size: 0.9rem;
+  border: none;
+  width: 100%;
+  text-align: left;
+  background: none;
+  cursor: pointer;
+}
+
+.user-dropdown .dropdown-item:hover {
+  background-color: #f5f5f5;
+}
+
+/* 響應式設計 */
 @media (max-width: 768px) {
   .header-container {
     flex-wrap: wrap;
     height: auto;
     gap: 1rem;
+    padding: 0.5rem 1rem;
   }
 
   .search-box {
@@ -448,83 +544,4 @@ export default {
     order: 1;
   }
 }
-
-
-.user-info {
-  position: relative;
-}
-
-.user-info:hover .user-dropdown {
-  display: block;
-}
-
-.username {
-  margin-left: 0.5rem;
-  font-weight: 500;
-}
-
-.user-dropdown {
-  display: none;
-  position: absolute;
-  top: 100%;
-  right: 0;
-  background: white;
-  border: 1px solid #eee;
-  border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  padding: 0.5rem 0;
-  min-width: 150px;
-  z-index: 1000;
-}
-
-.user-dropdown .dropdown-item {
-  display: block;
-  padding: 0.5rem 1rem;
-  color: #333;
-  text-decoration: none;
-  font-size: 0.9rem;
-}
-
-.user-dropdown .dropdown-item:hover {
-  background-color: #f5f5f5;
-}
-.user-info {
-  position: relative;
-}
-
-.user-info:hover .user-dropdown {
-  display: block;
-}
-
-.username {
-  margin-left: 0.5rem;
-  font-weight: 500;
-}
-
-.user-dropdown {
-  display: none;
-  position: absolute;
-  top: 100%;
-  right: 0;
-  background: white;
-  border: 1px solid #eee;
-  border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  padding: 0.5rem 0;
-  min-width: 150px;
-  z-index: 1000;
-}
-
-.user-dropdown .dropdown-item {
-  display: block;
-  padding: 0.5rem 1rem;
-  color: #333;
-  text-decoration: none;
-  font-size: 0.9rem;
-}
-
-.user-dropdown .dropdown-item:hover {
-  background-color: #f5f5f5;
-}
-
 </style>
