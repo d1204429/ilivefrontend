@@ -3,12 +3,12 @@
     <!-- 商品分類過濾區 -->
     <div class="filter-section">
       <div class="category-filter">
-        <select v-model="selectedCategory" @change="filterProducts">
+        <select v-model="selectedCategory" @change="handleCategoryChange">
           <option value="">全部分類</option>
           <option v-for="category in categories"
                   :key="category.categoryId"
                   :value="category.categoryId">
-            {{ category.categoryName }}
+            {{ category.name }}
           </option>
         </select>
       </div>
@@ -17,59 +17,58 @@
       <div class="search-box">
         <input type="text"
                v-model="searchKeyword"
-               @input="filterProducts"
+               @input="debounceSearch"
                placeholder="搜尋商品...">
       </div>
 
       <!-- 價格範圍過濾 -->
       <div class="price-filter">
         <input type="number"
-               v-model="minPrice"
-               placeholder="最低價格">
+               v-model.number="minPrice"
+               placeholder="最低價格"
+               min="0">
         <span>-</span>
         <input type="number"
-               v-model="maxPrice"
-               placeholder="最高價格">
-        <button @click="filterProducts">套用價格</button>
-      </div>
-    </div>
-
-    <!-- 商品列表區 -->
-    <div class="products-grid">
-      <div v-for="product in filteredProducts"
-           :key="product.productId"
-           class="product-card">
-        <router-link :to="`/product/${product.productId}`">
-          <div class="product-image">
-            <img :src="product.imageUrl" :alt="product.name">
-          </div>
-          <div class="product-info">
-            <h3 class="product-name">{{ product.name }}</h3>
-            <p class="product-brand">{{ product.brand }}</p>
-            <p class="product-price">${{ formatPrice(product.price) }}</p>
-            <p class="product-stock"
-               :class="{ 'low-stock': product.stock < 10 }">
-              庫存: {{ product.stock }}
-            </p>
-          </div>
-        </router-link>
-        <button class="add-to-cart"
-                @click="addToCart(product)"
-                :disabled="product.stock === 0">
-          加入購物車
+               v-model.number="maxPrice"
+               placeholder="最高價格"
+               min="0">
+        <button @click="applyPriceFilter"
+                :disabled="loading">
+          套用價格
         </button>
       </div>
     </div>
 
+    <!-- 載入中提示 -->
+    <div v-if="loading" class="loading-container">
+      <div class="loading-spinner"></div>
+      <p>載入中...</p>
+    </div>
+
+    <!-- 商品列表區 -->
+    <div v-else class="products-grid">
+      <ProductCard
+          v-for="product in displayProducts"
+          :key="product.productId"
+          :product="product"
+          @add-to-cart="addToCart"
+      />
+    </div>
+
+    <!-- 無商品提示 -->
+    <div v-if="!loading && displayProducts.length === 0" class="no-products">
+      <p>沒有找到符合條件的商品</p>
+    </div>
+
     <!-- 分頁控制區 -->
-    <div class="pagination">
+    <div v-if="totalPages > 1" class="pagination">
       <button @click="previousPage"
-              :disabled="currentPage === 1">
+              :disabled="currentPage === 1 || loading">
         上一頁
       </button>
       <span>{{ currentPage }} / {{ totalPages }}</span>
       <button @click="nextPage"
-              :disabled="currentPage === totalPages">
+              :disabled="currentPage === totalPages || loading">
         下一頁
       </button>
     </div>
@@ -77,15 +76,26 @@
 </template>
 
 <script>
-import { ref, onMounted, computed } from 'vue'
-import axios from 'axios'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
+import { useRouter } from 'vue-router'
+import ProductCard from '@/components/product/ProductCard.vue'
+import { debounce } from 'lodash'
+import { handleError } from '@/utils/errorHandler'
 
 export default {
   name: 'ProductList',
 
+  components: {
+    ProductCard
+  },
+
   setup() {
     const store = useStore()
+    const router = useRouter()
+
+    // 狀態
+    const loading = ref(false)
     const products = ref([])
     const categories = ref([])
     const selectedCategory = ref('')
@@ -94,104 +104,169 @@ export default {
     const maxPrice = ref('')
     const currentPage = ref(1)
     const itemsPerPage = 12
+    const totalItems = ref(0)
 
-    // 計算過濾後的商品
+    // 計算屬性
     const filteredProducts = computed(() => {
       let filtered = products.value
 
-      // 分類過濾
       if (selectedCategory.value) {
         filtered = filtered.filter(p => p.categoryId === selectedCategory.value)
       }
 
-      // 關鍵字搜尋
       if (searchKeyword.value) {
         const keyword = searchKeyword.value.toLowerCase()
         filtered = filtered.filter(p =>
             p.name.toLowerCase().includes(keyword) ||
-            p.description.toLowerCase().includes(keyword)
+            p.description?.toLowerCase().includes(keyword) ||
+            p.brand?.toLowerCase().includes(keyword)
         )
       }
 
-      // 價格範圍過濾
       if (minPrice.value) {
-        filtered = filtered.filter(p => p.price >= minPrice.value)
+        filtered = filtered.filter(p =>
+            (p.promotionalPrice || p.price) >= minPrice.value
+        )
       }
+
       if (maxPrice.value) {
-        filtered = filtered.filter(p => p.price <= maxPrice.value)
+        filtered = filtered.filter(p =>
+            (p.promotionalPrice || p.price) <= maxPrice.value
+        )
       }
 
       return filtered
     })
 
-    // 計算總頁數
     const totalPages = computed(() =>
         Math.ceil(filteredProducts.value.length / itemsPerPage)
     )
 
-    // 分頁顯示的商品
-    const paginatedProducts = computed(() => {
+    const displayProducts = computed(() => {
       const start = (currentPage.value - 1) * itemsPerPage
       const end = start + itemsPerPage
       return filteredProducts.value.slice(start, end)
     })
 
     // 方法
+    const fetchData = async () => {
+      loading.value = true
+      try {
+        await Promise.all([
+          fetchProducts(),
+          fetchCategories()
+        ])
+      } catch (error) {
+        const errorMessage = handleError(error)
+        store.dispatch('app/showNotification', {
+          type: 'error',
+          message: errorMessage || '載入資料失敗'
+        })
+      } finally {
+        loading.value = false
+      }
+    }
+
     const fetchProducts = async () => {
       try {
-        const response = await axios.get('/api/v1/products')
-        products.value = response.data
+        const response = await store.dispatch('product/getProducts')
+        products.value = response
       } catch (error) {
-        console.error('獲取商品失敗:', error)
+        throw error
       }
     }
 
     const fetchCategories = async () => {
       try {
-        const response = await axios.get('/api/v1/products/categories')
-        categories.value = response.data
+        const response = await store.dispatch('product/getCategories')
+        categories.value = response
       } catch (error) {
-        console.error('獲取分類失敗:', error)
+        throw error
       }
     }
 
-    const addToCart = async (product) => {
+    const addToCart = async (productId, quantity = 1) => {
       try {
         await store.dispatch('cart/addToCart', {
-          productId: product.productId,
-          quantity: 1
+          productId,
+          quantity
+        })
+        store.dispatch('app/showNotification', {
+          type: 'success',
+          message: '已加入購物車'
         })
       } catch (error) {
-        console.error('加入購物車失敗:', error)
+        const errorMessage = handleError(error)
+        store.dispatch('app/showNotification', {
+          type: 'error',
+          message: errorMessage || '加入購物車失敗'
+        })
       }
     }
 
-    const filterProducts = () => {
+    const handleCategoryChange = () => {
       currentPage.value = 1
+      updateUrlParams()
+    }
+
+    const debounceSearch = debounce(() => {
+      currentPage.value = 1
+      updateUrlParams()
+    }, 300)
+
+    const applyPriceFilter = () => {
+      if (maxPrice.value && minPrice.value > maxPrice.value) {
+        store.dispatch('app/showNotification', {
+          type: 'error',
+          message: '最低價格不能大於最高價格'
+        })
+        return
+      }
+      currentPage.value = 1
+      updateUrlParams()
     }
 
     const previousPage = () => {
       if (currentPage.value > 1) {
         currentPage.value--
+        updateUrlParams()
       }
     }
 
     const nextPage = () => {
       if (currentPage.value < totalPages.value) {
         currentPage.value++
+        updateUrlParams()
       }
     }
 
-    const formatPrice = (price) => {
-      return price.toLocaleString('zh-TW')
+    const updateUrlParams = () => {
+      const query = {}
+      if (selectedCategory.value) query.category = selectedCategory.value
+      if (searchKeyword.value) query.search = searchKeyword.value
+      if (minPrice.value) query.minPrice = minPrice.value
+      if (maxPrice.value) query.maxPrice = maxPrice.value
+      if (currentPage.value > 1) query.page = currentPage.value
+
+      router.replace({ query })
     }
 
+    // 監聽路由變化
+    watch(() => router.currentRoute.value.query, (query) => {
+      selectedCategory.value = query.category || ''
+      searchKeyword.value = query.search || ''
+      minPrice.value = query.minPrice ? Number(query.minPrice) : ''
+      maxPrice.value = query.maxPrice ? Number(query.maxPrice) : ''
+      currentPage.value = query.page ? Number(query.page) : 1
+    }, { immediate: true })
+
+    // 生命週期
     onMounted(() => {
-      fetchProducts()
-      fetchCategories()
+      fetchData()
     })
 
     return {
+      loading,
       categories,
       selectedCategory,
       searchKeyword,
@@ -199,12 +274,13 @@ export default {
       maxPrice,
       currentPage,
       totalPages,
-      filteredProducts: paginatedProducts,
+      displayProducts,
+      handleCategoryChange,
+      debounceSearch,
+      applyPriceFilter,
       addToCart,
-      filterProducts,
       previousPage,
-      nextPage,
-      formatPrice
+      nextPage
     }
   }
 }
@@ -213,6 +289,8 @@ export default {
 <style scoped>
 .product-list {
   padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .filter-section {
@@ -220,6 +298,44 @@ export default {
   gap: 2rem;
   margin-bottom: 2rem;
   align-items: center;
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.category-filter select,
+.search-box input,
+.price-filter input {
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.price-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.price-filter input {
+  width: 100px;
+}
+
+.price-filter button {
+  padding: 0.5rem 1rem;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.price-filter button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
 }
 
 .products-grid {
@@ -229,58 +345,27 @@ export default {
   margin-bottom: 2rem;
 }
 
-.product-card {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-  transition: transform 0.3s ease;
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
 }
 
-.product-card:hover {
-  transform: translateY(-5px);
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
-.product-image {
-  height: 200px;
-  overflow: hidden;
-}
-
-.product-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.product-info {
-  padding: 1rem;
-}
-
-.product-name {
-  font-size: 1.2rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-}
-
-.product-price {
-  color: var(--primary-color);
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.add-to-cart {
-  width: 100%;
-  padding: 0.75rem;
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.add-to-cart:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
+.no-products {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
 }
 
 .pagination {
@@ -288,12 +373,41 @@ export default {
   justify-content: center;
   gap: 1rem;
   align-items: center;
+  margin-top: 2rem;
+}
+
+.pagination button {
+  padding: 0.5rem 1rem;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.pagination button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 @media (max-width: 768px) {
   .filter-section {
     flex-direction: column;
     gap: 1rem;
+  }
+
+  .price-filter {
+    width: 100%;
+  }
+
+  .price-filter input {
+    flex: 1;
   }
 
   .products-grid {

@@ -6,7 +6,7 @@
         <div class="col-md-6">
           <div class="product-gallery">
             <div class="main-image">
-              <img :src="currentImage" :alt="product.name">
+              <img :src="getImageUrl(currentImage)" :alt="product.name">
             </div>
             <div class="thumbnail-list">
               <div
@@ -16,7 +16,7 @@
                   :class="{ active: currentImageIndex === index }"
                   @click="selectImage(index)"
               >
-                <img :src="image" :alt="product.name">
+                <img :src="getImageUrl(image)" :alt="product.name">
               </div>
             </div>
           </div>
@@ -39,7 +39,7 @@
             <!-- 商品規格選擇 -->
             <div class="product-options">
               <!-- 顏色選擇 -->
-              <div v-if="product.colors" class="color-selection">
+              <div v-if="product.colors?.length" class="color-selection">
                 <label>顏色</label>
                 <div class="color-options">
                   <div
@@ -54,7 +54,7 @@
               </div>
 
               <!-- 尺寸選擇 -->
-              <div v-if="product.sizes" class="size-selection">
+              <div v-if="product.sizes?.length" class="size-selection">
                 <label>尺寸</label>
                 <div class="size-options">
                   <button
@@ -137,6 +137,7 @@ export default {
     const route = useRoute()
     const router = useRouter()
     const store = useStore()
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988'
 
     // 響應式狀態
     const product = ref({})
@@ -153,24 +154,40 @@ export default {
 
     const canAddToCart = computed(() => {
       return product.value.stock > 0 &&
-          (!product.value.colors || selectedColor.value) &&
-          (!product.value.sizes || selectedSize.value)
+          (!product.value.colors?.length || selectedColor.value) &&
+          (!product.value.sizes?.length || selectedSize.value)
     })
 
-    // 方法
+    // 圖片處理方法
+    const getImageUrl = (imagePath) => {
+      if (!imagePath) return ''
+      if (imagePath.startsWith('http')) return imagePath
+      if (imagePath.startsWith('/')) {
+        return `${baseUrl}${imagePath}`
+      }
+      return `${baseUrl}/static/images/${imagePath}`
+    }
+
+    // API 方法
     const fetchProduct = async () => {
       try {
         const response = await axios.get(`/api/v1/products/${route.params.id}`)
         product.value = response.data
-        selectedColor.value = product.value.colors?.[0]?.code
-        selectedSize.value = product.value.sizes?.[0]
+
+        // 初始化選項
+        if (product.value.colors?.length) {
+          selectedColor.value = product.value.colors[0].code
+        }
+        if (product.value.sizes?.length) {
+          selectedSize.value = product.value.sizes[0]
+        }
       } catch (error) {
         console.error('獲取商品資訊失敗:', error)
       } finally {
         loading.value = false
       }
     }
-
+    // UI 互動方法
     const selectImage = (index) => {
       currentImageIndex.value = index
     }
@@ -196,32 +213,54 @@ export default {
     }
 
     const formatPrice = (price) => {
-      return price.toLocaleString('zh-TW')
+      return price?.toLocaleString('zh-TW') || '0'
     }
 
+    // 購物車相關方法
     const addToCart = async () => {
+      if (!canAddToCart.value) return
+
       try {
-        await store.dispatch('cart/addToCart', {
-          productId: product.value.productId,
+        const cartItem = {
+          productId: product.value.id,
           quantity: quantity.value,
           color: selectedColor.value,
-          size: selectedSize.value
+          size: selectedSize.value,
+          price: product.value.price,
+          name: product.value.name,
+          image: getImageUrl(product.value.images?.[0])
+        }
+
+        await store.dispatch('cart/addToCart', cartItem)
+        store.dispatch('showMessage', {
+          type: 'success',
+          message: '成功加入購物車'
         })
       } catch (error) {
         console.error('加入購物車失敗:', error)
+        store.dispatch('showMessage', {
+          type: 'error',
+          message: '加入購物車失敗'
+        })
       }
     }
 
     const buyNow = async () => {
-      await addToCart()
-      router.push('/checkout')
+      try {
+        await addToCart()
+        router.push('/checkout')
+      } catch (error) {
+        console.error('立即購買失敗:', error)
+      }
     }
 
+    // 生命週期鉤子
     onMounted(() => {
       fetchProduct()
     })
 
     return {
+      // 狀態
       product,
       currentImage,
       currentImageIndex,
@@ -230,6 +269,9 @@ export default {
       quantity,
       loading,
       canAddToCart,
+
+      // 方法
+      getImageUrl,
       selectImage,
       selectColor,
       selectSize,
@@ -243,7 +285,12 @@ export default {
 }
 </script>
 
-<style scoped>
+
+
+
+
+
+    <style scoped>
 .product-detail-view {
   padding: 2rem 0;
   background-color: #fff;

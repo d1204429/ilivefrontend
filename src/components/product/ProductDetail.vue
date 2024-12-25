@@ -5,14 +5,20 @@
         <!-- 商品圖片區 -->
         <div class="col-md-6">
           <div class="product-gallery">
-            <img :src="product.imageUrl" :alt="product.name" class="main-image">
+            <img
+                :src="getMainImageUrl"
+                :alt="product.name"
+                class="main-image"
+                @error="handleImageError"
+            >
             <div class="thumbnail-list">
               <img
-                  v-for="(image, index) in product.images"
+                  v-for="(image, index) in productImages"
                   :key="index"
-                  :src="image"
+                  :src="getImageUrl(image)"
                   :class="{ active: selectedImageIndex === index }"
                   @click="selectImage(index)"
+                  @error="handleImageError"
                   class="thumbnail"
               >
             </div>
@@ -24,9 +30,9 @@
           <div class="product-info">
             <h1 class="product-title">{{ product.name }}</h1>
             <div class="product-price">
-              <span class="current-price">${{ product.price }}</span>
-              <span v-if="product.originalPrice" class="original-price">
-                ${{ product.originalPrice }}
+              <span class="current-price">NT$ {{ formatPrice(product.promotionalPrice || product.price) }}</span>
+              <span v-if="hasDiscount" class="original-price">
+                NT$ {{ formatPrice(product.originalPrice) }}
               </span>
             </div>
 
@@ -65,9 +71,21 @@
               <div class="quantity-selector">
                 <label>數量</label>
                 <div class="quantity-controls">
-                  <button @click="decreaseQuantity" :disabled="quantity <= 1">-</button>
-                  <input type="number" v-model.number="quantity" min="1" :max="product.stock">
-                  <button @click="increaseQuantity" :disabled="quantity >= product.stock">+</button>
+                  <button
+                      @click="decreaseQuantity"
+                      :disabled="quantity <= 1 || loading"
+                  >-</button>
+                  <input
+                      type="number"
+                      v-model.number="quantity"
+                      min="1"
+                      :max="product.availableStock"
+                      :disabled="loading"
+                  >
+                  <button
+                      @click="increaseQuantity"
+                      :disabled="quantity >= product.availableStock || loading"
+                  >+</button>
                 </div>
               </div>
             </div>
@@ -77,17 +95,23 @@
               <button
                   class="btn-add-to-cart"
                   @click="addToCart"
-                  :disabled="!canAddToCart"
+                  :disabled="!canAddToCart || loading"
               >
-                加入購物車
+                {{ loading ? '處理中...' : '加入購物車' }}
               </button>
-              <button class="btn-buy-now" @click="buyNow">立即購買</button>
+              <button
+                  class="btn-buy-now"
+                  @click="buyNow"
+                  :disabled="!canAddToCart || loading"
+              >
+                立即購買
+              </button>
             </div>
 
             <!-- 商品描述 -->
             <div class="product-description">
               <h3>商品描述</h3>
-              <div v-html="product.description"></div>
+              <div class="description-content">{{ product.description }}</div>
             </div>
           </div>
         </div>
@@ -98,43 +122,87 @@
 
 <script>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
-import axios from 'axios'
+import { useRoute, useRouter } from 'vue-router'
+import { useStore } from 'vuex'
+import { handleError } from '@/utils/errorHandler'
 
 export default {
   name: 'ProductDetail',
 
   setup() {
     const route = useRoute()
+    const router = useRouter()
+    const store = useStore()
+
     const product = ref({})
     const selectedImageIndex = ref(0)
     const selectedColor = ref('')
     const selectedSize = ref('')
     const quantity = ref(1)
-    const loading = ref(true)
+    const loading = ref(false)
+    const imageError = ref(false)
 
-    // 獲取商品資訊
+    // 計算屬性
+    const hasDiscount = computed(() =>
+        product.value.originalPrice &&
+        product.value.originalPrice > product.value.promotionalPrice
+    )
+
+    const getMainImageUrl = computed(() => {
+      if (!product.value.imageUrl) return '/static/image/no-image.webp'
+      const imageName = product.value.imageUrl.split('/').pop()
+      return `/static/image/${imageName}`
+    })
+
+    const productImages = computed(() => {
+      if (!product.value.images) return []
+      return product.value.images.map(img => img.split('/').pop())
+    })
+
+    const canAddToCart = computed(() => {
+      return product.value.availableStock > 0 &&
+          (!product.value.colors || selectedColor.value) &&
+          (!product.value.sizes || selectedSize.value) &&
+          !loading.value
+    })
+
+    // 方法
     const fetchProduct = async () => {
+      loading.value = true
       try {
-        const response = await axios.get(`/api/v1/products/${route.params.id}`)
-        product.value = response.data
+        const response = await store.dispatch('product/getProductById', route.params.id)
+        product.value = response
         selectedColor.value = product.value.colors?.[0]?.code
         selectedSize.value = product.value.sizes?.[0]
       } catch (error) {
-        console.error('獲取商品資訊失敗:', error)
+        const errorMessage = handleError(error)
+        store.dispatch('app/showNotification', {
+          type: 'error',
+          message: errorMessage || '獲取商品資訊失敗'
+        })
       } finally {
         loading.value = false
       }
     }
 
-    // 計算屬性
-    const canAddToCart = computed(() => {
-      return product.value.stock > 0 &&
-          (!product.value.colors || selectedColor.value) &&
-          (!product.value.sizes || selectedSize.value)
-    })
+    const formatPrice = (price) => {
+      return new Intl.NumberFormat('zh-TW', {
+        style: 'decimal',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(price)
+    }
 
-    // 方法
+    const handleImageError = (event) => {
+      event.target.src = '/static/image/no-image.webp'
+      imageError.value = true
+    }
+
+    const getImageUrl = (imageName) => {
+      if (!imageName) return '/static/image/no-image.webp'
+      return `/static/image/${imageName}`
+    }
+
     const selectImage = (index) => {
       selectedImageIndex.value = index
     }
@@ -148,7 +216,7 @@ export default {
     }
 
     const increaseQuantity = () => {
-      if (quantity.value < product.value.stock) {
+      if (quantity.value < product.value.availableStock) {
         quantity.value++
       }
     }
@@ -160,24 +228,41 @@ export default {
     }
 
     const addToCart = async () => {
+      if (!canAddToCart.value) return
+
+      loading.value = true
       try {
-        await axios.post('/api/v1/cart/items/add', {
+        await store.dispatch('cart/addToCart', {
           productId: product.value.productId,
           quantity: quantity.value,
           color: selectedColor.value,
           size: selectedSize.value
         })
+        store.dispatch('app/showNotification', {
+          type: 'success',
+          message: '已加入購物車'
+        })
       } catch (error) {
-        console.error('加入購物車失敗:', error)
+        const errorMessage = handleError(error)
+        store.dispatch('app/showNotification', {
+          type: 'error',
+          message: errorMessage || '加入購物車失敗'
+        })
+      } finally {
+        loading.value = false
       }
     }
 
-    const buyNow = () => {
-      addToCart()
-      // 導航到結帳頁面
-    }
-    const getImageUrl = (imageName) => {
-      return `/static/image/${imageName}`
+    const buyNow = async () => {
+      if (!canAddToCart.value) return
+
+      loading.value = true
+      try {
+        await addToCart()
+        router.push('/checkout')
+      } catch (error) {
+        loading.value = false
+      }
     }
 
     onMounted(() => {
@@ -191,19 +276,25 @@ export default {
       selectedSize,
       quantity,
       loading,
+      hasDiscount,
       canAddToCart,
+      getMainImageUrl,
+      productImages,
+      formatPrice,
+      handleImageError,
+      getImageUrl,
       selectImage,
       selectColor,
       selectSize,
       increaseQuantity,
       decreaseQuantity,
       addToCart,
-      getImageUrl,
       buyNow
     }
   }
 }
 </script>
+
 
 <style scoped>
 .product-detail {

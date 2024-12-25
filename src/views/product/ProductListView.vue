@@ -2,7 +2,12 @@
   <div class="product-list-view">
     <!-- 頁面標題區 -->
     <div class="page-header">
-      <h1>商品列表</h1>
+      <div class="header-content">
+        <button class="back-btn" @click="goBack">
+          <i class="fas fa-arrow-left"></i> 返回
+        </button>
+        <h1>商品列表</h1>
+      </div>
       <div class="filter-controls">
         <BaseInput
             v-model="filters.keyword"
@@ -17,7 +22,7 @@
               :key="category.categoryId"
               :value="category.categoryId"
           >
-            {{ category.categoryName }}
+            {{ category.name }}
           </option>
         </select>
         <select v-model="filters.sortBy" @change="handleSort">
@@ -42,7 +47,7 @@
         <ProductCard
             v-for="product in products"
             :key="product.productId"
-            :product="product"
+            :product="transformProductData(product)"
             @add-to-cart="handleAddToCart"
             @view-detail="handleViewDetail"
         />
@@ -91,6 +96,7 @@ import BaseInput from '@/components/common/BaseInput.vue'
 import BaseLoading from '@/components/common/BaseLoading.vue'
 import BaseAlert from '@/components/common/BaseAlert.vue'
 import { debounce } from '@/utils/helpers'
+import { handleError } from '@/utils/errorHandler'
 
 export default {
   name: 'ProductListView',
@@ -127,7 +133,6 @@ export default {
       totalPages: 1,
       total: 0
     })
-
     // 計算屬性
     const noProductsMessage = computed(() => {
       if (filters.keyword) {
@@ -137,6 +142,16 @@ export default {
     })
 
     // 方法
+    const transformProductData = (product) => {
+      return {
+        ...product,
+        imageUrl: product.imageUrl?.split('/').pop(),
+        price: product.promotionalPrice || product.price,
+        originalPrice: product.originalPrice,
+        stock: product.availableStock
+      }
+    }
+
     const fetchData = async () => {
       loading.value = true
       error.value = null
@@ -149,11 +164,16 @@ export default {
         }
 
         const response = await store.dispatch('product/fetchProducts', params)
-        products.value = response.items
+        products.value = response.items.map(transformProductData)
         pagination.total = response.total
         pagination.totalPages = response.totalPages
       } catch (err) {
-        error.value = err.message
+        const errorMessage = handleError(err)
+        store.dispatch('app/showNotification', {
+          type: 'error',
+          message: errorMessage || '載入商品失敗'
+        })
+        error.value = errorMessage
       } finally {
         loading.value = false
       }
@@ -164,7 +184,11 @@ export default {
         const response = await store.dispatch('product/fetchCategories')
         categories.value = response
       } catch (err) {
-        error.value = err.message
+        const errorMessage = handleError(err)
+        store.dispatch('app/showNotification', {
+          type: 'error',
+          message: errorMessage || '載入分類失敗'
+        })
       }
     }
 
@@ -198,12 +222,20 @@ export default {
           message: '已加入購物車'
         })
       } catch (err) {
-        error.value = err.message
+        const errorMessage = handleError(err)
+        store.dispatch('app/showNotification', {
+          type: 'error',
+          message: errorMessage || '加入購物車失敗'
+        })
       }
     }
 
     const handleViewDetail = (productId) => {
       router.push(`/products/${productId}`)
+    }
+
+    const goBack = () => {
+      router.back()
     }
 
     // 生命週期
@@ -228,7 +260,8 @@ export default {
       handleSort,
       handlePageChange,
       handleAddToCart,
-      handleViewDetail
+      handleViewDetail,
+      goBack
     }
   }
 }
@@ -241,13 +274,36 @@ export default {
   margin: 0 auto;
 }
 
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: none;
+  color: var(--primary-color);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.back-btn:hover {
+  color: var(--primary-color-dark);
+}
+
 .page-header {
   margin-bottom: 2rem;
 }
 
 .page-header h1 {
   font-size: 2rem;
-  color: var(--primary-color);
+  color: var(--text-primary);
   margin-bottom: 1rem;
 }
 
@@ -255,6 +311,10 @@ export default {
   display: flex;
   gap: 1rem;
   margin-bottom: 2rem;
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .filter-controls select {
