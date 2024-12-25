@@ -261,17 +261,18 @@ export const productApi = {
     addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}`, data)
 }
 
+// api.js中的promotionApi配置應改為：
 export const promotionApi = {
     // 獲取所有活動的促銷
-    getActivePromotions: () => api.get('/api/v1/admin/promotions'),
+    getActivePromotions: () => api.get('/admin/promotions'),
 
     // 獲取所有促銷商品
-    getProductPromotions: () => api.get('/api/v1/admin/product-promotions/products'),
+    getProductPromotions: () => api.get('/admin/product-promotions/products'),
 
     // 獲取特定促銷活動詳情
-    getPromotionDetails: (promotionId) =>
-        api.get(`/api/v1/admin/promotions/${promotionId}`)
+    getPromotionDetails: (promotionId) => api.get(`/admin/promotions/${promotionId}`)
 }
+
 
 
 export const cartApi = {
