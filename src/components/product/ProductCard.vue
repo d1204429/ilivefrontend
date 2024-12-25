@@ -1,5 +1,5 @@
 <template>
-  <div class="product-card" :class="{ 'out-of-stock': !product.stock }">
+  <div class="product-card" :class="{ 'out-of-stock': !product.availableStock }">
     <!-- 商品圖片區塊 -->
     <div class="product-image-container">
       <img
@@ -39,7 +39,7 @@
 
       <div class="product-price" :class="{ 'has-discount': hasDiscount }">
         <span class="current-price">
-          NT$ {{ formatPrice(product.finalPrice || product.price) }}
+          NT$ {{ formatPrice(product.promotionalPrice || product.price) }}
         </span>
         <span v-if="hasDiscount" class="original-price">
           NT$ {{ formatPrice(product.originalPrice) }}
@@ -78,6 +78,7 @@
     </div>
   </div>
 </template>
+
 
 <script>
 import { ref, computed } from 'vue'
@@ -137,35 +138,36 @@ export default {
     )
 
     const stockStatusClass = computed(() => ({
-      'in-stock': props.product.stock > 10,
-      'low-stock': props.product.stock > 0 && props.product.stock <= 10,
-      'out-of-stock': !props.product.stock
+      'in-stock': props.product.availableStock > 10,
+      'low-stock': props.product.availableStock > 0 && props.product.availableStock <= 10,
+      'out-of-stock': !props.product.availableStock
     }))
 
     const stockStatusIcon = computed(() => {
-      if (!props.product.stock) return 'fas fa-times-circle'
-      if (props.product.stock <= 10) return 'fas fa-exclamation-circle'
+      if (!props.product.availableStock) return 'fas fa-times-circle'
+      if (props.product.availableStock <= 10) return 'fas fa-exclamation-circle'
       return 'fas fa-check-circle'
     })
 
     const stockStatusText = computed(() => {
-      if (!props.product.stock) return '已售完'
-      if (props.product.stock <= 10) return `剩餘 ${props.product.stock} 件`
+      if (!props.product.availableStock) return '已售完'
+      if (props.product.availableStock <= 10) return `剩餘 ${props.product.availableStock} 件`
       return '現貨充足'
     })
 
     const cartButtonText = computed(() => {
       if (addingToCart.value) return '處理中...'
-      if (!props.product.stock) return '已售完'
+      if (!props.product.availableStock) return '已售完'
       return '加入購物車'
     })
 
     const canAddToCart = computed(() =>
-        props.product.stock > 0 && !addingToCart.value
+        props.product.availableStock > 0 && !addingToCart.value
     )
 
     // 方法
     const formatPrice = (price) => {
+      if (!price) return '0'
       return new Intl.NumberFormat('zh-TW', {
         style: 'decimal',
         minimumFractionDigits: 0,
@@ -245,7 +247,6 @@ export default {
 </script>
 
 <style scoped>
-/* 樣式保持不變 */
 .product-card {
   position: relative;
   background: var(--card-bg);
@@ -264,6 +265,7 @@ export default {
   position: relative;
   padding-top: 100%;
   overflow: hidden;
+  background: #f5f5f5;
 }
 
 .product-image {
@@ -298,6 +300,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  z-index: 1;
 }
 
 .badge {
@@ -329,6 +332,7 @@ export default {
   font-weight: 600;
   margin-bottom: 0.5rem;
   color: var(--text-primary);
+  line-height: 1.4;
 }
 
 .product-meta {
@@ -364,11 +368,14 @@ export default {
   font-size: 0.9rem;
   color: var(--text-secondary);
   margin-bottom: 0.5rem;
+  line-height: 1.5;
 }
 
 .product-stock {
   font-size: 0.9rem;
   margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
 }
 
 .product-stock i {
@@ -394,6 +401,7 @@ export default {
 
 .product-actions button {
   flex: 1;
+  min-height: 36px;
 }
 
 @keyframes loading {
@@ -412,6 +420,10 @@ export default {
 
   .current-price {
     font-size: 1.1rem;
+  }
+
+  .product-actions {
+    flex-direction: column;
   }
 }
 </style>
