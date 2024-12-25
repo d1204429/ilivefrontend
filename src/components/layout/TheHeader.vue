@@ -12,7 +12,6 @@
       <div class="side-menu" :class="{ 'active': isMenuOpen }">
         <nav class="menu-items">
           <router-link to="/" class="menu-item" @click="toggleMenu">首頁</router-link>
-          <router-link to="/products" class="menu-item" @click="toggleMenu">商品列表</router-link>
           <div class="menu-item-dropdown">
             <div class="menu-item" @click="toggleCategory">
               分類

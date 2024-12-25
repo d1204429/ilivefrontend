@@ -119,7 +119,6 @@
                 立即購買
               </button>
             </div>
-
             <!-- 商品描述 -->
             <div class="product-description">
               <h2>商品描述</h2>
@@ -127,6 +126,12 @@
             </div>
           </div>
         </div>
+        <div class="back-button">
+          <button @click="goBack" class="btn-back">
+            <i class="fas fa-arrow-left"></i> 返回上一頁
+          </button>
+        </div>
+
       </div>
     </div>
   </div>
@@ -145,8 +150,11 @@ export default {
     const route = useRoute()
     const router = useRouter()
     const store = useStore()
-    const imageBaseUrl = import.meta.env.VITE_IMAGE_BASE_URL || 'http://localhost:1988/static/image'
 
+    const imageBaseUrl = import.meta.env.VITE_IMAGE_BASE_URL || 'http://localhost:1988/static/image'
+    const goBack = () => {
+      router.go(-1)
+    }
     // 響應式狀態
     const product = ref({})
     const currentImageIndex = ref(0)
@@ -299,6 +307,7 @@ export default {
       loading,
       error,
       canAddToCart,
+      goBack,
 
       // 方法
       getImageUrl,
@@ -597,5 +606,30 @@ label {
     font-size: 1.8rem;
   }
 }
+.back-button {
+  margin-bottom: 1rem;
+}
+
+.btn-back {
+  padding: 0.5rem 1rem;
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.btn-back:hover {
+  background-color: #f5f5f5;
+  border-color: #ccc;
+}
+
+.btn-back i {
+  font-size: 0.9rem;
+}
+
 </style>
 
