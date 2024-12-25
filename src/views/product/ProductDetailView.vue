@@ -6,7 +6,11 @@
         <div class="col-md-6">
           <div class="product-gallery">
             <div class="main-image">
-              <img :src="getImageUrl(currentImage)" :alt="product.name">
+              <img
+                  :src="getImageUrl(currentImage)"
+                  :alt="product.name"
+                  @error="handleImageError"
+              >
             </div>
             <div class="thumbnail-list">
               <div
@@ -16,7 +20,11 @@
                   :class="{ active: currentImageIndex === index }"
                   @click="selectImage(index)"
               >
-                <img :src="getImageUrl(image)" :alt="product.name">
+                <img
+                    :src="getImageUrl(image)"
+                    :alt="product.name"
+                    @error="handleImageError"
+                >
               </div>
             </div>
           </div>
@@ -137,7 +145,7 @@ export default {
     const route = useRoute()
     const router = useRouter()
     const store = useStore()
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988'
+    const imageBaseUrl = import.meta.env.VITE_IMAGE_BASE_URL || 'http://localhost:1988/static/image'
 
     // 響應式狀態
     const product = ref({})
@@ -146,6 +154,7 @@ export default {
     const selectedSize = ref('')
     const quantity = ref(1)
     const loading = ref(true)
+    const error = ref(null)
 
     // 計算屬性
     const currentImage = computed(() => {
@@ -153,24 +162,39 @@ export default {
     })
 
     const canAddToCart = computed(() => {
-      return product.value.stock > 0 &&
+      return !loading.value &&
+          product.value.stock > 0 &&
           (!product.value.colors?.length || selectedColor.value) &&
           (!product.value.sizes?.length || selectedSize.value)
     })
 
     // 圖片處理方法
     const getImageUrl = (imagePath) => {
-      if (!imagePath) return ''
-      if (imagePath.startsWith('http')) return imagePath
-      if (imagePath.startsWith('/')) {
-        return `${baseUrl}${imagePath}`
+      if (!imagePath) {
+        return '/static/image/no-image.webp'
       }
-      return `${baseUrl}/static/images/${imagePath}`
+
+      // 如果是完整URL，只取檔案名
+      if (imagePath.startsWith('http')) {
+        const urlParts = imagePath.split('/')
+        return `/static/image/${urlParts[urlParts.length - 1]}`
+      }
+
+      // 確保路徑格式正確
+      const fileName = imagePath.startsWith('/') ? imagePath.slice(1) : imagePath
+      return `/static/image/${fileName}`
+    }
+
+
+
+    const handleImageError = (e) => {
+      e.target.src = `${imageBaseUrl}/default-product.jpg`
     }
 
     // API 方法
     const fetchProduct = async () => {
       try {
+        loading.value = true
         const response = await axios.get(`/api/v1/products/${route.params.id}`)
         product.value = response.data
 
@@ -181,12 +205,14 @@ export default {
         if (product.value.sizes?.length) {
           selectedSize.value = product.value.sizes[0]
         }
-      } catch (error) {
-        console.error('獲取商品資訊失敗:', error)
+      } catch (err) {
+        error.value = err.response?.data?.message || '獲取商品資訊失敗'
+        console.error('獲取商品資訊失敗:', err)
       } finally {
         loading.value = false
       }
     }
+
     // UI 互動方法
     const selectImage = (index) => {
       currentImageIndex.value = index
@@ -215,7 +241,6 @@ export default {
     const formatPrice = (price) => {
       return price?.toLocaleString('zh-TW') || '0'
     }
-
     // 購物車相關方法
     const addToCart = async () => {
       if (!canAddToCart.value) return
@@ -240,7 +265,7 @@ export default {
         console.error('加入購物車失敗:', error)
         store.dispatch('showMessage', {
           type: 'error',
-          message: '加入購物車失敗'
+          message: error.response?.data?.message || '加入購物車失敗'
         })
       }
     }
@@ -251,6 +276,10 @@ export default {
         router.push('/checkout')
       } catch (error) {
         console.error('立即購買失敗:', error)
+        store.dispatch('showMessage', {
+          type: 'error',
+          message: '立即購買失敗'
+        })
       }
     }
 
@@ -268,10 +297,12 @@ export default {
       selectedSize,
       quantity,
       loading,
+      error,
       canAddToCart,
 
       // 方法
       getImageUrl,
+      handleImageError,
       selectImage,
       selectColor,
       selectSize,
@@ -285,15 +316,18 @@ export default {
 }
 </script>
 
-
 <style scoped>
 .product-detail-view {
   padding: 2rem 0;
   background-color: #fff;
+  min-height: 100vh;
 }
 
 .product-gallery {
   margin-bottom: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 1rem;
+  border-radius: 8px;
 }
 
 .main-image {
@@ -301,18 +335,26 @@ export default {
   height: 400px;
   overflow: hidden;
   border-radius: 8px;
+  position: relative;
 }
 
 .main-image img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  transition: transform 0.3s ease;
+}
+
+.main-image:hover img {
+  transform: scale(1.05);
 }
 
 .thumbnail-list {
   display: flex;
   gap: 1rem;
   margin-top: 1rem;
+  overflow-x: auto;
+  padding: 0.5rem;
 }
 
 .thumbnail {
@@ -322,10 +364,13 @@ export default {
   overflow: hidden;
   cursor: pointer;
   border: 2px solid transparent;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
 }
 
 .thumbnail.active {
   border-color: var(--primary-color);
+  transform: translateY(-2px);
 }
 
 .thumbnail img {
@@ -341,15 +386,21 @@ export default {
 .product-title {
   font-size: 1.8rem;
   margin-bottom: 0.5rem;
+  color: #333;
+  font-weight: 600;
 }
 
 .product-brand {
   color: #666;
   margin-bottom: 1rem;
+  font-size: 1.1rem;
 }
 
 .price-section {
   margin-bottom: 2rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
 }
 
 .current-price {
@@ -361,6 +412,7 @@ export default {
 .original-price {
   color: #999;
   text-decoration: line-through;
+  margin-top: 0.5rem;
 }
 
 .product-options {
@@ -371,17 +423,22 @@ export default {
 .size-selection,
 .quantity-selection {
   margin-bottom: 1.5rem;
+  padding: 1rem;
+  border: 1px solid #eee;
+  border-radius: 8px;
 }
 
 label {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
+  color: #444;
 }
 
 .color-options {
   display: flex;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .color-option {
@@ -390,15 +447,18 @@ label {
   border-radius: 50%;
   border: 2px solid #ddd;
   cursor: pointer;
+  transition: all 0.3s ease;
 }
 
 .color-option.active {
   border-color: var(--primary-color);
+  transform: scale(1.1);
 }
 
 .size-options {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .size-option {
@@ -407,11 +467,13 @@ label {
   border-radius: 4px;
   background: none;
   cursor: pointer;
+  transition: all 0.3s ease;
 }
 
 .size-option.active {
   border-color: var(--primary-color);
   color: var(--primary-color);
+  background-color: rgba(var(--primary-color-rgb), 0.1);
 }
 
 .quantity-control {
@@ -426,6 +488,14 @@ label {
   border: 1px solid #ddd;
   background: none;
   border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.quantity-control button:hover:not(:disabled) {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
 }
 
 .quantity-control input {
@@ -439,6 +509,7 @@ label {
 .stock-info {
   margin-top: 0.5rem;
   color: #666;
+  font-size: 0.9rem;
 }
 
 .purchase-actions {
@@ -455,6 +526,7 @@ label {
   border: none;
   font-size: 1.1rem;
   cursor: pointer;
+  transition: all 0.3s ease;
 }
 
 .add-to-cart {
@@ -463,14 +535,40 @@ label {
   color: var(--primary-color);
 }
 
+.add-to-cart:hover:not(:disabled) {
+  background-color: var(--primary-color);
+  color: #fff;
+}
+
 .buy-now {
   background-color: var(--primary-color);
   color: #fff;
 }
 
+.buy-now:hover:not(:disabled) {
+  background-color: darken(var(--primary-color), 10%);
+}
+
+.add-to-cart:disabled,
+.buy-now:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .product-description {
   padding-top: 2rem;
   border-top: 1px solid #eee;
+}
+
+.product-description h2 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.description-content {
+  line-height: 1.6;
+  color: #666;
 }
 
 @media (max-width: 768px) {
@@ -485,5 +583,19 @@ label {
   .main-image {
     height: 300px;
   }
+
+  .thumbnail {
+    width: 60px;
+    height: 60px;
+  }
+
+  .product-title {
+    font-size: 1.5rem;
+  }
+
+  .current-price {
+    font-size: 1.8rem;
+  }
 }
 </style>
+
