@@ -49,8 +49,7 @@ export const API_PATHS = {
         SEARCH: '/products/search',
         NEW_ARRIVALS: '/products/new-arrivals',
         RECOMMENDED: '/products/recommended',
-        REVIEWS: '/reviews',
-        CATEGORIES: '/categories'
+        REVIEWS: '/reviews'
     },
     CART: {
         BASE: '/cart',
@@ -63,7 +62,8 @@ export const API_PATHS = {
         BASE: '/orders',
         PAYMENT: '/payment',
         TRACKING: '/tracking'
-    }
+    },
+    CATEGORIES: '/categories'
 }
 
 // 創建 axios 實例
@@ -86,26 +86,72 @@ const retryConfig = {
         )
     }
 }
+
+// Token 管理器
+const tokenManager = {
+    getAccessToken: () => localStorage.getItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY),
+    getRefreshToken: () => localStorage.getItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY),
+    setTokens: (accessToken, refreshToken) => {
+        localStorage.setItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY, accessToken)
+        localStorage.setItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY, refreshToken)
+    },
+    removeTokens: () => {
+        localStorage.removeItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY)
+        localStorage.removeItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY)
+    }
+}
+
+// 處理請求隊列
+const processQueue = (error, token = null) => {
+    failedQueue.forEach(prom => {
+        if (error) {
+            prom.reject(error)
+        } else {
+            prom.resolve(token)
+        }
+    })
+    failedQueue = []
+}
+
+// 請求攔截器
+api.interceptors.request.use(
+    async config => {
+        if (!config.hideLoading) {
+            store.dispatch('app/setLoading', true)
+        }
+
+        const token = tokenManager.getAccessToken()
+        if (token && !config.skipAuth) {
+            config.headers.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${token}`
+        }
+
+        if (config.method?.toLowerCase() === 'get' && !config.noCache) {
+            config.params = { ...config.params, _t: Date.now() }
+        }
+
+        config.metadata = { startTime: Date.now() }
+        config.requestId = `${Date.now()}-${Math.random().toString(36).substring(7)}`
+
+        const source = axios.CancelToken.source()
+        config.cancelToken = source.token
+        config._cancelSource = source
+
+        return config
+    },
+    error => {
+        store.dispatch('app/setLoading', false)
+        return Promise.reject(error)
+    }
+)
+
 // 響應攔截器
 api.interceptors.response.use(
     response => {
         if (!response.config.hideLoading) {
             store.dispatch('app/setLoading', false)
         }
-
-        // 記錄API響應時間
-        if (response.config.metadata) {
-            const responseTime = Date.now() - response.config.metadata.startTime
-            store.dispatch('app/logApiMetrics', {
-                url: response.config.url,
-                method: response.config.method,
-                responseTime
-            })
-        }
-
         return response.config.fullResponse ? response : response.data
     },
-
     async error => {
         if (!error.config?.hideLoading) {
             store.dispatch('app/setLoading', false)
@@ -113,7 +159,7 @@ api.interceptors.response.use(
 
         const originalRequest = error.config
 
-        // 處理401錯誤和token刷新
+        // 處理 401 錯誤和 token 刷新
         if (error.response?.status === 401 && !originalRequest._retry) {
             if (isRefreshing) {
                 try {
@@ -132,12 +178,9 @@ api.interceptors.response.use(
 
             try {
                 const refreshToken = tokenManager.getRefreshToken()
-                if (!refreshToken) {
-                    throw new Error('No refresh token available')
-                }
+                if (!refreshToken) throw new Error('No refresh token available')
 
-                const response = await api.post(
-                    API_PATHS.AUTH.REFRESH_TOKEN,
+                const response = await api.post(API_PATHS.AUTH.REFRESH_TOKEN,
                     { refreshToken },
                     { skipAuth: true }
                 )
@@ -146,6 +189,7 @@ api.interceptors.response.use(
                     tokenManager.setTokens(response.accessToken, response.refreshToken)
                     api.defaults.headers.common.Authorization =
                         `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${response.accessToken}`
+
                     processQueue(null, response.accessToken)
                     originalRequest.headers.Authorization =
                         `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${response.accessToken}`
@@ -162,23 +206,6 @@ api.interceptors.response.use(
             }
         }
 
-        // 處理網路錯誤
-        if (!error.response) {
-            store.dispatch('app/setError', {
-                type: 'network',
-                message: '網路連接失敗，請檢查您的網路設置'
-            })
-            return Promise.reject(error)
-        }
-
-        // 處理請求取消
-        if (axios.isCancel(error)) {
-            return Promise.reject({
-                type: 'cancel',
-                message: '請求已取消'
-            })
-        }
-
         // 處理請求重試
         if (shouldRetryRequest(error)) {
             return handleRequestRetry(error)
@@ -189,7 +216,41 @@ api.interceptors.response.use(
         return Promise.reject(errorInfo)
     }
 )
-// API 服務導出
+
+// 處理登出
+const handleLogout = async () => {
+    try {
+        tokenManager.removeTokens()
+        await store.dispatch('auth/logout')
+        router.push({
+            path: '/login',
+            query: {
+                redirect: router.currentRoute.value.fullPath,
+                error: 'session_expired'
+            }
+        })
+    } catch (error) {
+        console.error('Logout failed:', error)
+    }
+}
+
+// 判斷是否應該重試請求
+const shouldRetryRequest = (error) => {
+    const { retries = 0 } = error.config
+    return retries < retryConfig.retries && retryConfig.shouldRetry(error)
+}
+
+// 處理請求重試
+const handleRequestRetry = (error) => {
+    const config = error.config
+    config.retries = (config.retries || 0) + 1
+    const delayTime = config.retries * retryConfig.retryDelay
+
+    return new Promise(resolve => {
+        setTimeout(() => resolve(api(config)), delayTime)
+    })
+}
+// API 服務
 export const authApi = {
     login: (credentials) => api.post(API_PATHS.AUTH.LOGIN, credentials),
     register: (userData) => api.post(API_PATHS.AUTH.REGISTER, userData),
@@ -198,12 +259,14 @@ export const authApi = {
     verifyEmail: (token) => api.post(API_PATHS.AUTH.VERIFY_EMAIL, { token }),
     forgotPassword: (email) => api.post(API_PATHS.AUTH.FORGOT_PASSWORD, { email }),
     resetPassword: (token, password) => api.post(API_PATHS.AUTH.RESET_PASSWORD, { token, password }),
-    checkEmailExists: (email) => api.post(API_PATHS.AUTH.CHECK_EMAIL, { email })
+    checkEmailExists: (email) => api.post(API_PATHS.AUTH.CHECK_EMAIL, { email }),
+    getProfile: () => api.get(API_PATHS.USERS.PROFILE),
+    updateProfile: (data) => api.put(API_PATHS.USERS.PROFILE, data)
 }
 
 export const userApi = {
-    getProfile: () => api.get(API_PATHS.USERS.PROFILE),
-    updateProfile: (data) => api.put(API_PATHS.USERS.PROFILE, data),
+    getProfile: () => authApi.getProfile(),
+    updateProfile: (data) => authApi.updateProfile(data),
     changePassword: (data) => api.put(API_PATHS.USERS.PASSWORD, data),
     uploadAvatar: (formData) => api.post(API_PATHS.USERS.AVATAR, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -224,10 +287,7 @@ export const productApi = {
     getNewArrivals: () => api.get(API_PATHS.PRODUCTS.NEW_ARRIVALS),
     getRecommended: () => api.get(API_PATHS.PRODUCTS.RECOMMENDED),
     getReviews: (productId) => api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}`),
-    addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}`, data),
-    updateReview: (productId, reviewId, data) => api.put(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/${reviewId}`, data),
-    deleteReview: (productId, reviewId) => api.delete(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/${reviewId}`),
-    getReviewStats: (productId) => api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/stats`)
+    addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}`, data)
 }
 
 export const cartApi = {
@@ -253,5 +313,20 @@ export const orderApi = {
     confirmReceipt: (id) => api.put(`${API_PATHS.ORDERS.BASE}/${id}/confirm-receipt`),
     getShipmentTracking: (id) => api.get(`${API_PATHS.ORDERS.BASE}/${id}${API_PATHS.ORDERS.TRACKING}`)
 }
+
+export const promotionApi = {
+    // 獲取所有活動的促銷
+    getActivePromotions: () => api.get(API_PATHS.PRODUCTS.PROMOTIONS),
+
+    // 獲取特定商品的促銷
+    getProductPromotions: (productId) =>
+        api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}/promotions`),
+
+    // 獲取特定促銷活動詳情
+    getPromotionDetails: (promotionId) =>
+        api.get(`${API_PATHS.PRODUCTS.PROMOTIONS}/${promotionId}`)
+}
+
+
 
 export default api

@@ -22,7 +22,10 @@
               <router-link
                   v-for="category in categories"
                   :key="category.id"
-                  :to="`/category/${category.id}`"
+                  :to="{
+              path: '/products',
+              query: { search: category.name }
+            }"
                   class="dropdown-item"
                   @click="toggleMenu"
               >
@@ -34,7 +37,6 @@
           <router-link to="/contact" class="menu-item" @click="toggleMenu">聯絡我們</router-link>
         </nav>
       </div>
-
       <!-- 搜尋欄 -->
       <div class="search-box">
         <input
@@ -92,7 +94,11 @@ export default {
     const isMenuOpen = ref(false)
     const isCategoryOpen = ref(false)
     const searchKeyword = ref('')
-    const categories = ref([])
+    const categories = ref([
+      { id: 11, name: '冰箱' },
+      { id: 12, name: '電視' },
+      { id: 13, name: '洗衣機' }
+    ])
     const isInitialized = ref(false)
 
     // Computed Properties
@@ -115,7 +121,6 @@ export default {
         })
       }
     }
-
     const fetchUserData = async () => {
       try {
         if (isLoggedIn.value && !currentUser.value) {

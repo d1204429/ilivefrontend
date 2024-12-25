@@ -41,10 +41,13 @@ export default {
 
 <style scoped>
 .footer {
-  background-color: #fff;
+  background-color: #FFD466; /* 鵝黃色 */
   padding: 1rem 0;
   border-top: 1px solid #eee;
-  margin-top: auto;
+  position: fixed; /* 固定定位 */
+  bottom: 0; /* 貼齊底部 */
+  width: 100%; /* 寬度佔滿 */
+  z-index: 100; /* 確保顯示在其他內容上方 */
 }
 
 .footer-container {
@@ -62,17 +65,17 @@ export default {
 }
 
 .footer-links a {
-  color: #666;
+  color: #000; /* 黑色文字 */
   text-decoration: none;
   font-size: 0.9rem;
 }
 
 .footer-links a:hover {
-  color: var(--primary-color);
+  color: #333; /* 懸停時稍微淺一點的黑色 */
 }
 
 .copyright {
-  color: #666;
+  color: #000; /* 黑色文字 */
   font-size: 0.9rem;
 }
 
@@ -82,13 +85,13 @@ export default {
 }
 
 .social-links a {
-  color: #666;
+  color: #000; /* 黑色文字 */
   font-size: 1.2rem;
   text-decoration: none;
 }
 
 .social-links a:hover {
-  color: var(--primary-color);
+  color: #333; /* 懸停時稍微淺一點的黑色 */
 }
 
 @media (max-width: 768px) {

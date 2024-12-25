@@ -2,14 +2,18 @@
   <div class="home-view">
     <!-- 輪播圖部分 -->
     <div class="carousel">
-      <div class="carousel-inner" :style="{ transform: `translateX(-${currentSlide * 100}%)` }">
-        <div v-for="(slide, index) in carouselSlides"
-             :key="index"
-             class="carousel-slide">
+      <button class="carousel-control left" @click="prevSlide">
+        <i class="fas fa-chevron-left"></i>
+      </button>
+      <div class="carousel-inner2" :style="{ transform: `translateX(-${currentSlide * 100}%)` }">
+        <div v-for="(slide, index) in carouselSlides" :key="index" class="carousel-slide">
           <img :src="slide.image" :alt="slide.caption">
           <div class="carousel-caption">{{ slide.caption }}</div>
         </div>
       </div>
+      <button class="carousel-control right" @click="nextSlide">
+        <i class="fas fa-chevron-right"></i>
+      </button>
     </div>
 
     <!-- 商品分類 -->
@@ -74,13 +78,17 @@ export default {
     const currentSlide = ref(0)
     const carouselSlides = ref([
       {
-        image: '/images/carousel/slide1.jpg',
+        image: '/public/carousel/ilive1.webp',
         caption: '新品上市'
       },
       {
-        image: '/images/carousel/slide2.jpg',
+        image: '/public/carousel/ilive2.webp',
         caption: '限時特惠'
-      }
+      },
+      {
+        image: '/public/carousel/login.webp',
+        caption: '立即登入'
+      },
     ])
 
     const categories = ref([])
@@ -89,7 +97,6 @@ export default {
 
     const getProducts = async () => {
       try {
-        // 修改為正確的 API 調用方式
         const [categoriesRes, featuredRes, newProductsRes] = await Promise.all([
           productApi.getList({ type: 'category' }),
           productApi.getList({ featured: true }),
@@ -122,6 +129,14 @@ export default {
       router.push(`/category/${categoryId}`)
     }
 
+    const prevSlide = () => {
+      currentSlide.value = (currentSlide.value - 1 + carouselSlides.value.length) % carouselSlides.value.length
+    }
+
+    const nextSlide = () => {
+      currentSlide.value = (currentSlide.value + 1) % carouselSlides.value.length
+    }
+
     onMounted(() => {
       getProducts()
     })
@@ -133,7 +148,9 @@ export default {
       featuredProducts,
       newProducts,
       goToCategory,
-      addToCart
+      addToCart,
+      prevSlide,
+      nextSlide,
     }
   }
 }
@@ -141,31 +158,34 @@ export default {
 
 <style scoped>
 .home-view {
-  padding: 1rem;
+  padding: 0rem;
   max-width: 1200px;
   margin: 0 auto;
 }
 
 .carousel {
   position: relative;
+  margin: 0 calc(-50vw + 50%);
+  width: 100vw;
   overflow: hidden;
-  margin-bottom: 2rem;
-  border-radius: 8px;
 }
 
-.carousel-inner {
+.carousel-inner2 {
   display: flex;
-  transition: transform 0.3s ease-in-out;
+  transition: transform 0.5s ease-in-out;
+  width: 100%;
 }
 
 .carousel-slide {
   min-width: 100%;
   position: relative;
+  flex-shrink: 0;
+  height: auto;
 }
 
 .carousel-slide img {
   width: 100%;
-  height: auto;
+  height: 400px;
   object-fit: cover;
 }
 
@@ -178,6 +198,31 @@ export default {
   color: white;
   background: rgba(0, 0, 0, 0.5);
   padding: 1rem;
+}
+
+.carousel-control {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.carousel-control.left {
+  left: 10px;
+}
+
+.carousel-control.right {
+  right: 10px;
+}
+
+.carousel-control:hover {
+  background: rgba(0, 0, 0, 0.7);
 }
 
 .categories-section,
@@ -196,7 +241,7 @@ h2 {
 .products-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 1.5rem;
+  gap: 0.5rem;
 }
 
 .category-card {
@@ -216,6 +261,22 @@ h2 {
   .categories-grid,
   .products-grid {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+
+  .carousel-slide img {
+    height: auto;
+    min-height: 200px;
+    max-height: 300px;
+  }
+
+  .carousel-caption {
+    padding: 0.5rem;
+    font-size: 0.9rem;
+  }
+
+  .carousel-control {
+    padding: 0.3rem 0.6rem;
+    font-size: 1rem;
   }
 }
 </style>
