@@ -103,8 +103,8 @@ export default {
     const getPromotionsData = async () => {
       try {
         const [promotionsRes, productPromotionsRes] = await Promise.all([
-          promotionApi.getActivePromotions(),
-          promotionApi.getProductPromotions()
+          promotionApi.getActivePromotions(), // 改用正確的API方法
+          promotionApi.getProductPromotions() // 改用正確的API方法
         ])
 
         activePromotions.value = promotionsRes.filter(promo =>
@@ -117,6 +117,7 @@ export default {
         store.dispatch('app/setError', error.message || '獲取促銷資料失敗')
       }
     }
+
 
     // 格式化日期
     const formatDate = (dateString) => {

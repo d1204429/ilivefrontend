@@ -291,8 +291,8 @@ const mutations = {
         state.promotions = promotions
     },
 
-    SET_PRODUCT_PROMOTIONS(state, productPromotions) {
-        state.productPromotions = productPromotions
+    SET_PRODUCT_PROMOTIONS(state, Promotions) {
+        state.productPromotions = Promotions
     },
 
     RESET_FILTERS(state) {

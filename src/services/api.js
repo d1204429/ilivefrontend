@@ -11,7 +11,7 @@ const TOKEN_CONSTANTS = {
 }
 
 // API 配置常量
-const API_CONFIG = {
+const API_CONFIG = { //http://localhost:1988/api/v1
     baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:1988/api/v1',
     timeout: parseInt(import.meta.env.VITE_API_TIMEOUT) || 15000,
     headers: {
@@ -262,10 +262,17 @@ export const productApi = {
 }
 
 export const promotionApi = {
-    getActivePromotions: () => api.get(API_PATHS.ADMIN.PROMOTIONS),
-    getProductPromotions: () => api.get(API_PATHS.ADMIN.PRODUCT_PROMOTIONS),
-    getPromotionDetails: (promotionId) => api.get(`${API_PATHS.ADMIN.PROMOTIONS}/${promotionId}`)
+    // 獲取所有活動的促銷
+    getActivePromotions: () => api.get('/api/v1/admin/promotions'),
+
+    // 獲取所有促銷商品
+    getProductPromotions: () => api.get('/api/v1/admin/product-promotions/products'),
+
+    // 獲取特定促銷活動詳情
+    getPromotionDetails: (promotionId) =>
+        api.get(`/api/v1/admin/promotions/${promotionId}`)
 }
+
 
 export const cartApi = {
     getItems: () => api.get(API_PATHS.CART.ITEMS),
