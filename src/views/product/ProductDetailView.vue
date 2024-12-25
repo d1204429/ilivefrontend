@@ -286,11 +286,7 @@ export default {
 </script>
 
 
-
-
-
-
-    <style scoped>
+<style scoped>
 .product-detail-view {
   padding: 2rem 0;
   background-color: #fff;
