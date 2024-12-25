@@ -23,8 +23,8 @@ const state = {
     featuredProducts: [],
     newArrivals: [],
     recommendedProducts: [],
-    promotions: [], // 新增促銷活動
-    productPromotions: [] // 新增商品促銷
+    promotions: [],
+    productPromotions: []
 }
 
 const getters = {
@@ -71,7 +71,7 @@ const getters = {
         }
 
         if (sortBy) {
-            switch(sortBy) {
+            switch (sortBy) {
                 case 'price-asc':
                     filtered.sort((a, b) => a.price - b.price)
                     break
@@ -115,7 +115,6 @@ const actions = {
             commit('SET_LOADING', true)
             const { currentPage, pageSize } = state.pagination
             const { category, priceRange, sortBy, keyword } = state.filters
-
             const params = {
                 page: currentPage,
                 limit: pageSize,
@@ -125,9 +124,7 @@ const actions = {
                 sortBy,
                 keyword
             }
-
             const response = await productApi.getList(params)
-
             commit('SET_PRODUCTS', response.items)
             commit('SET_PAGINATION', {
                 currentPage: response.currentPage,
@@ -291,17 +288,12 @@ const mutations = {
         state.promotions = promotions
     },
 
-    SET_PRODUCT_PROMOTIONS(state, Promotions) {
-        state.productPromotions = Promotions
+    SET_PRODUCT_PROMOTIONS(state, promotions) {
+        state.productPromotions = promotions
     },
 
     RESET_FILTERS(state) {
-        state.filters = {
-            category: null,
-            priceRange: null,
-            sortBy: null,
-            keyword: null
-        }
+        state.filters = { category: null, priceRange: null, sortBy: null, keyword: null }
     }
 }
 

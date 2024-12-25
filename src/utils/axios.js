@@ -83,29 +83,37 @@ let refreshRetryCount = 0
 const tokenManager = {
     getAccessToken: () => localStorage.getItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY),
     getRefreshToken: () => localStorage.getItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY),
-    setTokens: (accessToken, refreshToken) => {
+
+    setTokens(accessToken, refreshToken) {
         if (accessToken) {
             localStorage.setItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY, accessToken)
             api.defaults.headers.common.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${accessToken}`
         }
+
         if (refreshToken) {
             localStorage.setItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY, refreshToken)
         }
+
         lastTokenRefresh = Date.now()
         refreshRetryCount = 0
     },
-    removeTokens: () => {
+
+    removeTokens() {
         localStorage.removeItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY)
         localStorage.removeItem(TOKEN_CONSTANTS.REFRESH_TOKEN_KEY)
+
         delete api.defaults.headers.common.Authorization
+
         lastTokenRefresh = 0
         refreshRetryCount = 0
     },
-    shouldRefreshToken: () => {
+
+    shouldRefreshToken() {
         const tokenAge = Date.now() - lastTokenRefresh
         return tokenAge >= (TOKEN_CONSTANTS.REFRESH_INTERVAL - TOKEN_CONSTANTS.TOKEN_EXPIRY_MARGIN)
     },
-    canRetryRefresh: () => {
+
+    canRetryRefresh() {
         return refreshRetryCount < TOKEN_CONSTANTS.MAX_REFRESH_RETRIES
     }
 }
@@ -124,16 +132,11 @@ api.interceptors.request.use(
 
         // 添加請求時間戳防止快取
         if (config.method?.toLowerCase() === 'get' && !config.noCache) {
-            config.params = {
-                ...config.params,
-                _t: Date.now()
-            }
+            config.params = { ...config.params, _t: Date.now() }
         }
 
         // 添加請求元數據
-        config.metadata = {
-            startTime: Date.now()
-        }
+        config.metadata = { startTime: Date.now() }
 
         // 添加請求ID用於追蹤
         config.requestId = `${Date.now()}-${Math.random().toString(36).substring(7)}`
@@ -178,10 +181,7 @@ api.interceptors.response.use(
 
         // 處理請求取消
         if (axios.isCancel(error)) {
-            return Promise.reject({
-                type: 'cancel',
-                message: '請求已取消'
-            })
+            return Promise.reject({ type: 'cancel', message: '請求已取消' })
         }
 
         const originalRequest = error.config
@@ -217,8 +217,7 @@ api.interceptors.response.use(
 
                 if (response?.accessToken && response?.refreshToken) {
                     tokenManager.setTokens(response.accessToken, response.refreshToken)
-                    api.defaults.headers.common.Authorization =
-                        `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${response.accessToken}`
+                    api.defaults.headers.common.Authorization = `${TOKEN_CONSTANTS.TOKEN_PREFIX} ${response.accessToken}`
                     processQueue(null, response.accessToken)
                     return api(originalRequest)
                 }
@@ -235,10 +234,7 @@ api.interceptors.response.use(
 
         // 處理網路錯誤
         if (!error.response) {
-            store.dispatch('app/setError', {
-                type: 'network',
-                message: '網路連接失敗，請檢查您的網路設置'
-            })
+            store.dispatch('app/setError', { type: 'network', message: '網路連接失敗，請檢查您的網路設置' })
             return Promise.reject(error)
         }
 
@@ -252,6 +248,7 @@ api.interceptors.response.use(
         return Promise.reject(errorInfo)
     }
 )
+
 // API 服務導出
 const apiService = {
     auth: {
@@ -264,14 +261,11 @@ const apiService = {
         resetPassword: (token, password) => api.post(API_PATHS.AUTH.RESET_PASSWORD, { token, password }),
         checkEmailExists: email => api.post(API_PATHS.AUTH.CHECK_EMAIL, { email })
     },
-
     user: {
         getProfile: () => api.get(API_PATHS.USERS.PROFILE),
         updateProfile: data => api.put(API_PATHS.USERS.PROFILE, data),
         changePassword: data => api.put(API_PATHS.USERS.PASSWORD, data),
-        uploadAvatar: formData => api.post(API_PATHS.USERS.AVATAR, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-        }),
+        uploadAvatar: formData => api.post(API_PATHS.USERS.AVATAR, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
         getAddresses: () => api.get(API_PATHS.USERS.ADDRESSES),
         addAddress: address => api.post(API_PATHS.USERS.ADDRESSES, address),
         updateAddress: (id, address) => api.put(`${API_PATHS.USERS.ADDRESSES}/${id}`, address),
@@ -279,7 +273,6 @@ const apiService = {
         getPreferences: () => api.get(API_PATHS.USERS.PREFERENCES),
         updatePreferences: data => api.put(API_PATHS.USERS.PREFERENCES, data)
     },
-
     product: {
         getList: params => api.get(API_PATHS.PRODUCTS.BASE, { params }),
         getById: id => api.get(`${API_PATHS.PRODUCTS.BASE}/${id}`),
@@ -289,13 +282,10 @@ const apiService = {
         getCategories: () => api.get(API_PATHS.CATEGORIES),
         getReviews: productId => api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}`),
         addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}`, data),
-        updateReview: (productId, reviewId, data) =>
-            api.put(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/${reviewId}`, data),
-        deleteReview: (productId, reviewId) =>
-            api.delete(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/${reviewId}`),
+        updateReview: (productId, reviewId, data) => api.put(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/${reviewId}`, data),
+        deleteReview: (productId, reviewId) => api.delete(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/${reviewId}`),
         getReviewStats: productId => api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}/stats`)
     },
-
     cart: {
         getItems: () => api.get(API_PATHS.CART.ITEMS),
         addItem: data => api.post(API_PATHS.CART.ITEMS, data),
@@ -308,7 +298,6 @@ const apiService = {
         setShippingMethod: methodId => api.put(API_PATHS.CART.SHIPPING, { methodId }),
         checkout: data => api.post(API_PATHS.CART.CHECKOUT, data)
     },
-
     order: {
         create: data => api.post(API_PATHS.ORDERS.BASE, data),
         getList: params => api.get(API_PATHS.ORDERS.BASE, { params }),
@@ -322,4 +311,7 @@ const apiService = {
 }
 
 // 導出
-export { api as default, apiService }
+export {
+    api as default,
+    apiService
+}

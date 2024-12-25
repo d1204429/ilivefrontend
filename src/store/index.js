@@ -59,44 +59,37 @@ export default createStore({
         order,
         app
     },
-
-    state: { ...INITIAL_STATE },
-
+    state: {
+        ...INITIAL_STATE
+    },
     mutations: {
         SET_LOADING(state, status) {
             state.loading = status
         },
         SET_ERROR(state, error) {
-            state.error = error ? {
-                message: typeof error === 'string' ? error : error.message || '發生錯誤',
-                type: error.type || 'error',
-                timestamp: new Date().toISOString(),
-                code: error.code,
-                details: error.details,
-                stack: import.meta.env.DEV ? error.stack : undefined
-            } : null
+            state.error = error
+                ? {
+                    message: typeof error === 'string' ? error : error.message || '發生錯誤',
+                    type: error.type || 'error',
+                    timestamp: new Date().toISOString(),
+                    code: error.code,
+                    details: error.details,
+                    stack: import.meta.env.DEV ? error.stack : undefined
+                }
+                : null
         },
         SET_SUCCESS(state, message) {
-            state.success = message ? {
-                message,
-                type: 'success',
-                timestamp: new Date().toISOString()
-            } : null
+            state.success = message
+                ? { message, type: 'success', timestamp: new Date().toISOString() }
+                : null
         },
         SET_NOTIFICATION(state, notification) {
-            state.notification = notification ? {
-                ...notification,
-                id: Date.now(),
-                timestamp: new Date().toISOString(),
-                read: false
-            } : null
+            state.notification = notification
+                ? { ...notification, id: Date.now(), timestamp: new Date().toISOString(), read: false }
+                : null
         },
         SET_SYSTEM_STATUS(state, status) {
-            state.systemStatus = {
-                ...state.systemStatus,
-                ...status,
-                lastChecked: new Date().toISOString()
-            }
+            state.systemStatus = { ...state.systemStatus, ...status, lastChecked: new Date().toISOString() }
         },
         UPDATE_SERVICE_STATUS(state, { service, status, details }) {
             state.systemStatus.services[service] = status
@@ -119,10 +112,7 @@ export default createStore({
             state.deviceInfo = {
                 type: width < 768 ? 'mobile' : width < 1024 ? 'tablet' : 'desktop',
                 browser: navigator.userAgent,
-                screenSize: {
-                    width,
-                    height: window.innerHeight
-                }
+                screenSize: { width, height: window.innerHeight }
             }
         },
         SET_CACHE(state, { key, data }) {
@@ -149,22 +139,16 @@ export default createStore({
         async initializeApp({ commit, dispatch }) {
             commit('SET_LOADING', true)
             commit('UPDATE_DEVICE_INFO')
-
             try {
                 const startTime = performance.now()
-
                 await Promise.all([
                     dispatch('auth/checkAuth'),
                     dispatch('checkSystemStatus'),
                     dispatch('product/fetchCategories'),
                     dispatch('cart/fetchCartItems')
                 ])
-
                 const loadTime = performance.now() - startTime
-                commit('UPDATE_SERVICE_STATUS', {
-                    service: 'performance',
-                    details: { loadTime }
-                })
+                commit('UPDATE_SERVICE_STATUS', { service: 'performance', details: { loadTime } })
 
                 // 事件監聽器
                 window.addEventListener('online', () => dispatch('handleOnline'))
@@ -187,14 +171,7 @@ export default createStore({
                 const status = await response.json()
                 const apiLatency = performance.now() - startTime
 
-                commit('SET_SYSTEM_STATUS', {
-                    ...status,
-                    isOnline: true,
-                    performance: {
-                        ...status.performance,
-                        apiLatency
-                    }
-                })
+                commit('SET_SYSTEM_STATUS', { ...status, isOnline: true, performance: { ...status.performance, apiLatency } })
 
                 // 檢查各項服務狀態
                 Object.entries(status.services || {}).forEach(([service, status]) => {
@@ -202,38 +179,23 @@ export default createStore({
                 })
 
                 if (status.maintenance) {
-                    dispatch('showNotification', {
-                        message: '系統維護中，部分功能可能無法使用',
-                        type: 'warning',
-                        duration: 0
-                    })
+                    dispatch('showNotification', { message: '系統維護中，部分功能可能無法使用', type: 'warning', duration: 0 })
                 }
             } catch (error) {
-                commit('SET_SYSTEM_STATUS', {
-                    healthy: false,
-                    error: error.message
-                })
+                commit('SET_SYSTEM_STATUS', { healthy: false, error: error.message })
                 throw error
             }
         },
 
         handleOnline({ commit, dispatch }) {
             commit('SET_SYSTEM_STATUS', { isOnline: true })
-            dispatch('showNotification', {
-                message: '網路連接已恢復',
-                type: 'success',
-                duration: 3000
-            })
+            dispatch('showNotification', { message: '網路連接已恢復', type: 'success', duration: 3000 })
             dispatch('checkSystemStatus')
         },
 
         handleOffline({ commit, dispatch }) {
             commit('SET_SYSTEM_STATUS', { isOnline: false })
-            dispatch('showNotification', {
-                message: '網路連接已斷開',
-                type: 'warning',
-                duration: 0
-            })
+            dispatch('showNotification', { message: '網路連接已斷開', type: 'warning', duration: 0 })
         },
 
         setLoading({ commit }, status) {
@@ -256,14 +218,12 @@ export default createStore({
 
         showNotification({ commit, state }, notification) {
             // 避免重複通知
-            if (state.notification?.message === notification.message) {
-                return
-            }
+            if (state.notification?.message === notification.message) return
 
             commit('SET_NOTIFICATION', notification)
+
             if (notification?.duration !== 0) {
-                setTimeout(() => commit('SET_NOTIFICATION', null),
-                    notification?.duration || 3000)
+                setTimeout(() => commit('SET_NOTIFICATION', null), notification?.duration || 3000)
             }
         },
 
@@ -293,23 +253,41 @@ export default createStore({
         error: state => state.error,
         success: state => state.success,
         notification: state => state.notification,
+
         systemStatus: state => state.systemStatus,
+
         isOnline: state => state.systemStatus.isOnline,
+
         isMaintenance: state => state.systemStatus.maintenance,
+
         isHealthy: state => state.systemStatus.healthy,
+
         serviceStatus: state => service => state.systemStatus.services[service],
+
         performance: state => state.systemStatus.performance,
+
         currentTheme: state => state.theme,
+
         currentLanguage: state => state.language,
+
         deviceInfo: state => state.deviceInfo,
+
         isMobile: state => state.deviceInfo.type === 'mobile',
+
         isTablet: state => state.deviceInfo.type === 'tablet',
+
         isDesktop: state => state.deviceInfo.type === 'desktop',
+
         appVersion: state => state.systemStatus.version,
+
         hasError: state => !!state.error,
+
         hasSuccess: state => !!state.success,
+
         hasNotification: state => !!state.notification,
-        getCached: state => key => state.cache[key],
-        cacheLastUpdated: state => state.cache.lastUpdated
+
+        getCached: (state) => (key) => state.cache[key],
+
+        cacheLastUpdated: (state) => state.cache.lastUpdated
     }
 })

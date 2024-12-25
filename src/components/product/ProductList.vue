@@ -5,9 +5,11 @@
       <div class="category-filter">
         <select v-model="selectedCategory" @change="handleCategoryChange">
           <option value="">全部分類</option>
-          <option v-for="category in categories"
-                  :key="category.categoryId"
-                  :value="category.categoryId">
+          <option
+              v-for="category in categories"
+              :key="category.categoryId"
+              :value="category.categoryId"
+          >
             {{ category.name }}
           </option>
         </select>
@@ -15,25 +17,52 @@
 
       <!-- 搜尋欄位 -->
       <div class="search-box">
-        <input type="text"
-               v-model="searchKeyword"
-               @input="debounceSearch"
-               placeholder="搜尋商品...">
+        <input
+            type="text"
+            v-model="searchKeyword"
+            @input="handleSearchInput"
+            placeholder="搜尋商品..."
+        >
+        <button @click="handleSearch">
+          <i class="fas fa-search"></i>
+        </button>
+
+        <!-- 搜尋建議下拉框 -->
+        <div
+            v-if="showSuggestions && searchSuggestions.length > 0"
+            class="search-suggestions"
+        >
+          <ul>
+            <li
+                v-for="suggestion in searchSuggestions"
+                :key="suggestion.id"
+                @click="handleSuggestionClick(suggestion)"
+            >
+              {{ suggestion.name }}
+            </li>
+          </ul>
+        </div>
       </div>
 
       <!-- 價格範圍過濾 -->
       <div class="price-filter">
-        <input type="number"
-               v-model.number="minPrice"
-               placeholder="最低價格"
-               min="0">
+        <input
+            type="number"
+            v-model.number="minPrice"
+            placeholder="最低價格"
+            min="0"
+        >
         <span>-</span>
-        <input type="number"
-               v-model.number="maxPrice"
-               placeholder="最高價格"
-               min="0">
-        <button @click="applyPriceFilter"
-                :disabled="loading">
+        <input
+            type="number"
+            v-model.number="maxPrice"
+            placeholder="最高價格"
+            min="0"
+        >
+        <button
+            @click="applyPriceFilter"
+            :disabled="loading"
+        >
           套用價格
         </button>
       </div>
@@ -62,39 +91,38 @@
 
     <!-- 分頁控制區 -->
     <div v-if="totalPages > 1" class="pagination">
-      <button @click="previousPage"
-              :disabled="currentPage === 1 || loading">
+      <button
+          @click="previousPage"
+          :disabled="currentPage === 1 || loading"
+      >
         上一頁
       </button>
       <span>{{ currentPage }} / {{ totalPages }}</span>
-      <button @click="nextPage"
-              :disabled="currentPage === totalPages || loading">
+      <button
+          @click="nextPage"
+          :disabled="currentPage === totalPages || loading"
+      >
         下一頁
       </button>
     </div>
   </div>
 </template>
-
 <script>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import ProductCard from '@/components/product/ProductCard.vue'
 import { debounce } from 'lodash'
-import { handleError } from '@/utils/errorHandler'
 
 export default {
   name: 'ProductList',
-
-  components: {
-    ProductCard
-  },
+  components: { ProductCard },
 
   setup() {
     const store = useStore()
     const router = useRouter()
 
-    // 狀態
+    // 響應式狀態
     const loading = ref(false)
     const products = ref([])
     const categories = ref([])
@@ -104,7 +132,8 @@ export default {
     const maxPrice = ref('')
     const currentPage = ref(1)
     const itemsPerPage = 12
-    const totalItems = ref(0)
+    const searchSuggestions = ref([])
+    const showSuggestions = ref(false)
 
     // 計算屬性
     const filteredProducts = computed(() => {
@@ -149,70 +178,38 @@ export default {
     })
 
     // 方法
-    const fetchData = async () => {
-      loading.value = true
-      try {
-        await Promise.all([
-          fetchProducts(),
-          fetchCategories()
-        ])
-      } catch (error) {
-        const errorMessage = handleError(error)
-        store.dispatch('app/showNotification', {
-          type: 'error',
-          message: errorMessage || '載入資料失敗'
-        })
-      } finally {
-        loading.value = false
+    const handleSearchInput = debounce(async () => {
+      if (searchKeyword.value.trim().length > 0) {
+        try {
+          const results = await store.dispatch('product/searchProducts', {
+            keyword: searchKeyword.value.trim()
+          })
+          searchSuggestions.value = results.slice(0, 5)
+          showSuggestions.value = true
+        } catch (error) {
+          console.error('搜尋建議獲取失敗:', error)
+        }
+      } else {
+        searchSuggestions.value = []
+        showSuggestions.value = false
       }
+    }, 300)
+
+    const handleSuggestionClick = (suggestion) => {
+      searchKeyword.value = suggestion.name
+      showSuggestions.value = false
+      handleSearch()
     }
 
-    const fetchProducts = async () => {
-      try {
-        const response = await store.dispatch('product/getProducts')
-        products.value = response
-      } catch (error) {
-        throw error
-      }
-    }
-
-    const fetchCategories = async () => {
-      try {
-        const response = await store.dispatch('product/getCategories')
-        categories.value = response
-      } catch (error) {
-        throw error
-      }
-    }
-
-    const addToCart = async (productId, quantity = 1) => {
-      try {
-        await store.dispatch('cart/addToCart', {
-          productId,
-          quantity
-        })
-        store.dispatch('app/showNotification', {
-          type: 'success',
-          message: '已加入購物車'
-        })
-      } catch (error) {
-        const errorMessage = handleError(error)
-        store.dispatch('app/showNotification', {
-          type: 'error',
-          message: errorMessage || '加入購物車失敗'
-        })
-      }
+    const handleSearch = () => {
+      currentPage.value = 1
+      updateUrlParams()
     }
 
     const handleCategoryChange = () => {
       currentPage.value = 1
       updateUrlParams()
     }
-
-    const debounceSearch = debounce(() => {
-      currentPage.value = 1
-      updateUrlParams()
-    }, 300)
 
     const applyPriceFilter = () => {
       if (maxPrice.value && minPrice.value > maxPrice.value) {
@@ -225,21 +222,7 @@ export default {
       currentPage.value = 1
       updateUrlParams()
     }
-
-    const previousPage = () => {
-      if (currentPage.value > 1) {
-        currentPage.value--
-        updateUrlParams()
-      }
-    }
-
-    const nextPage = () => {
-      if (currentPage.value < totalPages.value) {
-        currentPage.value++
-        updateUrlParams()
-      }
-    }
-
+    // Methods
     const updateUrlParams = () => {
       const query = {}
       if (selectedCategory.value) query.category = selectedCategory.value
@@ -247,7 +230,6 @@ export default {
       if (minPrice.value) query.minPrice = minPrice.value
       if (maxPrice.value) query.maxPrice = maxPrice.value
       if (currentPage.value > 1) query.page = currentPage.value
-
       router.replace({ query })
     }
 

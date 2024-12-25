@@ -28,12 +28,10 @@
 
       <div class="product-meta">
         <span v-if="product.brand" class="brand">
-          <i class="fas fa-tag"></i>
-          {{ product.brand }}
+          <i class="fas fa-tag"></i> {{ product.brand }}
         </span>
         <span v-if="product.categoryName" class="category">
-          <i class="fas fa-folder"></i>
-          {{ product.categoryName }}
+          <i class="fas fa-folder"></i> {{ product.categoryName }}
         </span>
       </div>
 
@@ -78,7 +76,6 @@
     </div>
   </div>
 </template>
-
 <script>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -88,26 +85,20 @@ import { handleError } from '@/utils/errorHandler'
 
 export default {
   name: 'ProductCard',
-
-  components: {
-    BaseButton
-  },
-
+  components: { BaseButton },
   props: {
     product: {
       type: Object,
       required: true,
       validator(product) {
-        return product.productId &&
-            product.name &&
-            typeof product.price === 'number'
+        return product.productId && product.name && typeof product.price === 'number'
       }
     }
   },
-
   setup(props) {
     const router = useRouter()
     const store = useStore()
+
     const imageLoading = ref(true)
     const addingToCart = ref(false)
     const imageError = ref(false)
@@ -125,16 +116,9 @@ export default {
       return `/static/image/${imageUrl}`
     })
 
-    const showBadges = computed(() =>
-        props.product.isNew ||
-        props.product.isOnSale ||
-        props.product.discount
-    )
+    const showBadges = computed(() => props.product.isNew || props.product.isOnSale || props.product.discount)
 
-    const hasDiscount = computed(() =>
-        props.product.originalPrice &&
-        props.product.originalPrice > props.product.price
-    )
+    const hasDiscount = computed(() => props.product.originalPrice && props.product.originalPrice > props.product.price)
 
     const stockStatusClass = computed(() => ({
       'in-stock': props.product.availableStock > 10,
@@ -160,9 +144,7 @@ export default {
       return '加入購物車'
     })
 
-    const canAddToCart = computed(() =>
-        props.product.availableStock > 0 && !addingToCart.value
-    )
+    const canAddToCart = computed(() => props.product.availableStock > 0 && !addingToCart.value)
 
     // 方法
     const formatPrice = (price) => {
@@ -192,35 +174,20 @@ export default {
 
     const handleAddToCart = async () => {
       if (!canAddToCart.value) return
-
       addingToCart.value = true
       try {
-        await store.dispatch('cart/addToCart', {
-          productId: props.product.productId,
-          quantity: 1
-        })
-        store.dispatch('app/showNotification', {
-          type: 'success',
-          message: '已加入購物車',
-          duration: 3000
-        })
+        await store.dispatch('cart/addToCart', { productId: props.product.productId, quantity: 1 })
+        store.dispatch('app/showNotification', { type: 'success', message: '已加入購物車', duration: 3000 })
       } catch (error) {
         const errorMessage = handleError(error)
-        store.dispatch('app/showNotification', {
-          type: 'error',
-          message: errorMessage || '加入購物車失敗',
-          duration: 3000
-        })
+        store.dispatch('app/showNotification', { type: 'error', message: errorMessage || '加入購物車失敗', duration: 3000 })
       } finally {
         addingToCart.value = false
       }
     }
 
     const handleViewDetail = () => {
-      router.push({
-        name: 'ProductDetail',
-        params: { id: props.product.productId }
-      })
+      router.push({ name: 'ProductDetail', params: { id: props.product.productId } })
     }
 
     return {
@@ -295,18 +262,11 @@ export default {
   position: absolute;
   top: 8px;
   left: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  z-index: 1;
 }
 
 .badge {
   padding: 4px 8px;
   border-radius: 4px;
-  font-size: 0.8rem;
-  font-weight: bold;
-  color: white;
 }
 
 .badge.new {
@@ -326,102 +286,77 @@ export default {
 }
 
 .product-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-  color: var(--text-primary);
-  line-height: 1.4;
+  font-size:1.1rem;
+  font-weight:bold;
+  margin-bottom:.5rem;
+  color:variables(--text-primary);
+  line-height:1.4;
 }
 
 .product-meta {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 0.5rem;
-  font-size: 0.9rem;
-  color: var(--text-secondary);
+  display:flex;
+  gap:.5rem;
+  margin-bottom:.5rem;
+  font-size:.9rem;
+  color:variables(--text-secondary);
 }
 
 .product-meta i {
-  margin-right: 4px;
+  margin-right:.25rem;
 }
 
 .product-price {
-  margin-bottom: 0.5rem;
+  margin-bottom:.5rem;
 }
 
 .current-price {
-  font-size: 1.2rem;
-  font-weight: bold;
-  color: var(--primary-color);
+  font-size:1.2rem;
+  font-weight:bold;
+  color:variables(--primary-color);
 }
 
 .original-price {
-  font-size: 0.9rem;
-  text-decoration: line-through;
-  color: var(--text-muted);
-  margin-left: 0.5rem;
+  font-size:.9rem;
+  text-decoration:line-through;
+  color:variables(--text-muted);
+  margin-left:.25rem;
 }
 
 .product-description {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  margin-bottom: 0.5rem;
-  line-height: 1.5;
+  font-size:.9rem;
+  color:variables(--text-secondary);
+  margin-bottom:.5rem;
+  line-height:1.5;
 }
 
 .product-stock {
-  font-size: 0.9rem;
-  margin-bottom: 1rem;
-  display: flex;
-  align-items: center;
+  font-size:.9rem;
+  margin-bottom:1rem;
+  display:flex;
+  align-items:center;
 }
 
 .product-stock i {
-  margin-right: 4px;
+  margin-right:.25rem;
 }
 
-.product-stock.in-stock {
-  color: var(--success-color);
-}
+.product-stock.in-stock { color:variables(--success-color); }
+.product-stock.low-stock { color:variables(--warning-color); }
+.product-stock.out-of-stock { color:variables(--danger-color); }
 
-.product-stock.low-stock {
-  color: var(--warning-color);
-}
+.product-actions { display:flex; gap:.5rem; }
 
-.product-stock.out-of-stock {
-  color: var(--danger-color);
-}
-
-.product-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.product-actions button {
-  flex: 1;
-  min-height: 36px;
-}
+.product-actions button { flex:1; min-height:36px; }
 
 @keyframes loading {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  from { background-position:200% }
+  to { background-position:-200% }
 }
 
-@media (max-width: 768px) {
-  .product-card {
-    font-size: 0.9rem;
-  }
-
-  .product-title {
-    font-size: 1rem;
-  }
-
-  .current-price {
-    font-size: 1.1rem;
-  }
-
-  .product-actions {
-    flex-direction: column;
-  }
+@media (max-width:768px) {
+  .product-card { font-size:.9rem; }
+  .product-title { font-size:1rem; }
+  .current-price { font-size:1.1rem; }
+  .product-actions { flex-direction:column; }
 }
 </style>
