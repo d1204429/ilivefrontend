@@ -34,6 +34,16 @@ export default defineConfig({
             console.log('Received Response:', proxyRes.statusCode, req.url)
           })
         }
+      },
+      '/static': {
+        target: 'http://localhost:1988',
+        changeOrigin: true,
+        secure: false,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            console.log('static proxy error', err)
+          })
+        }
       }
     }
   },
@@ -65,7 +75,7 @@ export default defineConfig({
         chunkFileNames: 'assets/js/[name]-[hash].js',
         entryFileNames: 'assets/js/[name]-[hash].js',
         assetFileNames: ({name}) => {
-          if (/\.(gif|jpe?g|png|svg)$/.test(name ?? '')) {
+          if (/\.(gif|jpe?g|png|svg|webp)$/.test(name ?? '')) {
             return 'assets/images/[name]-[hash][extname]'
           }
           if (/\.css$/.test(name ?? '')) {
@@ -76,7 +86,13 @@ export default defineConfig({
       }
     },
     cssCodeSplit: true,
-    chunkSizeWarningLimit: 2000
+    chunkSizeWarningLimit: 2000,
+    assetsInlineLimit: 4096,
+    emptyOutDir: true,
+    manifest: true,
+    ssrManifest: false,
+    write: true,
+    brotliSize: false
   },
   css: {
     preprocessorOptions: {
@@ -106,7 +122,17 @@ export default defineConfig({
   preview: {
     port: 8080,
     host: true,
-    cors: true
+    cors: true,
+    proxy: {
+      '/api/v1': {
+        target: 'http://localhost:1988',
+        changeOrigin: true
+      },
+      '/static': {
+        target: 'http://localhost:1988',
+        changeOrigin: true
+      }
+    }
   },
   define: {
     __VUE_OPTIONS_API__: true,

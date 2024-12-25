@@ -176,6 +176,9 @@ export default {
       addToCart()
       // 導航到結帳頁面
     }
+    const getImageUrl = (imageName) => {
+      return `/static/image/${imageName}`
+    }
 
     onMounted(() => {
       fetchProduct()
@@ -195,6 +198,7 @@ export default {
       increaseQuantity,
       decreaseQuantity,
       addToCart,
+      getImageUrl,
       buyNow
     }
   }
