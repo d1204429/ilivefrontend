@@ -2,48 +2,29 @@
   <header class="header">
     <div class="header-container">
       <!-- 漢堡選單按鈕 -->
-      <button
-          class="burger-menu"
-          :class="{ 'active': isMenuOpen }"
-          @click="toggleMenu"
-          aria-label="選單"
-      >
+      <div class="burger-menu" :class="{ 'active': isMenuOpen }" @click="toggleMenu">
         <span class="burger-bar"></span>
         <span class="burger-bar"></span>
         <span class="burger-bar"></span>
-      </button>
+      </div>
 
       <!-- 側邊選單 -->
-      <aside
-          class="side-menu"
-          :class="{ 'active': isMenuOpen }"
-          role="navigation"
-          aria-label="主選單"
-      >
+      <div class="side-menu" :class="{ 'active': isMenuOpen }">
         <nav class="menu-items">
-          <router-link
-              to="/"
-              class="menu-item"
-              @click="toggleMenu"
-          >首頁</router-link>
-
+          <router-link to="/" class="menu-item" @click="toggleMenu">首頁</router-link>
           <div class="menu-item-dropdown">
-            <button
-                class="menu-item"
-                @click="toggleCategory"
-                aria-expanded="isCategoryOpen"
-            >
+            <div class="menu-item" @click="toggleCategory">
               分類
               <i :class="['fas', isCategoryOpen ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
-            </button>
-            <div
-                class="dropdown-content"
-                :class="{ 'show': isCategoryOpen }"
-            >
+            </div>
+            <div class="dropdown-content" :class="{ 'show': isCategoryOpen }">
               <router-link
                   v-for="category in categories"
                   :key="category.id"
-                  :to="{ path: '/products', query: { categoryId: category.id } }"
+                  :to="{
+              path: '/products',
+              query: { search: category.name }
+            }"
                   class="dropdown-item"
                   @click="toggleMenu"
               >
@@ -51,50 +32,21 @@
               </router-link>
             </div>
           </div>
-
-          <router-link
-              to="/about"
-              class="menu-item"
-              @click="toggleMenu"
-          >關於我們</router-link>
-
-          <router-link
-              to="/contact"
-              class="menu-item"
-              @click="toggleMenu"
-          >聯絡我們</router-link>
+          <router-link to="/about" class="menu-item" @click="toggleMenu">關於我們</router-link>
+          <router-link to="/contact" class="menu-item" @click="toggleMenu">聯絡我們</router-link>
         </nav>
-      </aside>
-
+      </div>
       <!-- 搜尋欄 -->
-      <div class="search-box" role="search">
+      <div class="search-box">
         <input
             type="search"
             v-model="searchKeyword"
-            placeholder="搜尋商品"
+            placeholder="搜尋"
             @keyup.enter="handleSearch"
-            @input="handleSearchInput"
-            aria-label="搜尋"
-            autocomplete="off"
         >
-        <button
-            @click="handleSearch"
-            aria-label="搜尋按鈕"
-        >
+        <button @click="handleSearch">
           <i class="fas fa-search"></i>
         </button>
-
-        <!-- 搜尋建議下拉框 -->
-        <div v-if="showSuggestions && searchSuggestions.length > 0"
-             class="search-suggestions">
-          <ul>
-            <li v-for="suggestion in searchSuggestions"
-                :key="suggestion.id"
-                @click="handleSuggestionClick(suggestion)">
-              {{ suggestion.name }}
-            </li>
-          </ul>
-        </div>
       </div>
 
       <!-- 用戶操作區 -->
@@ -108,10 +60,7 @@
             <div class="user-dropdown">
               <router-link to="/profile" class="dropdown-item">個人資料</router-link>
               <router-link to="/orders" class="dropdown-item">訂單記錄</router-link>
-              <button
-                  class="dropdown-item"
-                  @click="handleLogout"
-              >登出</button>
+              <a href="#" class="dropdown-item" @click.prevent="handleLogout">登出</a>
             </div>
           </div>
         </template>
@@ -119,27 +68,23 @@
           <router-link to="/login" class="nav-link">登入</router-link>
           <router-link to="/register" class="nav-link">註冊</router-link>
         </template>
-
-        <router-link to="/cart" class="cart-link" aria-label="購物車">
+        <router-link to="/cart" class="cart-link">
           <i class="fas fa-shopping-cart"></i>
-          <span
-              v-if="cartItemCount > 0"
-              class="cart-count"
-              role="status"
-          >{{ cartItemCount }}</span>
+          <span v-if="cartItemCount > 0" class="cart-count">{{ cartItemCount }}</span>
         </router-link>
       </nav>
     </div>
   </header>
 </template>
+
 <script>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
-import { debounce } from 'lodash'
 
 export default {
   name: 'TheHeader',
+
   setup() {
     const store = useStore()
     const router = useRouter()
@@ -148,9 +93,11 @@ export default {
     const isMenuOpen = ref(false)
     const isCategoryOpen = ref(false)
     const searchKeyword = ref('')
-    const searchSuggestions = ref([])
-    const showSuggestions = ref(false)
-    const categories = ref([])
+    const categories = ref([
+      { id: 11, name: '冰箱' },
+      { id: 12, name: '電視' },
+      { id: 13, name: '洗衣機' }
+    ])
     const isInitialized = ref(false)
 
     // Computed Properties
@@ -173,7 +120,6 @@ export default {
         })
       }
     }
-
     const fetchUserData = async () => {
       try {
         if (isLoggedIn.value && !currentUser.value) {
@@ -191,58 +137,21 @@ export default {
       }
     }
 
-    const handleSearchInput = debounce(async () => {
-      if (searchKeyword.value.trim().length > 0) {
-        try {
-          const results = await store.dispatch('product/searchProducts', {
-            keyword: searchKeyword.value.trim()
-          })
-          searchSuggestions.value = results.slice(0, 5)
-          showSuggestions.value = true
-        } catch (error) {
-          console.error('搜尋建議獲取失敗:', error)
-        }
-      } else {
-        searchSuggestions.value = []
-        showSuggestions.value = false
-      }
-    }, 300)
+    const initializeHeader = async () => {
+      if (isInitialized.value) return
 
-    const handleSuggestionClick = (suggestion) => {
-      router.push({
-        path: `/products/${suggestion.id}`,
-        query: { search: searchKeyword.value }
-      })
-      searchKeyword.value = ''
-      showSuggestions.value = false
-    }
-
-    const handleSearch = () => {
-      const trimmedKeyword = searchKeyword.value.trim()
-      if (trimmedKeyword) {
-        router.push({
-          path: '/products',
-          query: { search: trimmedKeyword, page: 1 }
+      try {
+        await fetchCategories()
+        await fetchUserData()
+        isInitialized.value = true
+      } catch (error) {
+        console.error('初始化頁面失敗:', error)
+        store.dispatch('app/setError', {
+          message: '初始化失敗，請重新整理頁面',
+          type: 'error',
+          duration: 3000
         })
-        searchKeyword.value = ''
-        showSuggestions.value = false
-        if (isMenuOpen.value) {
-          toggleMenu()
-        }
       }
-    }
-
-    // 其餘方法保持不變...
-    const toggleMenu = () => {
-      isMenuOpen.value = !isMenuOpen.value
-      if (!isMenuOpen.value) {
-        isCategoryOpen.value = false
-      }
-      document.body.style.overflow = isMenuOpen.value ? 'hidden' : ''
-    }
-
-    const toggleCategory = () => {
-      isCategoryOpen.value = !isCategoryOpen.value
     }
 
     const handleLogout = async () => {
@@ -261,27 +170,44 @@ export default {
         })
       }
     }
-    // Lifecycle Hooks
-    onMounted(async () => {
-      await initializeHeader()
-      window.addEventListener('resize', handleResize)
 
-      // 監聽點擊事件以關閉搜尋建議
-      document.addEventListener('click', (e) => {
-        const searchBox = document.querySelector('.search-box')
-        if (searchBox && !searchBox.contains(e.target)) {
-          showSuggestions.value = false
+    const handleSearch = () => {
+      const trimmedKeyword = searchKeyword.value.trim()
+      if (trimmedKeyword) {
+        router.push({
+          path: '/products',
+          query: {
+            search: trimmedKeyword,
+            page: 1
+          }
+        })
+        searchKeyword.value = ''
+        if (isMenuOpen.value) {
+          toggleMenu()
         }
-      })
-    })
+      }
+    }
 
-    onUnmounted(() => {
-      window.removeEventListener('resize', handleResize)
-      document.body.style.overflow = ''
-      document.removeEventListener('click', () => {})
-    })
+    const toggleMenu = () => {
+      isMenuOpen.value = !isMenuOpen.value
+      if (!isMenuOpen.value) {
+        isCategoryOpen.value = false
+      }
+      document.body.style.overflow = isMenuOpen.value ? 'hidden' : ''
+    }
 
-    // Watch Effects
+    const toggleCategory = () => {
+      isCategoryOpen.value = !isCategoryOpen.value
+    }
+
+    const handleResize = () => {
+      if (window.innerWidth > 768 && isMenuOpen.value) {
+        isMenuOpen.value = false
+        document.body.style.overflow = ''
+      }
+    }
+
+    // Watchers
     watch(isLoggedIn, async (newValue, oldValue) => {
       if (newValue && newValue !== oldValue) {
         await fetchUserData()
@@ -296,12 +222,21 @@ export default {
       }
     })
 
+    // Lifecycle Hooks
+    onMounted(async () => {
+      await initializeHeader()
+      window.addEventListener('resize', handleResize)
+    })
+
+    onUnmounted(() => {
+      window.removeEventListener('resize', handleResize)
+      document.body.style.overflow = ''
+    })
+
     return {
       isMenuOpen,
       isCategoryOpen,
       searchKeyword,
-      searchSuggestions,
-      showSuggestions,
       categories,
       isLoggedIn,
       currentUser,
@@ -309,13 +244,12 @@ export default {
       toggleMenu,
       toggleCategory,
       handleSearch,
-      handleSearchInput,
-      handleSuggestionClick,
       handleLogout
     }
   }
 }
 </script>
+
 
 
 <style scoped>
@@ -349,9 +283,6 @@ export default {
   height: 20px;
   cursor: pointer;
   z-index: 1001;
-  background: none;
-  border: none;
-  padding: 0;
 }
 
 .burger-bar {
@@ -406,11 +337,6 @@ export default {
   justify-content: space-between;
   align-items: center;
   cursor: pointer;
-  background: none;
-  border: none;
-  width: 100%;
-  text-align: left;
-  font-size: 1rem;
 }
 
 .menu-item:hover {
@@ -446,7 +372,6 @@ export default {
   background-color: #f0f0f0;
 }
 
-/* 搜尋欄樣式 */
 .search-box {
   flex: 1;
   max-width: 600px;
@@ -471,10 +396,8 @@ export default {
   border: none;
   color: #666;
   cursor: pointer;
-  padding: 0.5rem;
 }
 
-/* 用戶導航樣式 */
 .user-nav {
   display: flex;
   align-items: center;
@@ -485,8 +408,6 @@ export default {
   color: #333;
   text-decoration: none;
   font-size: 0.9rem;
-  display: flex;
-  align-items: center;
 }
 
 .nav-link:hover {
@@ -508,11 +429,27 @@ export default {
   font-size: 0.75rem;
   padding: 2px 6px;
   border-radius: 10px;
-  min-width: 18px;
-  text-align: center;
 }
 
-/* 用戶資訊下拉選單 */
+@media (max-width: 768px) {
+  .header-container {
+    flex-wrap: wrap;
+    height: auto;
+    gap: 1rem;
+  }
+
+  .search-box {
+    order: 2;
+    margin: 0;
+    width: 100%;
+  }
+
+  .user-nav {
+    order: 1;
+  }
+}
+
+
 .user-info {
   position: relative;
 }
@@ -546,34 +483,48 @@ export default {
   color: #333;
   text-decoration: none;
   font-size: 0.9rem;
-  border: none;
-  width: 100%;
-  text-align: left;
-  background: none;
-  cursor: pointer;
+}
+
+.user-dropdown .dropdown-item:hover {
+  background-color: #f5f5f5;
+}
+.user-info {
+  position: relative;
+}
+
+.user-info:hover .user-dropdown {
+  display: block;
+}
+
+.username {
+  margin-left: 0.5rem;
+  font-weight: 500;
+}
+
+.user-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 0.5rem 0;
+  min-width: 150px;
+  z-index: 1000;
+}
+
+.user-dropdown .dropdown-item {
+  display: block;
+  padding: 0.5rem 1rem;
+  color: #333;
+  text-decoration: none;
+  font-size: 0.9rem;
 }
 
 .user-dropdown .dropdown-item:hover {
   background-color: #f5f5f5;
 }
 
-/* 響應式設計 */
-@media (max-width: 768px) {
-  .header-container {
-    flex-wrap: wrap;
-    height: auto;
-    gap: 1rem;
-    padding: 0.5rem 1rem;
-  }
-
-  .search-box {
-    order: 2;
-    margin: 0;
-    width: 100%;
-  }
-
-  .user-nav {
-    order: 1;
-  }
-}
 </style>
