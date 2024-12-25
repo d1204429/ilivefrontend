@@ -6,6 +6,7 @@
           :src="getProductImageUrl"
           :alt="product.name"
           @error="handleImageError"
+          @load="handleImageLoad"
           class="product-image"
           :class="{ 'loading': imageLoading }"
       >
@@ -79,7 +80,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import BaseButton from '@/components/common/BaseButton.vue'
@@ -103,18 +104,25 @@ export default {
       }
     }
   },
+
   setup(props) {
     const router = useRouter()
     const store = useStore()
     const imageLoading = ref(true)
     const addingToCart = ref(false)
+    const imageError = ref(false)
 
     // 計算屬性
     const getProductImageUrl = computed(() => {
-      if (!props.product.imageUrl) {
-        return '/images/product-placeholder.jpg'
+      if (imageError.value || !props.product.imageUrl) {
+        return '/static/image/no-image.webp'
       }
-      return `${import.meta.env.VITE_API_BASE_URL}${props.product.imageUrl}`
+      const imageUrl = props.product.imageUrl
+      if (imageUrl.startsWith('http')) {
+        const urlParts = imageUrl.split('/')
+        return `/static/image/${urlParts[urlParts.length - 1]}`
+      }
+      return `/static/image/${imageUrl}`
     })
 
     const showBadges = computed(() =>
@@ -174,6 +182,13 @@ export default {
       imageLoading.value = false
     }
 
+    const handleImageError = (event) => {
+      console.error('Image load failed:', event)
+      imageError.value = true
+      imageLoading.value = false
+      event.target.src = '/static/image/no-image.webp'
+    }
+
     const handleAddToCart = async () => {
       if (!canAddToCart.value) return
 
@@ -189,9 +204,10 @@ export default {
           duration: 3000
         })
       } catch (error) {
+        const errorMessage = handleError(error)
         store.dispatch('app/showNotification', {
           type: 'error',
-          message: error.message || '加入購物車失敗',
+          message: errorMessage || '加入購物車失敗',
           duration: 3000
         })
       } finally {
@@ -220,6 +236,7 @@ export default {
       formatPrice,
       truncateText,
       handleImageLoad,
+      handleImageError,
       handleAddToCart,
       handleViewDetail
     }
@@ -228,6 +245,7 @@ export default {
 </script>
 
 <style scoped>
+/* 樣式保持不變 */
 .product-card {
   position: relative;
   background: var(--card-bg);
