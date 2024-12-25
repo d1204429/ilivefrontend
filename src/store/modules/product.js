@@ -22,7 +22,9 @@ const state = {
     },
     featuredProducts: [],
     newArrivals: [],
-    recommendedProducts: []
+    recommendedProducts: [],
+    promotions: [], // 新增促銷活動
+    productPromotions: [] // 新增商品促銷
 }
 
 const getters = {
@@ -36,6 +38,8 @@ const getters = {
     getFeaturedProducts: state => state.featuredProducts,
     getNewArrivals: state => state.newArrivals,
     getRecommendedProducts: state => state.recommendedProducts,
+    getPromotions: state => state.promotions,
+    getProductPromotions: state => state.productPromotions,
 
     getProductById: state => id => {
         return state.products.find(product => product.productId === id)
@@ -47,7 +51,6 @@ const getters = {
 
     getFilteredProducts: state => {
         let filtered = [...state.products]
-
         const { category, priceRange, sortBy, keyword } = state.filters
 
         if (category) {
@@ -88,9 +91,24 @@ const getters = {
         }
 
         return filtered
+    },
+
+    // 獲取商品的促銷價格
+    getPromotionalPrice: state => productId => {
+        const promotion = state.productPromotions.find(p => p.productId === productId)
+        return promotion ? promotion.promotionalPrice : null
+    },
+
+    // 獲取活躍的促銷活動
+    getActivePromotions: state => {
+        const now = new Date()
+        return state.promotions.filter(promo =>
+            promo.isActive &&
+            new Date(promo.startDate) <= now &&
+            new Date(promo.endDate) >= now
+        )
     }
 }
-
 const actions = {
     async fetchProducts({ commit, state }) {
         try {
@@ -140,6 +158,24 @@ const actions = {
         try {
             const response = await productApi.getCategories()
             commit('SET_CATEGORIES', response)
+        } catch (error) {
+            commit('SET_ERROR', handleError(error))
+        }
+    },
+
+    async fetchPromotions({ commit }) {
+        try {
+            const response = await productApi.getActivePromotions()
+            commit('SET_PROMOTIONS', response)
+        } catch (error) {
+            commit('SET_ERROR', handleError(error))
+        }
+    },
+
+    async fetchProductPromotions({ commit }) {
+        try {
+            const response = await productApi.getProductPromotions()
+            commit('SET_PRODUCT_PROMOTIONS', response)
         } catch (error) {
             commit('SET_ERROR', handleError(error))
         }
@@ -249,6 +285,14 @@ const mutations = {
 
     SET_RECOMMENDED_PRODUCTS(state, products) {
         state.recommendedProducts = products
+    },
+
+    SET_PROMOTIONS(state, promotions) {
+        state.promotions = promotions
+    },
+
+    SET_PRODUCT_PROMOTIONS(state, productPromotions) {
+        state.productPromotions = productPromotions
     },
 
     RESET_FILTERS(state) {

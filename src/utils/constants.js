@@ -70,6 +70,14 @@ export const API_ENDPOINTS = {
         REFUND: (id) => `/api/v1/orders/${id}/refund`,
         INVOICE: (id) => `/api/v1/orders/${id}/invoice`,
         CONFIRM_RECEIPT: (id) => `/api/v1/orders/${id}/confirm-receipt`
+    },
+
+    // 促銷相關
+    PROMOTIONS: {
+        BASE: '/api/v1/admin/promotions',
+        ACTIVE: '/api/v1/admin/promotions/active',
+        PRODUCT: (id) => `/api/v1/admin/promotions/product/${id}`,
+        PRODUCTS: '/api/v1/admin/product-promotions/products'
     }
 }
 
@@ -124,7 +132,6 @@ export const PAYMENT_METHODS = {
         description: '使用LINE Pay支付'
     }
 }
-
 // 運送方式
 export const SHIPPING_METHODS = {
     HOME_DELIVERY: {

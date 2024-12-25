@@ -66,7 +66,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import ProductCard from '@/components/product/ProductCard.vue'
-import { productApi } from '@/services/api'
+import { promotionApi } from '@/services/api'
 
 export default {
   name: 'HomeView',
@@ -103,8 +103,8 @@ export default {
     const getPromotionsData = async () => {
       try {
         const [promotionsRes, productPromotionsRes] = await Promise.all([
-          productApi.getList({ type: 'promotion' }),
-          productApi.getList({ type: 'productPromotion' })
+          promotionApi.getActivePromotions(),
+          promotionApi.getProductPromotions()
         ])
 
         activePromotions.value = promotionsRes.filter(promo =>
@@ -173,11 +173,8 @@ export default {
     }
   }
 }
-
 </script>
-
 <style scoped>
-
 .home-view {
   padding: 0rem;
   max-width: 1200px;
@@ -371,5 +368,4 @@ export default {
     margin: 0 0.5rem;
   }
 }
-
 </style>

@@ -49,7 +49,9 @@ export const API_PATHS = {
         SEARCH: '/products/search',
         NEW_ARRIVALS: '/products/new-arrivals',
         RECOMMENDED: '/products/recommended',
-        REVIEWS: '/reviews'
+        REVIEWS: '/reviews',
+        PROMOTIONS: '/admin/promotions',
+        PRODUCT_PROMOTIONS: '/admin/product-promotions'
     },
     CART: {
         BASE: '/cart',
@@ -63,7 +65,11 @@ export const API_PATHS = {
         PAYMENT: '/payment',
         TRACKING: '/tracking'
     },
-    CATEGORIES: '/categories'
+    CATEGORIES: '/categories',
+    ADMIN: {
+        PROMOTIONS: '/admin/promotions',
+        PRODUCT_PROMOTIONS: '/admin/product-promotions/products'
+    }
 }
 
 // 創建 axios 實例
@@ -86,7 +92,6 @@ const retryConfig = {
         )
     }
 }
-
 // Token 管理器
 const tokenManager = {
     getAccessToken: () => localStorage.getItem(TOKEN_CONSTANTS.ACCESS_TOKEN_KEY),
@@ -216,40 +221,6 @@ api.interceptors.response.use(
         return Promise.reject(errorInfo)
     }
 )
-
-// 處理登出
-const handleLogout = async () => {
-    try {
-        tokenManager.removeTokens()
-        await store.dispatch('auth/logout')
-        router.push({
-            path: '/login',
-            query: {
-                redirect: router.currentRoute.value.fullPath,
-                error: 'session_expired'
-            }
-        })
-    } catch (error) {
-        console.error('Logout failed:', error)
-    }
-}
-
-// 判斷是否應該重試請求
-const shouldRetryRequest = (error) => {
-    const { retries = 0 } = error.config
-    return retries < retryConfig.retries && retryConfig.shouldRetry(error)
-}
-
-// 處理請求重試
-const handleRequestRetry = (error) => {
-    const config = error.config
-    config.retries = (config.retries || 0) + 1
-    const delayTime = config.retries * retryConfig.retryDelay
-
-    return new Promise(resolve => {
-        setTimeout(() => resolve(api(config)), delayTime)
-    })
-}
 // API 服務
 export const authApi = {
     login: (credentials) => api.post(API_PATHS.AUTH.LOGIN, credentials),
@@ -290,6 +261,12 @@ export const productApi = {
     addReview: (productId, data) => api.post(`${API_PATHS.PRODUCTS.BASE}/${productId}${API_PATHS.PRODUCTS.REVIEWS}`, data)
 }
 
+export const promotionApi = {
+    getActivePromotions: () => api.get(API_PATHS.ADMIN.PROMOTIONS),
+    getProductPromotions: () => api.get(API_PATHS.ADMIN.PRODUCT_PROMOTIONS),
+    getPromotionDetails: (promotionId) => api.get(`${API_PATHS.ADMIN.PROMOTIONS}/${promotionId}`)
+}
+
 export const cartApi = {
     getItems: () => api.get(API_PATHS.CART.ITEMS),
     addItem: (data) => api.post(API_PATHS.CART.ITEMS, data),
@@ -313,20 +290,5 @@ export const orderApi = {
     confirmReceipt: (id) => api.put(`${API_PATHS.ORDERS.BASE}/${id}/confirm-receipt`),
     getShipmentTracking: (id) => api.get(`${API_PATHS.ORDERS.BASE}/${id}${API_PATHS.ORDERS.TRACKING}`)
 }
-
-export const promotionApi = {
-    // 獲取所有活動的促銷
-    getActivePromotions: () => api.get(API_PATHS.PRODUCTS.PROMOTIONS),
-
-    // 獲取特定商品的促銷
-    getProductPromotions: (productId) =>
-        api.get(`${API_PATHS.PRODUCTS.BASE}/${productId}/promotions`),
-
-    // 獲取特定促銷活動詳情
-    getPromotionDetails: (promotionId) =>
-        api.get(`${API_PATHS.PRODUCTS.PROMOTIONS}/${promotionId}`)
-}
-
-
 
 export default api
