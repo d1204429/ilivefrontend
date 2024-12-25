@@ -43,7 +43,7 @@
               <router-link
                   v-for="category in categories"
                   :key="category.id"
-                  :to="{ path: '/products', query: { search: category.name } }"
+                  :to="{ path: '/products', query: { categoryId: category.id } }"
                   class="dropdown-item"
                   @click="toggleMenu"
               >
@@ -73,7 +73,9 @@
             v-model="searchKeyword"
             placeholder="搜尋商品"
             @keyup.enter="handleSearch"
+            @input="handleSearchInput"
             aria-label="搜尋"
+            autocomplete="off"
         >
         <button
             @click="handleSearch"
@@ -81,6 +83,18 @@
         >
           <i class="fas fa-search"></i>
         </button>
+
+        <!-- 搜尋建議下拉框 -->
+        <div v-if="showSuggestions && searchSuggestions.length > 0"
+             class="search-suggestions">
+          <ul>
+            <li v-for="suggestion in searchSuggestions"
+                :key="suggestion.id"
+                @click="handleSuggestionClick(suggestion)">
+              {{ suggestion.name }}
+            </li>
+          </ul>
+        </div>
       </div>
 
       <!-- 用戶操作區 -->
@@ -122,6 +136,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
+import { debounce } from 'lodash'
 
 export default {
   name: 'TheHeader',
@@ -133,11 +148,9 @@ export default {
     const isMenuOpen = ref(false)
     const isCategoryOpen = ref(false)
     const searchKeyword = ref('')
-    const categories = ref([
-      { id: 11, name: '冰箱' },
-      { id: 12, name: '電視' },
-      { id: 13, name: '洗衣機' }
-    ])
+    const searchSuggestions = ref([])
+    const showSuggestions = ref(false)
+    const categories = ref([])
     const isInitialized = ref(false)
 
     // Computed Properties
@@ -178,20 +191,58 @@ export default {
       }
     }
 
-    const initializeHeader = async () => {
-      if (isInitialized.value) return
-      try {
-        await fetchCategories()
-        await fetchUserData()
-        isInitialized.value = true
-      } catch (error) {
-        console.error('初始化頁面失敗:', error)
-        store.dispatch('app/setError', {
-          message: '初始化失敗，請重新整理頁面',
-          type: 'error',
-          duration: 3000
-        })
+    const handleSearchInput = debounce(async () => {
+      if (searchKeyword.value.trim().length > 0) {
+        try {
+          const results = await store.dispatch('product/searchProducts', {
+            keyword: searchKeyword.value.trim()
+          })
+          searchSuggestions.value = results.slice(0, 5)
+          showSuggestions.value = true
+        } catch (error) {
+          console.error('搜尋建議獲取失敗:', error)
+        }
+      } else {
+        searchSuggestions.value = []
+        showSuggestions.value = false
       }
+    }, 300)
+
+    const handleSuggestionClick = (suggestion) => {
+      router.push({
+        path: `/products/${suggestion.id}`,
+        query: { search: searchKeyword.value }
+      })
+      searchKeyword.value = ''
+      showSuggestions.value = false
+    }
+
+    const handleSearch = () => {
+      const trimmedKeyword = searchKeyword.value.trim()
+      if (trimmedKeyword) {
+        router.push({
+          path: '/products',
+          query: { search: trimmedKeyword, page: 1 }
+        })
+        searchKeyword.value = ''
+        showSuggestions.value = false
+        if (isMenuOpen.value) {
+          toggleMenu()
+        }
+      }
+    }
+
+    // 其餘方法保持不變...
+    const toggleMenu = () => {
+      isMenuOpen.value = !isMenuOpen.value
+      if (!isMenuOpen.value) {
+        isCategoryOpen.value = false
+      }
+      document.body.style.overflow = isMenuOpen.value ? 'hidden' : ''
+    }
+
+    const toggleCategory = () => {
+      isCategoryOpen.value = !isCategoryOpen.value
     }
 
     const handleLogout = async () => {
@@ -210,41 +261,27 @@ export default {
         })
       }
     }
+    // Lifecycle Hooks
+    onMounted(async () => {
+      await initializeHeader()
+      window.addEventListener('resize', handleResize)
 
-    const handleSearch = () => {
-      const trimmedKeyword = searchKeyword.value.trim()
-      if (trimmedKeyword) {
-        router.push({
-          path: '/products',
-          query: { search: trimmedKeyword, page: 1 }
-        })
-        searchKeyword.value = ''
-        if (isMenuOpen.value) {
-          toggleMenu()
+      // 監聽點擊事件以關閉搜尋建議
+      document.addEventListener('click', (e) => {
+        const searchBox = document.querySelector('.search-box')
+        if (searchBox && !searchBox.contains(e.target)) {
+          showSuggestions.value = false
         }
-      }
-    }
+      })
+    })
 
-    const toggleMenu = () => {
-      isMenuOpen.value = !isMenuOpen.value
-      if (!isMenuOpen.value) {
-        isCategoryOpen.value = false
-      }
-      document.body.style.overflow = isMenuOpen.value ? 'hidden' : ''
-    }
+    onUnmounted(() => {
+      window.removeEventListener('resize', handleResize)
+      document.body.style.overflow = ''
+      document.removeEventListener('click', () => {})
+    })
 
-    const toggleCategory = () => {
-      isCategoryOpen.value = !isCategoryOpen.value
-    }
-
-    const handleResize = () => {
-      if (window.innerWidth > 768 && isMenuOpen.value) {
-        isMenuOpen.value = false
-        document.body.style.overflow = ''
-      }
-    }
-
-    // Watchers
+    // Watch Effects
     watch(isLoggedIn, async (newValue, oldValue) => {
       if (newValue && newValue !== oldValue) {
         await fetchUserData()
@@ -259,21 +296,12 @@ export default {
       }
     })
 
-    // Lifecycle Hooks
-    onMounted(async () => {
-      await initializeHeader()
-      window.addEventListener('resize', handleResize)
-    })
-
-    onUnmounted(() => {
-      window.removeEventListener('resize', handleResize)
-      document.body.style.overflow = ''
-    })
-
     return {
       isMenuOpen,
       isCategoryOpen,
       searchKeyword,
+      searchSuggestions,
+      showSuggestions,
       categories,
       isLoggedIn,
       currentUser,
@@ -281,11 +309,15 @@ export default {
       toggleMenu,
       toggleCategory,
       handleSearch,
+      handleSearchInput,
+      handleSuggestionClick,
       handleLogout
     }
   }
 }
 </script>
+
+
 <style scoped>
 .header {
   background: #fff;
