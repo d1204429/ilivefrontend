@@ -7,8 +7,10 @@ class UserService {
     constructor() {
         this.baseUrl = '/users'
         this.defaultHeaders = {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
         }
+        this.timeout = 15000
     }
 
     // 資料驗證器
@@ -28,6 +30,10 @@ class UserService {
             throw new Error('無效的電話號碼格式')
         }
 
+        if (userData.password && !validatePassword(userData.password)) {
+            throw new Error('密碼必須包含至少8個字符，包括大小寫字母、數字和特殊符號')
+        }
+
         return true
     }
 
@@ -38,7 +44,8 @@ class UserService {
                 headers: {
                     ...this.defaultHeaders,
                     'Cache-Control': 'no-cache'
-                }
+                },
+                timeout: this.timeout
             })
             return this.processResponse(response)
         } catch (error) {
@@ -51,7 +58,8 @@ class UserService {
         try {
             this.validateUserData(userData)
             const response = await api.put(`${this.baseUrl}/profile`, userData, {
-                headers: this.defaultHeaders
+                headers: this.defaultHeaders,
+                timeout: this.timeout
             })
             return this.processResponse(response)
         } catch (error) {
@@ -70,15 +78,19 @@ class UserService {
                 throw new Error('新密碼必須包含至少8個字符，包括大小寫字母、數字和特殊符號')
             }
 
+            if (passwordData.oldPassword === passwordData.newPassword) {
+                throw new Error('新密碼不能與舊密碼相同')
+            }
+
             const response = await api.put(`${this.baseUrl}/password`, passwordData, {
-                headers: this.defaultHeaders
+                headers: this.defaultHeaders,
+                timeout: this.timeout
             })
             return this.processResponse(response)
         } catch (error) {
             throw this.handleServiceError(error, '更改密碼失敗')
         }
     }
-
     // 上傳頭像
     async uploadAvatar(file) {
         try {
@@ -94,7 +106,7 @@ class UserService {
                 headers: {
                     'Content-Type': 'multipart/form-data'
                 },
-                timeout: 30000
+                timeout: this.timeout
             })
             return this.processResponse(response)
         } catch (error) {
@@ -119,6 +131,22 @@ class UserService {
         }
 
         return { isValid: true }
+    }
+
+    // 檢查用戶會話狀態
+    async checkSession() {
+        try {
+            const response = await api.get(`${this.baseUrl}/session`, {
+                headers: {
+                    ...this.defaultHeaders,
+                    'Cache-Control': 'no-cache'
+                },
+                timeout: this.timeout
+            })
+            return this.processResponse(response)
+        } catch (error) {
+            throw this.handleServiceError(error, '檢查會話狀態失敗')
+        }
     }
 
     // 處理響應數據
@@ -168,23 +196,7 @@ class UserService {
                 break
         }
 
-        handleError(errorData)
-        throw errorData
-    }
-
-    // 檢查用戶會話狀態
-    async checkSession() {
-        try {
-            const response = await api.get(`${this.baseUrl}/session`, {
-                headers: {
-                    ...this.defaultHeaders,
-                    'Cache-Control': 'no-cache'
-                }
-            })
-            return this.processResponse(response)
-        } catch (error) {
-            throw this.handleServiceError(error, '檢查會話狀態失敗')
-        }
+        return errorData
     }
 }
 

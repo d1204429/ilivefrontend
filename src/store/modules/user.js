@@ -3,21 +3,25 @@ import { userApi } from '@/services/api'
 import authService from '@/services/auth.service'
 import router from '@/router'
 
+// Token 配置
 const TOKEN_CONFIG = {
-    ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
-    REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
+    ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY || 'access_token',
+    REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY || 'refresh_token',
     TOKEN_PREFIX: 'Bearer',
-    TOKEN_EXPIRY: parseInt(import.meta.env.VITE_JWT_EXPIRY) || 30 * 60 * 1000 // 30分鐘
+    TOKEN_EXPIRY: parseInt(import.meta.env.VITE_JWT_EXPIRY) || 30 * 60 * 1000
 }
 
+// 安全配置
 const SECURITY_CONFIG = {
     MAX_LOGIN_ATTEMPTS: parseInt(import.meta.env.VITE_MAX_LOGIN_ATTEMPTS) || 5,
     LOCK_DURATION: parseInt(import.meta.env.VITE_LOCK_DURATION) || 30 * 60 * 1000,
     SESSION_TIMEOUT: parseInt(import.meta.env.VITE_SESSION_TIMEOUT) || 60 * 60 * 1000,
     PASSWORD_MIN_LENGTH: 8,
-    REFRESH_THRESHOLD: 5 * 60 * 1000 // Token刷新閾值
+    REFRESH_THRESHOLD: 5 * 60 * 1000,
+    PASSWORD_PATTERN: /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/
 }
 
+// 初始狀態
 const state = {
     userInfo: JSON.parse(localStorage.getItem('user')) || null,
     isAuthenticated: !!localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY),
@@ -34,9 +38,17 @@ const state = {
     tokenRefreshTimeout: null,
     isRefreshing: false,
     refreshSubscribers: [],
-    userPreferences: JSON.parse(localStorage.getItem('userPreferences')) || {}
+    userPreferences: JSON.parse(localStorage.getItem('userPreferences')) || {},
+    passwordResetToken: null,
+    passwordResetExpiry: null,
+    verificationStatus: localStorage.getItem('verificationStatus') || 'unverified',
+    lastPasswordChange: localStorage.getItem('lastPasswordChange') || null,
+    securityQuestions: JSON.parse(localStorage.getItem('securityQuestions')) || [],
+    twoFactorEnabled: localStorage.getItem('twoFactorEnabled') === 'true',
+    twoFactorSecret: null,
+    loginHistory: JSON.parse(localStorage.getItem('loginHistory')) || []
 }
-
+// mutations
 const mutations = {
     SET_LOADING(state, status) {
         state.loading = status
@@ -128,6 +140,23 @@ const mutations = {
         }
         state.tokenRefreshTimeout = timeout
     },
+    SET_VERIFICATION_STATUS(state, status) {
+        state.verificationStatus = status
+        localStorage.setItem('verificationStatus', status)
+    },
+    SET_PASSWORD_RESET_TOKEN(state, { token, expiry }) {
+        state.passwordResetToken = token
+        state.passwordResetExpiry = expiry
+    },
+    UPDATE_LOGIN_HISTORY(state, loginData) {
+        state.loginHistory.push(loginData)
+        localStorage.setItem('loginHistory', JSON.stringify(state.loginHistory))
+    },
+    SET_TWO_FACTOR_STATUS(state, { enabled, secret = null }) {
+        state.twoFactorEnabled = enabled
+        state.twoFactorSecret = secret
+        localStorage.setItem('twoFactorEnabled', enabled)
+    },
     CLEAR_USER_STATE(state) {
         if (state.sessionTimeout) clearTimeout(state.sessionTimeout)
         if (state.tokenRefreshTimeout) clearTimeout(state.tokenRefreshTimeout)
@@ -147,7 +176,13 @@ const mutations = {
             tokenRefreshTimeout: null,
             isRefreshing: false,
             refreshSubscribers: [],
-            userPreferences: {}
+            userPreferences: {},
+            verificationStatus: 'unverified',
+            passwordResetToken: null,
+            passwordResetExpiry: null,
+            twoFactorEnabled: false,
+            twoFactorSecret: null,
+            loginHistory: []
         })
 
         const keysToRemove = [
@@ -158,13 +193,15 @@ const mutations = {
             'loginAttempts',
             'isLocked',
             'lockUntil',
-            'userPreferences'
+            'userPreferences',
+            'verificationStatus',
+            'twoFactorEnabled',
+            'loginHistory'
         ]
 
         keysToRemove.forEach(key => localStorage.removeItem(key))
     }
-}
-
+}// actions
 const actions = {
     async login({ commit, dispatch }, credentials) {
         if (state.isLocked && new Date(state.lockUntil) > new Date()) {
@@ -264,59 +301,10 @@ const actions = {
             await dispatch('cart/clearCart', null, { root: true })
             router.push('/login')
         }
-    },
-
-    async updateUserInfo({ commit }, userData) {
-        commit('SET_LOADING', true)
-        try {
-            const response = await userApi.updateProfile(userData)
-            commit('SET_USER_INFO', response)
-            commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
-            return response
-        } catch (error) {
-            commit('SET_ERROR', error.message)
-            throw error
-        } finally {
-            commit('SET_LOADING', false)
-        }
-    },
-
-    async updateUserPreferences({ commit }, preferences) {
-        commit('SET_USER_PREFERENCES', preferences)
-        try {
-            await userApi.updatePreferences(preferences)
-            commit('SET_SUCCESS_MESSAGE', '偏好設定已更新')
-        } catch (error) {
-            commit('SET_ERROR', error.message)
-            throw error
-        }
-    },
-
-    async checkAuth({ commit, dispatch }) {
-        const token = localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
-        const user = JSON.parse(localStorage.getItem('user'))
-
-        if (!token || !user) {
-            commit('CLEAR_USER_STATE')
-            return false
-        }
-
-        try {
-            commit('SET_TOKENS', {
-                accessToken: token,
-                refreshToken: localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
-            })
-            commit('SET_USER_INFO', user)
-            commit('SET_AUTH_STATUS', true)
-            await dispatch('setupAuthRefresh')
-            return true
-        } catch (error) {
-            commit('CLEAR_USER_STATE')
-            return false
-        }
     }
 }
 
+// getters
 const getters = {
     isAuthenticated: state => state.isAuthenticated,
     currentUser: state => state.userInfo,
@@ -347,12 +335,4 @@ export default {
     actions,
     getters
 }
-
-
-//
-
-
-//
-
-
 
