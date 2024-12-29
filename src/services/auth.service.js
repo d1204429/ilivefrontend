@@ -13,7 +13,6 @@ class AuthService {
         this.refreshSubscribers = []
         this.tokenExpirationTime = parseInt(localStorage.getItem('tokenExpirationTime'))
 
-        // 初始化時檢查並設置 token 刷新
         if (this.token && this.tokenExpirationTime) {
             this.setupTokenRefresh()
         }
@@ -25,12 +24,12 @@ class AuthService {
                 localStorage.setItem(import.meta.env.VITE_JWT_TOKEN_KEY, data.accessToken)
                 this.token = data.accessToken
 
-                // 設置 token 過期時間
                 const tokenExpiration = parseInt(import.meta.env.VITE_TOKEN_EXPIRATION) || 3600
                 this.tokenExpirationTime = Date.now() + tokenExpiration * 1000
                 localStorage.setItem('tokenExpirationTime', this.tokenExpirationTime.toString())
 
                 this.setupTokenRefresh()
+                api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`
             }
             if (data.refreshToken) {
                 localStorage.setItem(import.meta.env.VITE_JWT_REFRESH_KEY, data.refreshToken)
@@ -40,11 +39,6 @@ class AuthService {
                 const userStr = JSON.stringify(data.user)
                 localStorage.setItem('user', userStr)
                 this.user = data.user
-            }
-
-            // 更新 axios 默認請求頭
-            if (data.accessToken) {
-                api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`
             }
         } catch (error) {
             console.error('設置認證數據時發生錯誤:', error)
@@ -76,7 +70,6 @@ class AuthService {
             console.error('清除認證數據時發生錯誤:', error)
         }
     }
-
     setupTokenRefresh() {
         if (this.tokenRefreshTimeout) {
             clearTimeout(this.tokenRefreshTimeout)
@@ -89,7 +82,7 @@ class AuthService {
             return
         }
 
-        const timeUntilRefresh = this.tokenExpirationTime - currentTime - (5 * 60 * 1000) // 提前5分鐘刷新
+        const timeUntilRefresh = this.tokenExpirationTime - currentTime - (5 * 60 * 1000)
         this.tokenRefreshTimeout = setTimeout(() => {
             this.refreshAccessToken().catch(() => this.handleAuthError())
         }, Math.max(0, timeUntilRefresh))
@@ -106,7 +99,6 @@ class AuthService {
 
     getCurrentUser() {
         try {
-            // 確保返回的是深拷貝，避免外部修改影響內部狀態
             return this.user ? JSON.parse(JSON.stringify(this.user)) : null
         } catch (error) {
             console.error('獲取當前用戶數據時發生錯誤:', error)
@@ -155,6 +147,32 @@ class AuthService {
             await store.dispatch('auth/loginFailure', error)
             if (error.response?.status === 401) {
                 throw new Error('用戶名或密碼錯誤')
+            }
+            throw handleError(error)
+        }
+    }
+
+    async register(userData) {
+        try {
+            const response = await api.post('/users/register', userData)
+
+            if (response && response.status === 'success') {
+                return response
+            }
+            throw new Error('註冊失敗：' + (response.message || '未知錯誤'))
+        } catch (error) {
+            const errorMessage = error.response?.data?.message
+            if (errorMessage) {
+                if (errorMessage.includes('用戶名已存在')) {
+                    throw new Error('此用戶名已被使用')
+                }
+                if (errorMessage.includes('電子郵件已存在')) {
+                    throw new Error('此電子郵件已被註冊')
+                }
+                if (errorMessage.includes('手機號碼已存在')) {
+                    throw new Error('此手機號碼已被註冊')
+                }
+                throw new Error(errorMessage)
             }
             throw handleError(error)
         }
@@ -253,6 +271,21 @@ class AuthService {
                 return updatedUserData
             }
             throw new Error('更新用戶資料失敗')
+        } catch (error) {
+            throw handleError(error)
+        }
+    }
+
+    async changePassword(oldPassword, newPassword) {
+        try {
+            const userId = this.user?.userId
+            if (!userId) throw new Error('用戶未登入')
+
+            const response = await api.put(`/users/${userId}/password`, {
+                oldPassword,
+                newPassword
+            })
+            return response
         } catch (error) {
             throw handleError(error)
         }

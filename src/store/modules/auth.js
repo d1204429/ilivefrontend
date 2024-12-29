@@ -1,9 +1,9 @@
-// src/store/modules/auth.js - Part 1/3
-import { apiService } from '@/utils/axios'
+import { authApi } from '@/services/api'
 import { handleError } from '@/utils/errorHandler'
+import { apiService } from '@/utils/axios'
 import router from '@/router'
 
-// Token配置
+// Token and Security Configuration
 const TOKEN_CONFIG = {
     ACCESS_TOKEN_KEY: import.meta.env.VITE_JWT_TOKEN_KEY,
     REFRESH_TOKEN_KEY: import.meta.env.VITE_JWT_REFRESH_KEY,
@@ -13,7 +13,6 @@ const TOKEN_CONFIG = {
     TOKEN_EXPIRY_MARGIN: 5 * 60 * 1000
 }
 
-// 安全配置
 const SECURITY_CONFIG = {
     MAX_LOGIN_ATTEMPTS: parseInt(import.meta.env.VITE_MAX_LOGIN_ATTEMPTS) || 5,
     LOCK_DURATION: parseInt(import.meta.env.VITE_LOCK_DURATION) || 30 * 60 * 1000,
@@ -21,28 +20,7 @@ const SECURITY_CONFIG = {
     AUTO_LOGOUT_IDLE_TIME: parseInt(import.meta.env.VITE_AUTO_LOGOUT_IDLE_TIME) || 30 * 60 * 1000
 }
 
-// Token管理器
-const tokenManager = {
-    getTokens() {
-        return {
-            accessToken: localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY),
-            refreshToken: localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
-        }
-    },
-    setTokens(accessToken, refreshToken) {
-        if (accessToken) localStorage.setItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY, accessToken)
-        if (refreshToken) localStorage.setItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY, refreshToken)
-    },
-    removeTokens() {
-        localStorage.removeItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
-        localStorage.removeItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
-    },
-    getAuthHeader(token) {
-        return token ? `${TOKEN_CONFIG.TOKEN_PREFIX} ${token}` : null
-    }
-}
-
-// 初始狀態
+// Initial State
 const INITIAL_STATE = {
     user: null,
     token: null,
@@ -61,6 +39,27 @@ const INITIAL_STATE = {
     isRefreshing: false,
     refreshSubscribers: [],
     idleTimeout: null
+}
+
+// Token Manager
+const tokenManager = {
+    getTokens() {
+        return {
+            accessToken: localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY),
+            refreshToken: localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
+        }
+    },
+    setTokens(accessToken, refreshToken) {
+        if (accessToken) localStorage.setItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY, accessToken)
+        if (refreshToken) localStorage.setItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY, refreshToken)
+    },
+    removeTokens() {
+        localStorage.removeItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
+        localStorage.removeItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
+    },
+    getAuthHeader(token) {
+        return token ? `${TOKEN_CONFIG.TOKEN_PREFIX} ${token}` : null
+    }
 }
 
 // State
@@ -145,18 +144,6 @@ const mutations = {
         localStorage.removeItem('isLocked')
         localStorage.removeItem('lockUntil')
     },
-    SET_SESSION_TIMEOUT(state, timeout) {
-        if (state.sessionTimeout) clearTimeout(state.sessionTimeout)
-        state.sessionTimeout = timeout
-    },
-    SET_TOKEN_REFRESH_TIMEOUT(state, timeout) {
-        if (state.tokenRefreshTimeout) clearTimeout(state.tokenRefreshTimeout)
-        state.tokenRefreshTimeout = timeout
-    },
-    SET_IDLE_TIMEOUT(state, timeout) {
-        if (state.idleTimeout) clearTimeout(state.idleTimeout)
-        state.idleTimeout = timeout
-    },
     CLEAR_AUTH(state) {
         [state.sessionTimeout, state.tokenRefreshTimeout, state.idleTimeout].forEach(timeout => {
             if (timeout) clearTimeout(timeout)
@@ -170,7 +157,6 @@ const mutations = {
         localStorage.removeItem('lockUntil')
     }
 }
-// src/store/modules/auth.js - Part 2/3
 
 // Actions
 const actions = {
@@ -182,10 +168,9 @@ const actions = {
 
         commit('SET_LOADING', true)
         commit('SET_ERROR', null)
-        commit('SET_SUCCESS_MESSAGE', null)
 
         try {
-            const response = await apiService.auth.login(credentials)
+            const response = await authApi.login(credentials)
             if (!response?.accessToken || !response?.user) {
                 throw new Error('無效的登入回應')
             }
@@ -202,49 +187,47 @@ const actions = {
 
             await dispatch('setupAuthRefresh')
             await dispatch('setupIdleTimeout')
+            await dispatch('getProfile')
             return response
         } catch (error) {
             commit('INCREMENT_LOGIN_ATTEMPTS')
-            const errorMessage = error.response?.data?.message || '登入失敗，請檢查帳號密碼'
-            commit('SET_ERROR', errorMessage)
+            handleError(error)
+            commit('SET_ERROR', error.response?.data?.message || '登入失敗，請檢查帳號密碼')
             throw error
         } finally {
             commit('SET_LOADING', false)
         }
     },
 
-    async setupAuthRefresh({ dispatch, commit }) {
-        const setupTokenRefresh = () => {
-            const timeout = setTimeout(
-                () => dispatch('refreshToken').catch(() => dispatch('logout')),
-                TOKEN_CONFIG.REFRESH_INTERVAL - TOKEN_CONFIG.TOKEN_EXPIRY_MARGIN
-            )
-            commit('SET_TOKEN_REFRESH_TIMEOUT', timeout)
-        }
+    async register({ commit }, userData) {
+        commit('SET_LOADING', true)
+        commit('SET_ERROR', null)
 
-        const setupSessionTimeout = () => {
-            const timeout = setTimeout(
-                () => dispatch('logout'),
-                TOKEN_CONFIG.SESSION_TIMEOUT
-            )
-            commit('SET_SESSION_TIMEOUT', timeout)
+        try {
+            const response = await authApi.register(userData)
+            commit('SET_SUCCESS_MESSAGE', '註冊成功，請登入')
+            return response
+        } catch (error) {
+            handleError(error)
+            commit('SET_ERROR', error.response?.data?.message || '註冊失敗，請稍後再試')
+            throw error
+        } finally {
+            commit('SET_LOADING', false)
         }
-
-        setupTokenRefresh()
-        setupSessionTimeout()
     },
 
-    setupIdleTimeout({ commit, dispatch }) {
-        const timeout = setTimeout(
-            () => dispatch('logout'),
-            SECURITY_CONFIG.AUTO_LOGOUT_IDLE_TIME
-        )
-        commit('SET_IDLE_TIMEOUT', timeout)
-    },
-
-    updateActivity({ commit, dispatch }) {
-        commit('UPDATE_ACTIVITY_TIME')
-        dispatch('setupIdleTimeout')
+    async logout({ commit, dispatch }) {
+        try {
+            if (state.token) {
+                await authApi.logout()
+            }
+        } catch (error) {
+            console.error('登出錯誤:', error)
+        } finally {
+            commit('CLEAR_AUTH')
+            await dispatch('cart/clearCart', null, { root: true })
+            router.push('/')
+        }
     },
 
     async refreshToken({ commit, state }) {
@@ -263,7 +246,7 @@ const actions = {
         commit('SET_REFRESH_STATE', { isRefreshing: true })
 
         try {
-            const response = await apiService.auth.refreshToken(state.refreshToken)
+            const response = await authApi.refreshToken(state.refreshToken)
             if (!response?.accessToken) {
                 throw new Error('無效的token刷新響應')
             }
@@ -280,124 +263,101 @@ const actions = {
         } catch (error) {
             state.refreshSubscribers.forEach(callback => callback(null))
             commit('CLEAR_REFRESH_SUBSCRIBERS')
+            commit('CLEAR_AUTH')
+            handleError(error)
             throw error
         } finally {
             commit('SET_REFRESH_STATE', { isRefreshing: false })
         }
     },
 
-    async logout({ commit, dispatch }) {
-        try {
-            if (state.token) {
-                await apiService.auth.logout()
-            }
-        } catch (error) {
-            console.error('Logout error:', error)
-        } finally {
-            commit('CLEAR_AUTH')
-            await dispatch('cart/clearCart', null, { root: true })
-            router.push('/')
+    async setupAuthRefresh({ dispatch, commit }) {
+        const setupTokenRefresh = () => {
+            const timeout = setTimeout(
+                () => dispatch('refreshToken').catch(() => dispatch('logout')),
+                TOKEN_CONFIG.REFRESH_INTERVAL - TOKEN_CONFIG.TOKEN_EXPIRY_MARGIN
+            )
+            commit('SET_TOKEN_REFRESH_TIMEOUT', timeout)
         }
-    },// src/store/modules/auth.js - Part 3/3
 
-    async getProfile({ commit, dispatch }) {
-        if (!state.token) return null
-
-        try {
-            const response = await apiService.user.getProfile()
-            if (response) {
-                commit('SET_USER', response)
-                commit('UPDATE_ACTIVITY_TIME')
-                return response
-            }
-            throw new Error('獲取用戶資料失敗')
-        } catch (error) {
-            if (error.response?.status === 401) {
-                try {
-                    await dispatch('refreshToken')
-                    return dispatch('getProfile')
-                } catch (refreshError) {
-                    await dispatch('handleAuthError', error)
-                }
-            }
-            throw error
-        }
+        setupTokenRefresh()
     },
 
-    async handleAuthError({ dispatch }, error) {
-        if (error.response?.status === 401 && !error.config?._retry) {
-            try {
-                await dispatch('refreshToken')
-                return true
-            } catch (refreshError) {
-                if (router.currentRoute.value.meta.requiresAuth) {
-                    await dispatch('logout')
-                }
-                return false
-            }
-        }
-        return false
+    setupIdleTimeout({ commit, dispatch }) {
+        const timeout = setTimeout(
+            () => dispatch('logout'),
+            SECURITY_CONFIG.AUTO_LOGOUT_IDLE_TIME
+        )
+        commit('SET_IDLE_TIMEOUT', timeout)
     },
 
     async checkAuth({ commit, dispatch }) {
-        const { accessToken, refreshToken } = tokenManager.getTokens()
-        const user = JSON.parse(localStorage.getItem('user'))
-
-        if (!accessToken && !user) {
-            commit('CLEAR_AUTH')
-            return false
-        }
-
         try {
-            if (accessToken) {
-                commit('SET_TOKENS', { accessToken, refreshToken })
-                if (user) {
-                    commit('SET_USER', user)
-                    commit('SET_AUTH_STATUS', 'authenticated')
-                    commit('UPDATE_ACTIVITY_TIME')
+            const token = localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY)
+            const user = JSON.parse(localStorage.getItem('user'))
 
-                    if (router.currentRoute.value.meta.requiresAuth) {
-                        await dispatch('getProfile')
-                    }
-
-                    await dispatch('setupAuthRefresh')
-                    await dispatch('setupIdleTimeout')
-                    return true
-                }
+            if (token && user) {
+                commit('SET_TOKENS', {
+                    accessToken: token,
+                    refreshToken: localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
+                })
+                commit('SET_USER', user)
+                commit('SET_AUTH_STATUS', 'authenticated')
+                await dispatch('setupAuthRefresh')
+                await dispatch('setupIdleTimeout')
+                await dispatch('getProfile')
             }
-
-            if (!accessToken && user) {
-                commit('CLEAR_AUTH')
-            }
-
-            return false
         } catch (error) {
-            console.error('Check auth error:', error)
+            handleError(error)
             commit('CLEAR_AUTH')
-            return false
         }
     },
 
-    async updateProfile({ commit, dispatch }, profileData) {
+    async getProfile({ commit, dispatch }) {
         try {
-            const response = await apiService.user.updateProfile(profileData)
+            const response = await authApi.getUserProfile()
             if (response) {
                 commit('SET_USER', response)
                 commit('UPDATE_ACTIVITY_TIME')
-                commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
-                return response
             }
-            throw new Error('更新用戶資料失敗')
         } catch (error) {
+            console.error('獲取用戶資料失敗:', error)
             if (error.response?.status === 401) {
-                try {
-                    await dispatch('refreshToken')
-                    return dispatch('updateProfile', profileData)
-                } catch (refreshError) {
-                    await dispatch('handleAuthError', error)
-                }
+                commit('CLEAR_AUTH')
             }
+            handleError(error)
+        }
+    },
+
+    async updateProfile({ commit }, userData) {
+        commit('SET_LOADING', true)
+
+        try {
+            const response = await authApi.updateUserProfile(userData)
+            commit('SET_USER', response)
+            commit('SET_SUCCESS_MESSAGE', '個人資料更新成功')
+            return response
+        } catch (error) {
+            handleError(error)
+            commit('SET_ERROR', error.response?.data?.message || '更新個人資料失敗')
             throw error
+        } finally {
+            commit('SET_LOADING', false)
+        }
+    },
+
+    async changePassword({ commit }, passwordData) {
+        commit('SET_LOADING', true)
+
+        try {
+            await authApi.changePassword(passwordData)
+            commit('SET_SUCCESS_MESSAGE', '密碼更改成功')
+        } catch (error) {
+            handleError(error)
+            commit('SET_ERROR', error.response?.data?.message || '更改密碼失敗')
+            throw error
+        } finally {
+            commit('SET_LOADING', false)
         }
     }
 }
@@ -437,4 +397,3 @@ export default {
     actions,
     getters
 }
-
