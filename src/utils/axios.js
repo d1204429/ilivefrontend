@@ -297,16 +297,16 @@ const apiService = {
     },
 
     cart: {
-        getItems: () => api.get(API_PATHS.CART.ITEMS),
-        addItem: data => api.post(API_PATHS.CART.ITEMS, data),
-        updateItem: (id, data) => api.put(`${API_PATHS.CART.ITEMS}/${id}`, data),
-        removeItem: id => api.delete(`${API_PATHS.CART.ITEMS}/${id}`),
+        getItems: () => api.get(`${API_PATHS.CART.BASE}/items`),
+        addItem: data => api.post(`${API_PATHS.CART.BASE}/items`, data), // 修改這行,移除/add後綴
+        updateItem: (id, data) => api.put(`${API_PATHS.CART.BASE}/items/${id}`, data),
+        removeItem: id => api.delete(`${API_PATHS.CART.BASE}/items/${id}`),
         clear: () => api.delete(API_PATHS.CART.BASE),
-        applyCoupon: code => api.post(API_PATHS.CART.COUPON, { code }),
-        removeCoupon: () => api.delete(API_PATHS.CART.COUPON),
-        getShippingMethods: () => api.get(API_PATHS.CART.SHIPPING),
-        setShippingMethod: methodId => api.put(API_PATHS.CART.SHIPPING, { methodId }),
-        checkout: data => api.post(API_PATHS.CART.CHECKOUT, data)
+        applyCoupon: code => api.post(`${API_PATHS.CART.BASE}/coupon`, { code }),
+        removeCoupon: () => api.delete(`${API_PATHS.CART.BASE}/coupon`),
+        getShippingMethods: () => api.get(`${API_PATHS.CART.BASE}/shipping-methods`),
+        setShippingMethod: methodId => api.put(`${API_PATHS.CART.BASE}/shipping`, { methodId }),
+        checkout: data => api.post(`${API_PATHS.CART.BASE}/checkout`, data)
     },
 
     order: {
@@ -320,6 +320,32 @@ const apiService = {
         getShipmentTracking: id => api.get(`${API_PATHS.ORDERS.BASE}/${id}${API_PATHS.ORDERS.TRACKING}`)
     }
 }
+// 添加請求重試和隊列處理函數
+const processQueue = (error, token = null) => {
+    failedQueue.forEach(promise => {
+        if (error) {
+            promise.reject(error)
+        } else {
+            promise.resolve(token)
+        }
+    })
+    failedQueue = []
+}
 
+const shouldRetryRequest = (error) => {
+    return error.config?.retryCount < 3 &&
+        error.response?.status >= 500
+}
+
+const handleRequestRetry = async (error) => {
+    const config = error.config
+    config.retryCount = config.retryCount ?? 0 + 1
+    return api(config)
+}
+
+const handleLogout = async () => {
+    tokenManager.removeTokens()
+    await router.push('/login')
+}
 // 導出
 export { api as default, apiService }
