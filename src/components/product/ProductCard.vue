@@ -197,12 +197,21 @@ export default {
       try {
         await store.dispatch('cart/addToCart', {
           productId: props.product.productId,
-          quantity: 1
+          quantity: 1,
+          options: {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          }
         })
+
+        // 添加錯誤邊界處理
         store.dispatch('app/showNotification', {
           type: 'success',
           message: '已加入購物車',
           duration: 3000
+        }).catch(error => {
+          console.error('Failed to show notification:', error)
         })
       } catch (error) {
         const errorMessage = handleError(error)
@@ -210,11 +219,20 @@ export default {
           type: 'error',
           message: errorMessage || '加入購物車失敗',
           duration: 3000
+        }).catch(error => {
+          console.error('Failed to show error notification:', error)
+        })
+
+        // 添加錯誤日誌
+        console.error('Add to cart failed:', {
+          productId: props.product.productId,
+          error: errorMessage
         })
       } finally {
         addingToCart.value = false
       }
     }
+
 
     const handleViewDetail = () => {
       router.push({

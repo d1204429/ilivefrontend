@@ -7,7 +7,11 @@ class CartService {
     // 獲取購物車內容
     async getCartItems() {
         try {
-            const response = await axios.get(`${API_URL}/items`)
+            const response = await axios.get(`${API_URL}/items`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            })
             return response.data
         } catch (error) {
             throw handleError(error)
@@ -17,10 +21,15 @@ class CartService {
     // 添加商品到購物車
     async addToCart(productId, quantity, options = {}) {
         try {
-            const response = await axios.post(`${API_URL}/items`, {
+            const response = await axios.post(`${API_URL}/items/add`, {
                 productId,
                 quantity,
                 ...options
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Content-Type': 'application/json'
+                }
             })
             return response.data
         } catch (error) {
@@ -33,6 +42,10 @@ class CartService {
         try {
             const response = await axios.put(`${API_URL}/items/${cartItemId}`, {
                 quantity
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
             })
             return response.data
         } catch (error) {
