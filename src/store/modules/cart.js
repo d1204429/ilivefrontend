@@ -70,7 +70,11 @@ export default {
         async fetchCartItems({ commit }) {
             try {
                 commit('SET_LOADING', true)
-                const response = await axios.get('/api/v1/cart/items')
+                const response = await axios.get('/api/v1/cart/items', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                })
                 commit('SET_CART_ITEMS', response.data)
                 commit('UPDATE_SUBTOTAL')
             } catch (error) {
@@ -83,9 +87,13 @@ export default {
         async addToCart({ commit }, { productId, quantity = 1 }) {
             try {
                 commit('SET_LOADING', true)
-                const response = await axios.post('/api/v1/cart/items', {
+                const response = await axios.post('/api/v1/cart/items/add', {
                     productId,
                     quantity
+                }, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
                 })
                 commit('ADD_TO_CART', response.data)
                 return response.data
@@ -100,7 +108,13 @@ export default {
         async updateQuantity({ commit }, { productId, quantity }) {
             try {
                 commit('SET_LOADING', true)
-                await axios.put(`/api/v1/cart/items/${productId}`, { quantity })
+                await axios.put(`/api/v1/cart/items/${productId}`, {
+                    quantity
+                }, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                })
                 commit('UPDATE_QUANTITY', { productId, quantity })
             } catch (error) {
                 commit('SET_ERROR', error.response?.data?.message || '更新數量失敗')
@@ -113,7 +127,11 @@ export default {
         async removeFromCart({ commit }, productId) {
             try {
                 commit('SET_LOADING', true)
-                await axios.delete(`/api/v1/cart/items/${productId}`)
+                await axios.delete(`/api/v1/cart/items/${productId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                })
                 commit('REMOVE_FROM_CART', productId)
             } catch (error) {
                 commit('SET_ERROR', error.response?.data?.message || '移除商品失敗')
@@ -126,7 +144,11 @@ export default {
         async clearCart({ commit }) {
             try {
                 commit('SET_LOADING', true)
-                await axios.delete('/api/v1/cart/clear')
+                await axios.delete('/api/v1/cart/clear', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                })
                 commit('CLEAR_CART')
             } catch (error) {
                 commit('SET_ERROR', error.response?.data?.message || '清空購物車失敗')

@@ -236,22 +236,64 @@ export default {
           productId: product.value.productId,
           quantity: quantity.value,
           color: selectedColor.value,
-          size: selectedSize.value
+          size: selectedSize.value,
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
         })
+
+        // 添加錯誤邊界處理
         store.dispatch('app/showNotification', {
           type: 'success',
-          message: '已加入購物車'
+          message: '已加入購物車',
+          duration: 3000
+        }).catch(error => {
+          console.error('Failed to show notification:', error)
         })
       } catch (error) {
         const errorMessage = handleError(error)
         store.dispatch('app/showNotification', {
           type: 'error',
-          message: errorMessage || '加入購物車失敗'
+          message: errorMessage || '加入購物車失敗',
+          duration: 3000
+        }).catch(error => {
+          console.error('Failed to show error notification:', error)
+        })
+
+        // 添加錯誤日誌
+        console.error('Add to cart failed:', {
+          productId: product.value.productId,
+          error: errorMessage
         })
       } finally {
         loading.value = false
       }
     }
+
+// 添加fetchProduct方法的錯誤處理
+    const fetchProduct = async () => {
+      loading.value = true
+      try {
+        const response = await store.dispatch('product/getProductById', route.params.id)
+        if (!response) {
+          throw new Error('商品不存在')
+        }
+        product.value = response
+        selectedColor.value = product.value.colors?.[0]?.code
+        selectedSize.value = product.value.sizes?.[0]
+      } catch (error) {
+        const errorMessage = handleError(error)
+        store.dispatch('app/showNotification', {
+          type: 'error',
+          message: errorMessage || '獲取商品資訊失敗',
+          duration: 3000
+        })
+        router.push('/products')
+      } finally {
+        loading.value = false
+      }
+    }
+
 
     const buyNow = async () => {
       if (!canAddToCart.value) return

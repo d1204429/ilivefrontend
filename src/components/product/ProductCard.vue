@@ -195,10 +195,21 @@ export default {
 
       addingToCart.value = true
       try {
+        const token = localStorage.getItem('token')
+        if (!token) {
+          // 如果沒有token，重定向到登入頁面
+          router.push('/login')
+          return
+        }
+
         await store.dispatch('cart/addToCart', {
           productId: props.product.productId,
-          quantity: 1
+          quantity: 1,
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
         })
+
         store.dispatch('app/showNotification', {
           type: 'success',
           message: '已加入購物車',
@@ -206,6 +217,10 @@ export default {
         })
       } catch (error) {
         const errorMessage = handleError(error)
+        if (error.response?.status === 401) {
+          // Token無效時重定向到登入頁面
+          router.push('/login')
+        }
         store.dispatch('app/showNotification', {
           type: 'error',
           message: errorMessage || '加入購物車失敗',
@@ -215,6 +230,8 @@ export default {
         addingToCart.value = false
       }
     }
+
+
 
     const handleViewDetail = () => {
       router.push({
