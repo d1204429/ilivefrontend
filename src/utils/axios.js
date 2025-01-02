@@ -298,15 +298,10 @@ const apiService = {
 
     cart: {
         getItems: () => api.get(`${API_PATHS.CART.BASE}/items`),
-        addItem: data => api.post(`${API_PATHS.CART.BASE}/items`, data), // 修改這行,移除/add後綴
+        addItem: data => api.post(`${API_PATHS.CART.BASE}/items/add`, data), // 保持/add
         updateItem: (id, data) => api.put(`${API_PATHS.CART.BASE}/items/${id}`, data),
         removeItem: id => api.delete(`${API_PATHS.CART.BASE}/items/${id}`),
-        clear: () => api.delete(API_PATHS.CART.BASE),
-        applyCoupon: code => api.post(`${API_PATHS.CART.BASE}/coupon`, { code }),
-        removeCoupon: () => api.delete(`${API_PATHS.CART.BASE}/coupon`),
-        getShippingMethods: () => api.get(`${API_PATHS.CART.BASE}/shipping-methods`),
-        setShippingMethod: methodId => api.put(`${API_PATHS.CART.BASE}/shipping`, { methodId }),
-        checkout: data => api.post(`${API_PATHS.CART.BASE}/checkout`, data)
+        clear: () => api.delete(API_PATHS.CART.BASE)
     },
 
     order: {

@@ -261,7 +261,7 @@ export default {
         globalError.value = ''
         successMessage.value = ''
 
-        await store.dispatch('auth/login', {
+        const response = await store.dispatch('auth/login', {
           username: formData.username.trim(),
           password: formData.password
         })
@@ -273,15 +273,16 @@ export default {
           localStorage.removeItem('rememberedUsername')
         }
 
+        console.log('Login successful:', response)
         loginAttempts.value = 0
         startSuccessCountdown()
       } catch (error) {
+        console.error('Login error:', error)
         handleLoginError(error)
       } finally {
         isLoading.value = false
       }
     }
-
     // UI Helpers
     const togglePasswordVisibility = () => {
       showPassword.value = !showPassword.value

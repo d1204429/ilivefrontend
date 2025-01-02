@@ -195,37 +195,36 @@ export default {
 
       addingToCart.value = true
       try {
-        const token = localStorage.getItem('token')
+        // 檢查並重新獲取新的token
+        //const token = await refreshToken() // 需要實作 refreshToken 方法
         if (!token) {
-          // 如果沒有token，重定向到登入頁面
           router.push('/login')
           return
         }
 
-        await store.dispatch('cart/addToCart', {
-          productId: props.product.productId,
-          quantity: 1,
+        const response = await fetch('http://localhost:1988/api/v1/cart/items/add', {
+          method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`
-          }
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.token}`
+          },
+          body: JSON.stringify({
+            productId: props.product.productId,
+            quantity: 1
+          })
         })
 
-        store.dispatch('app/showNotification', {
-          type: 'success',
-          message: '已加入購物車',
-          duration: 3000
-        })
-      } catch (error) {
-        const errorMessage = handleError(error)
-        if (error.response?.status === 401) {
-          // Token無效時重定向到登入頁面
-          router.push('/login')
+        if (!response.ok) {
+          if (response.status === 401) {
+            router.push('/login')
+            return
+          }
+          throw new Error('加入購物車失敗')
         }
-        store.dispatch('app/showNotification', {
-          type: 'error',
-          message: errorMessage || '加入購物車失敗',
-          duration: 3000
-        })
+
+        alert('已加入購物車')
+      } catch (error) {
+        alert(error.message || '加入購物車失敗')
       } finally {
         addingToCart.value = false
       }

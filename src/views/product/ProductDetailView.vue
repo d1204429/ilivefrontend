@@ -143,6 +143,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import axios from 'axios'
 
+
 export default {
   name: 'ProductDetailView',
 
@@ -249,32 +250,44 @@ export default {
     const formatPrice = (price) => {
       return price?.toLocaleString('zh-TW') || '0'
     }
-    // 購物車相關方法
+
     const addToCart = async () => {
       if (!canAddToCart.value) return
 
       try {
-        const cartItem = {
-          productId: product.value.id,
-          quantity: quantity.value,
-          color: selectedColor.value,
-          size: selectedSize.value,
-          price: product.value.price,
-          name: product.value.name,
-          image: getImageUrl(product.value.images?.[0])
+        const token = localStorage.getItem('jwt_token')
+        const productId = parseInt(route.params.id) // 從 URL 取得正確的 ID
+        console.log('ProductID:', productId)
+
+        if (!token) {
+          router.push('/login')
+          return
         }
 
-        await store.dispatch('cart/addToCart', cartItem)
-        store.dispatch('showMessage', {
-          type: 'success',
-          message: '成功加入購物車'
+        const response = await fetch('http://localhost:1988/api/v1/cart/items/add', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            productId: productId,  // 使用從 URL 取得的 ID
+            quantity: quantity.value
+          })
         })
+
+        if (response.ok) {
+          alert('已加入購物車')
+        } else {
+          const errorData = await response.json()
+          throw new Error(errorData.message || '加入購物車失敗')
+        }
       } catch (error) {
-        console.error('加入購物車失敗:', error)
-        store.dispatch('showMessage', {
-          type: 'error',
-          message: error.response?.data?.message || '加入購物車失敗'
-        })
+        if (error.response?.status === 401) {
+          router.push('/login')
+        } else {
+          alert(error.message || '加入購物車失敗')
+        }
       }
     }
 
