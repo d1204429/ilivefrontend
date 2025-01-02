@@ -230,46 +230,43 @@ export default {
     const addToCart = async () => {
       if (!canAddToCart.value) return
 
-      loading.value = true
       try {
-        await store.dispatch('cart/addToCart', {
-          productId: product.value.productId,
-          quantity: quantity.value,
-          color: selectedColor.value,
-          size: selectedSize.value,
+        // 使用跟 auth.js 一樣的 key 來取得 token
+        const token = localStorage.getItem('jwt_token')
+        console.log('token:', token) // 檢查 token
+
+        if (!token) {
+          router.push('/login')
+          return
+        }
+
+        const response = await fetch('http://localhost:1988/api/v1/cart/items/add', {
+          method: 'POST',
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            productId: product.value.id,
+            quantity: quantity.value
+          })
         })
 
-        // 添加錯誤邊界處理
-        store.dispatch('app/showNotification', {
-          type: 'success',
-          message: '已加入購物車',
-          duration: 3000
-        }).catch(error => {
-          console.error('Failed to show notification:', error)
-        })
+        if (response.ok) {
+          alert('已加入購物車')
+        } else {
+          const errorData = await response.json()
+          throw new Error(errorData.message || '加入購物車失敗')
+        }
       } catch (error) {
-        const errorMessage = handleError(error)
-        store.dispatch('app/showNotification', {
-          type: 'error',
-          message: errorMessage || '加入購物車失敗',
-          duration: 3000
-        }).catch(error => {
-          console.error('Failed to show error notification:', error)
-        })
-
-        // 添加錯誤日誌
-        console.error('Add to cart failed:', {
-          productId: product.value.productId,
-          error: errorMessage
-        })
-      } finally {
-        loading.value = false
+        console.error('Error:', error)
+        if (error.response?.status === 401) {
+          router.push('/login')
+        } else {
+          alert(error.message || '加入購物車失敗')
+        }
       }
     }
-
 // 添加fetchProduct方法的錯誤處理
     const fetchProduct = async () => {
       loading.value = true

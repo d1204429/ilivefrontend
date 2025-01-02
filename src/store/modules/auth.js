@@ -144,6 +144,14 @@ const mutations = {
         localStorage.removeItem('isLocked')
         localStorage.removeItem('lockUntil')
     },
+
+
+    SET_TOKEN_REFRESH_TIMEOUT(state, timeout) {
+        state.tokenRefreshTimeout = timeout
+    },
+    SET_IDLE_TIMEOUT(state, timeout) {
+        state.idleTimeout = timeout
+    },
     CLEAR_AUTH(state) {
         [state.sessionTimeout, state.tokenRefreshTimeout, state.idleTimeout].forEach(timeout => {
             if (timeout) clearTimeout(timeout)
@@ -159,21 +167,24 @@ const mutations = {
 }
 
 // Actions
+// Actions
 const actions = {
     async login({ commit, dispatch }, credentials) {
-        if (state.isLocked && new Date(state.lockUntil) > new Date()) {
-            const remainingTime = Math.ceil((new Date(state.lockUntil) - new Date()) / 1000 / 60)
-            throw new Error(`帳號已被鎖定，請等待 ${remainingTime} 分鐘後再試`)
-        }
-
-        commit('SET_LOADING', true)
-        commit('SET_ERROR', null)
-
         try {
+            commit('SET_LOADING', true)
+            commit('SET_ERROR', null)
+
+            console.log('Sending login request with:', credentials)
             const response = await authApi.login(credentials)
-            if (!response?.accessToken || !response?.user) {
-                throw new Error('無效的登入回應')
-            }
+            console.log('Login response:', response)
+
+            // 確認 token 存儲
+            localStorage.setItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY, response.accessToken)
+            localStorage.setItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY, response.refreshToken)
+            console.log('Tokens stored:', {
+                access: localStorage.getItem(TOKEN_CONFIG.ACCESS_TOKEN_KEY),
+                refresh: localStorage.getItem(TOKEN_CONFIG.REFRESH_TOKEN_KEY)
+            })
 
             commit('SET_TOKENS', {
                 accessToken: response.accessToken,
@@ -181,18 +192,12 @@ const actions = {
             })
             commit('SET_USER', response.user)
             commit('SET_AUTH_STATUS', 'authenticated')
-            commit('RESET_LOGIN_ATTEMPTS')
             commit('UPDATE_ACTIVITY_TIME')
-            commit('SET_SUCCESS_MESSAGE', '登入成功')
 
-            await dispatch('setupAuthRefresh')
-            await dispatch('setupIdleTimeout')
-            await dispatch('getProfile')
             return response
         } catch (error) {
-            commit('INCREMENT_LOGIN_ATTEMPTS')
-            handleError(error)
-            commit('SET_ERROR', error.response?.data?.message || '登入失敗，請檢查帳號密碼')
+            console.error('Login error:', error)
+            commit('SET_ERROR', error.response?.data?.message || '登入失敗')
             throw error
         } finally {
             commit('SET_LOADING', false)
